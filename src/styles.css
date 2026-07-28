@@ -103,7 +103,23 @@ ul, ol {
    Material Symbols Helper
    ============================================================ */
 
+/* These properties used to come from the Google Fonts stylesheet. The fonts are
+   now vendored locally (public/fonts), so the icon rule lives here instead.
+   'liga' is what turns the text content into a glyph — without it every icon
+   renders as its literal name. */
 .material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   font-size: 22px;
   line-height: 1;
@@ -569,8 +585,15 @@ ul, ol {
   color: var(--color-danger);
 }
 
+/* Rendered as a <button> so it is reachable and activatable by keyboard; the
+   reset below keeps it looking like the plain text link it replaced. */
 .stat-link {
   display: inline-block;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-primary);
@@ -581,6 +604,14 @@ ul, ol {
 
 .stat-link:hover {
   opacity: 0.8;
+}
+
+.stat-link:focus-visible,
+.action-link:focus-visible,
+.faq-question:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* ============================================================
@@ -777,7 +808,13 @@ ul, ol {
   color: var(--color-text-secondary);
 }
 
+/* A <button>, not a <span>, so every row action can be tabbed to and activated
+   with Enter/Space; the reset keeps the original inline-link appearance. */
 .action-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-primary);
@@ -838,36 +875,6 @@ ul, ol {
 .applicant-info .phone {
   font-size: 12px;
   color: var(--color-text-tertiary);
-}
-
-/* Requirements progress bar */
-
-.requirements-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.req-progress-bar {
-  width: 60px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--color-border);
-  overflow: hidden;
-}
-
-.req-progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  transition: width 0.4s ease;
-}
-
-.req-progress-fill.complete {
-  background: var(--color-success);
-}
-
-.req-progress-fill.partial {
-  background: var(--color-warning);
 }
 
 .req-text {
@@ -1302,12 +1309,19 @@ ul, ol {
 
 .log-item {
   display: grid;
-  grid-template-columns: 80px 100px 1fr;
+  grid-template-columns: 110px 80px 100px 1fr auto;
   gap: 16px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--color-border-light);
   align-items: center;
   transition: background 0.15s;
+}
+
+.log-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
 .log-item:hover {
@@ -1611,6 +1625,10 @@ ul, ol {
 
 .toast-close {
   margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
   color: rgba(255,255,255,0.6);
   cursor: pointer;
   font-size: 18px;
@@ -1935,7 +1953,6 @@ ul, ol {
 .faq-item {
   padding: 16px 20px;
   border-bottom: 1px solid var(--color-border-light);
-  cursor: pointer;
   transition: background 0.15s;
 }
 
@@ -1947,10 +1964,19 @@ ul, ol {
   border-bottom: none;
 }
 
+/* The whole question row is the toggle — a real button so it is keyboard-operable. */
 .faq-question {
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
@@ -2016,12 +2042,668 @@ ul, ol {
 }
 
 /* ============================================================
+   Topbar Search Clear + Notifications
+   ============================================================ */
+
+.search-clear {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.search-clear:hover {
+  background: var(--color-border-light);
+  color: var(--color-text);
+}
+
+.search-clear .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.search-input:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-tertiary);
+}
+
+.notif-wrapper {
+  position: relative;
+}
+
+.notif-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.notif-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 100;
+  width: 320px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 0.18s ease;
+}
+
+.notif-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.notif-panel-header span {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 11px;
+}
+
+.notif-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background 0.15s;
+}
+
+.notif-row:last-child {
+  border-bottom: none;
+}
+
+.notif-row:hover {
+  background: var(--color-surface-hover);
+}
+
+.notif-row > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notif-row strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.notif-sub {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.notif-row .material-symbols-outlined {
+  font-size: 20px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.notif-row .material-symbols-outlined.danger { color: var(--color-danger); }
+.notif-row .material-symbols-outlined.warning { color: var(--color-warning); }
+
+.notif-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ============================================================
+   Utility Billing
+   ============================================================ */
+
+.utility-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.utility-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.utility-toggle-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.utility-toggle-btn:hover {
+  color: var(--color-text);
+}
+
+.utility-toggle-btn.electricity.active {
+  background: var(--color-warning);
+  color: #fff;
+}
+
+.utility-toggle-btn.water.active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.calc-panel .panel-header {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.calc-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 24px;
+  padding: 20px;
+}
+
+.calc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calc-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  align-self: start;
+}
+
+.calc-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  color: #fff;
+}
+
+.calc-summary-head.electricity {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.calc-summary-head.water {
+  background: linear-gradient(135deg, #2b5dd4, var(--color-primary));
+}
+
+.calc-summary-head .material-symbols-outlined {
+  font-size: 28px;
+}
+
+.calc-summary-head > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.calc-summary-head strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.calc-summary-head span {
+  font-size: 12px;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.calc-row strong {
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.calc-row.highlight {
+  background: var(--color-primary-bg);
+  border-radius: var(--radius-sm);
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.calc-row.highlight strong {
+  color: var(--color-primary);
+}
+
+.calc-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 4px;
+  padding: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.calc-total strong {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-primary);
+  text-transform: none;
+}
+
+.calc-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.calc-error .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.calc-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.utility-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.utility-tag .material-symbols-outlined {
+  font-size: 15px;
+}
+
+.utility-tag.electricity {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.utility-tag.water {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.badge-paid {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.badge-unpaid {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge-overdue {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.action-link.danger {
+  color: var(--color-danger);
+}
+
+.dist-bar-fill.electricity { background: var(--color-warning); }
+.dist-bar-fill.water { background: var(--color-info); }
+
+/* Bill history inside stall / tenant detail modals */
+.bill-history {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.bill-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.bill-history-head h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.bill-history-head span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+.bill-history-head span.outstanding {
+  color: var(--color-danger);
+}
+
+.bill-history-empty {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  padding: 12px 0;
+}
+
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.mini-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mini-table td {
+  padding: 9px 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.mini-table tr:last-child td {
+  border-bottom: none;
+}
+
+.detail-value.strong {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* ============================================================
+   Applicant Requirements Checklist
+   ============================================================ */
+
+.req-counter {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.req-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.req-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.req-check:hover {
+  border-color: var(--color-primary-light);
+}
+
+.req-check.checked {
+  border-color: var(--color-success);
+  background: rgba(22, 163, 74, 0.06);
+  color: var(--color-text);
+}
+
+/* The Material glyph is the visible control; the real input stays accessible. */
+.req-check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.req-check .material-symbols-outlined {
+  font-size: 20px;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.req-check.checked .material-symbols-outlined {
+  color: var(--color-success);
+}
+
+.req-check input:focus-visible + .material-symbols-outlined {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Compact per-row marks in the applicants table */
+.req-marks {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.req-mark {
+  font-size: 17px !important;
+}
+
+.req-mark.done {
+  color: var(--color-success);
+}
+
+.req-mark.missing {
+  color: var(--color-border);
+}
+
+.req-marks .req-text {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.req-marks .req-text.complete {
+  color: var(--color-success);
+}
+
+/* Approve / Reject / Save row in the applicant modal */
+.applicant-decision {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.applicant-decision-right {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--color-success);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.btn-success:hover {
+  background: #15803d;
+}
+
+.btn-success .material-symbols-outlined,
+.btn-danger .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* Approval → tenancy handoff banner */
+.approved-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(22, 163, 74, 0.08);
+  border: 1px solid rgba(22, 163, 74, 0.22);
+}
+
+.approved-banner .material-symbols-outlined {
+  font-size: 24px;
+  color: var(--color-success);
+  flex-shrink: 0;
+}
+
+.approved-banner > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.approved-banner strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.approved-banner span {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ============================================================
+   Form Feedback
+   ============================================================ */
+
+.form-hint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+.form-hint.error {
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+.form-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.form-error .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* ============================================================
    Responsive
    ============================================================ */
 
 @media (max-width: 1200px) {
   .stats-row {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .calc-grid {
+    grid-template-columns: 1fr;
   }
 
   .dashboard-grid {
@@ -2114,6 +2796,45 @@ ul, ol {
 
   .modal-card {
     max-width: 100%;
+  }
+
+  .calc-grid {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .calc-actions {
+    flex-direction: column-reverse;
+  }
+
+  .calc-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .notif-panel {
+    width: min(320px, calc(100vw - 32px));
+  }
+
+  .row-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .req-checklist {
+    grid-template-columns: 1fr;
+  }
+
+  .applicant-decision,
+  .applicant-decision-right {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .applicant-decision button {
+    width: 100%;
+    justify-content: center;
   }
 }
 

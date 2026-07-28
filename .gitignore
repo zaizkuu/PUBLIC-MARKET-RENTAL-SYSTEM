@@ -1,0 +1,18 @@
+# Dependencies (restore with: npm install)
+node_modules/
+
+# Vite build output (regenerate with: npm run build)
+dist/
+
+# Packaged desktop builds (regenerate with: npm run dist)
+release/
+
+# Build metadata
+*.tsbuildinfo
+
+# Local knowledge-graph output
+graphify-out/
+
+# Environment
+.env
+.env.local
