@@ -39,7 +39,6 @@ type Applicant = {
   stallType: string;
   status: ApplicantStatus;
   dateApplied: string;
-  /** Names of the requirements checked off for this applicant; see REQUIREMENTS. */
   requirements: string[];
 };
 
@@ -51,7 +50,6 @@ type Tenant = {
   section: string;
   rent: number;
   status: string;
-  /** Application this tenancy came from, when created by approving an applicant. */
   applicantId?: string;
 };
 
@@ -65,31 +63,22 @@ type Stall = {
 
 type Violation = {
   id: string;
-  /** Free text: usually a tenant name, but a stall or applicant may be cited too. */
   tenant: string;
   issue: string;
   status: ViolationStatus;
-  /** Demerit points. Open points are what the Violations page totals. */
   points: number;
-  /** ISO YYYY-MM-DD. Empty on records saved before dates were tracked. */
   dateRecorded: string;
-  /** ISO YYYY-MM-DD, set when the violation is resolved; cleared if reopened. */
   dateResolved: string;
   notes: string;
 };
 
-
-
 type UtilityBill = {
   id: string;
   type: UtilityType;
-  /** Stall number the bill is charged to. */
   stallId: string;
-  /** Tenant record ID, or '' when the stall has no tenant on file. */
   tenantId: string;
   tenantName: string;
   section: string;
-  /** Billing month as YYYY-MM. */
   period: string;
   previousReading: number;
   currentReading: number;
@@ -98,16 +87,13 @@ type UtilityBill = {
   fixedCharge: number;
   amount: number;
   status: BillStatus;
-  /** ISO YYYY-MM-DD. */
   dateIssued: string;
-  /** ISO YYYY-MM-DD. */
   dueDate: string;
   notes: string;
 };
 
 type LogEntry = {
   id: string;
-  /** ISO YYYY-MM-DD. Empty on entries saved before dates were recorded. */
   date: string;
   time: string;
   type: string;
@@ -128,13 +114,10 @@ type ActivityItem = {
    ============================================================ */
 
 const ITEMS_PER_PAGE = 5;
-/** The activity feed is a rolling UI list, not a record — cap it so years of
-    use don't grow localStorage without bound. The Logbook is the real history. */
 const MAX_ACTIVITIES = 50;
 const SECTIONS = ['Meat & Poultry', 'Fish & Seafood', 'Vegetables & Fruits', 'Dry Goods'];
 const STALL_TYPES = ['Produce (Wet)', 'Dry Goods', 'Vegetables', 'Fish & Seafood', 'Meat & Poultry'];
 const LOG_TYPES = ['Inspection', 'Incident', 'Maintenance', 'Collection', 'Announcement'];
-/** Suggestions for the citation field — it stays free text for anything unusual. */
 const VIOLATION_ISSUES = [
   'Late document submission',
   'Improper stall cleanup',
@@ -149,7 +132,6 @@ const storageKey = 'pmrms-state-v3';
 const savedAtKey = 'pmrms-saved-at';
 const idCounterKey = 'pmrms-id-counters';
 
-/** Documents an applicant must submit. Edit this list to change the checklist. */
 const REQUIREMENTS = [
   'Barangay Clearance',
   'Community Tax Certificate (Cedula)',
@@ -159,7 +141,6 @@ const REQUIREMENTS = [
 
 const UTILITY_TYPES: UtilityType[] = ['Electricity', 'Water'];
 
-/** Default market rates — editable per bill in the calculator. */
 const UTILITY_PRESETS: Record<UtilityType, { rate: number; fixedCharge: number; unit: string; icon: string }> = {
   Electricity: { rate: 11.5, fixedCharge: 150, unit: 'kWh', icon: 'bolt' },
   Water: { rate: 25, fixedCharge: 80, unit: 'm³', icon: 'water_drop' },
@@ -233,7 +214,6 @@ type AppState = typeof initialState;
 const navigation: Array<{ key: ModuleKey; label: string; icon: string }> = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { key: 'stalls', label: 'Stall Management', icon: 'storefront' },
-
   { key: 'tenants', label: 'Tenant Records', icon: 'groups' },
   { key: 'applicants', label: 'Applicants', icon: 'person_add' },
   { key: 'utilities', label: 'Utility Billing', icon: 'bolt' },
@@ -261,22 +241,11 @@ const searchableModules: ModuleKey[] = ['stalls', 'tenants', 'applicants', 'util
    Helpers
    ============================================================ */
 
-/**
- * Fills in any collection missing from a stored/restored payload so that saves
- * written by an older version of the app (before a module existed) still load.
- */
-/**
- * Applicant records used to track requirements as an uploaded-file count.
- * They are now a checklist of named documents, so older records are converted
- * by ticking off the first N items — preserving how many were submitted.
- */
 function normalizeApplicant(raw: Applicant): Applicant {
   const legacy = raw as unknown as { requirementsUploaded?: unknown };
   const requirements = Array.isArray(raw?.requirements)
     ? raw.requirements.filter((r) => typeof r === 'string' && REQUIREMENTS.includes(r))
     : REQUIREMENTS.slice(0, Math.min(REQUIREMENTS.length, Math.max(0, Number(legacy?.requirementsUploaded) || 0)));
-  // Rebuilt field by field rather than spread, so retired keys from older
-  // versions are dropped instead of living on in storage and backups.
   return {
     id: raw.id,
     name: raw.name,
@@ -294,14 +263,10 @@ function mergeState(input: unknown): AppState {
     (Array.isArray(parsed[key]) ? parsed[key] : initialState[key]) as AppState[K];
   return {
     applicants: pick('applicants').map(normalizeApplicant),
-    // Tenants saved before contact numbers were tracked show "—" until edited.
     tenants: pick('tenants').map((t) => ({ ...t, phone: typeof t?.phone === 'string' && t.phone ? t.phone : '—' })),
-    // Entries saved before logs carried a date keep an empty date and render as "—".
     logs: pick('logs').map((l) => ({ ...l, date: typeof l?.date === 'string' ? l.date : '' })),
     activities: pick('activities').slice(0, MAX_ACTIVITIES),
     stalls: pick('stalls'),
-    // Violations gained dates and notes when they got a management page; older
-    // records keep an empty date and render as "—".
     violations: pick('violations').map((v) => ({
       ...v,
       points: Math.max(0, Number(v?.points) || 0),
@@ -333,7 +298,6 @@ function percent(value: number) {
   return `${value.toFixed(1)}%`;
 }
 
-/** Percentage of `part` out of `total`, safe when `total` is 0. */
 function ratio(part: number, total: number) {
   return total > 0 ? (part / total) * 100 : 0;
 }
@@ -342,11 +306,6 @@ function submittedCount(a: Applicant) {
   return REQUIREMENTS.filter((r) => a.requirements.includes(r)).length;
 }
 
-/**
- * Status follows the checklist while an application is still in progress, but
- * Approved and Rejected are decisions an officer made — those are never
- * overwritten by ticking a box.
- */
 function deriveStatus(current: ApplicantStatus, requirements: string[]): ApplicantStatus {
   if (current === 'Approved' || current === 'Rejected') return current;
   return REQUIREMENTS.every((r) => requirements.includes(r)) ? 'Pending Review' : 'Incomplete';
@@ -357,11 +316,6 @@ function toNumber(raw: string) {
   return isNaN(n) ? 0 : n;
 }
 
-/**
- * Money and meter inputs carry `min="0"`, but these forms save from a plain
- * button rather than a real form submit, so the browser never enforces it.
- * Every amount goes through here instead.
- */
 function toAmount(raw: string) {
   return Math.max(0, toNumber(raw));
 }
@@ -377,7 +331,6 @@ function getInitials(name: string) {
 const avatarColors = ['blue', 'teal', 'purple', 'rose', 'amber'];
 function getAvatarColor(i: number) { return avatarColors[i % avatarColors.length]; }
 
-/** Persisted high-water mark per ID prefix; see nextId. */
 function readIdCounters(): Record<string, number> {
   try {
     const parsed = JSON.parse(localStorage.getItem(idCounterKey) ?? '{}');
@@ -385,21 +338,10 @@ function readIdCounters(): Record<string, number> {
   } catch { return {}; }
 }
 
-/** Wipes the counters so a factory reset starts numbering from the seed data again. */
 function resetIdCounters() {
   try { localStorage.removeItem(idCounterKey); } catch { /* storage unavailable — max(existing) still applies */ }
 }
 
-/**
- * Next ID for a prefix, never reusing one that has already been handed out.
- *
- * Deriving the number from `max(existing IDs) + 1` alone would recycle an ID as
- * soon as the newest record is deleted, and back-links kept for history
- * (UtilityBill.tenantId, Tenant.applicantId) would then point at an unrelated
- * new record. So the highest number issued is persisted per prefix and the
- * counter only ever moves forward; `max(existing)` remains the floor so a
- * restored backup with higher IDs than the counter still numbers correctly.
- */
 function nextId(prefix: string, existingIds: string[]) {
   const nums = existingIds.map((id) => parseInt(id.replace(/\D/g, ''), 10)).filter((n) => !isNaN(n));
   const maxExisting = nums.length > 0 ? Math.max(...nums) : 0;
@@ -426,6 +368,96 @@ function paginate<T>(items: T[], page: number, perPage = ITEMS_PER_PAGE) {
   };
 }
 
+/**
+ * Tiny inline sparkline — draws a smooth line + soft fill through a set of
+ * values, no chart library needed. Purely decorative: the app doesn't store
+ * historical daily/weekly snapshots, so this doesn't represent a real trend.
+ * See trendFrom() below for how the shape is derived from a live number.
+ */
+function Sparkline({ data, width = 84, height = 34, color = 'var(--color-primary)' }: { data: number[]; width?: number; height?: number; color?: string }) {
+  if (data.length < 2) return null;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const stepX = width / (data.length - 1);
+  const top = 4;
+  const bottom = height - 6;
+
+  const points = data.map((v, i) => {
+    const x = i * stepX;
+    const y = bottom - ((v - min) / range) * (bottom - top);
+    return [x, y];
+  });
+
+  /** Catmull-Rom → cubic Bezier conversion for a smooth, flowing curve
+      instead of straight jagged segments between points. */
+  const toSmoothPath = (pts: number[][]) => {
+    let d = `M ${pts[0][0]},${pts[0][1]}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i === 0 ? i : i - 1];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[i + 2 === pts.length ? i + 1 : i + 2];
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+      const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+      const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += ` C ${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
+    }
+    return d;
+  };
+
+  const linePath = toSmoothPath(points);
+  const fillPath = `${linePath} L${width},${height} L0,${height} Z`;
+  const [endX, endY] = points[points.length - 1];
+  const uid = `${Math.round(min)}-${Math.round(max)}-${data.length}-${Math.round(data[data.length - 1])}`;
+  const gradientId = `spark-fill-${uid}`;
+  const lineGradientId = `spark-line-${uid}`;
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="stat-sparkline">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="65%" stopColor={color} stopOpacity="0.05" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id={lineGradientId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={color} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={color} stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      {/* Faint baseline for a grounded, formal chart feel rather than a line floating in empty space. */}
+      <line x1="0" y1={height - 1} x2={width} y2={height - 1} stroke="var(--color-border)" strokeWidth="1" opacity="0.6" />
+      <path d={fillPath} fill={`url(#${gradientId})`} stroke="none" />
+      <path d={linePath} fill="none" stroke={`url(#${lineGradientId})`} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={endX} cy={endY} r="5" fill={color} opacity="0.15" />
+      <circle cx={endX} cy={endY} r="2.5" fill={color} stroke="var(--color-surface)" strokeWidth="1.25" />
+    </svg>
+  );
+}
+
+/**
+ * Fabricates a gentle 6-point trend line that ends at `value`. Deterministic
+ * (seeded from the value + a label) so the same stat always draws the same
+ * shape instead of jittering on every render — but it is decorative, not a
+ * record of what this number actually did over time.
+ */
+function trendFrom(value: number, seedLabel = ''): number[] {
+  let seed = value * 31 + seedLabel.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const rand = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  const base = Math.max(value, 1);
+  const points: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    points.push(Math.max(0, base * (0.65 + rand() * 0.35)));
+  }
+  points.push(value);
+  return points;
+}
+
 function todayStr() {
   return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -436,7 +468,6 @@ function nowTimeStr() {
 
 /* ---------- Utility billing helpers ---------- */
 
-/** ISO YYYY-MM-DD for a date, using local time (not UTC) so "today" is correct. */
 function isoDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -451,7 +482,6 @@ function isoDatePlusDays(days: number) {
   return isoDate(d);
 }
 
-/** ISO YYYY-MM-DD → "Oct 15, 2023". */
 function formatIsoDate(iso: string) {
   const [y, m, d] = iso.split('-').map(Number);
   if (!y || !m || !d) return iso || '—';
@@ -463,14 +493,12 @@ function currentPeriod() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/** YYYY-MM → "October 2023". */
 function formatPeriod(period: string) {
   const [y, m] = period.split('-').map(Number);
   if (!y || !m) return period || '—';
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
-/** Core bill computation shared by the live preview and the saved record. */
 function computeBill(previousReading: number, currentReading: number, rate: number, fixedCharge: number) {
   const consumption = Math.max(0, currentReading - previousReading);
   const usageCharge = consumption * rate;
@@ -482,7 +510,6 @@ function isOverdue(bill: UtilityBill) {
   return bill.status === 'Unpaid' && !!bill.dueDate && bill.dueDate < todayIso();
 }
 
-/** Most recent current reading for a stall + utility type, used to prefill "previous reading". */
 function lastReadingFor(bills: UtilityBill[], stallId: string, type: UtilityType) {
   const matches = bills
     .filter((b) => b.stallId === stallId && b.type === type)
@@ -498,11 +525,6 @@ function downloadJSON(data: unknown, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/**
- * One quoted CSV field. Embedded `"` must be doubled — otherwise a note like
- * `Tenant said "the meter is broken"` ends the field early and shifts every
- * following column when the file is opened in Excel or Sheets.
- */
 function csvCell(value: string) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
@@ -538,8 +560,6 @@ function App() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
 
-  // A failed write used to be silent, which would let an operator keep working
-  // against data that is never persisted. Warn once per session instead.
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(state));
@@ -557,7 +577,6 @@ function App() {
 
   const closeModal = useCallback(() => setModal({ type: null }), []);
 
-  // Esc closes whatever modal is open.
   useEffect(() => {
     if (!modal.type) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeModal(); };
@@ -565,7 +584,6 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [modal.type, closeModal]);
 
-  // Computed values
   const occupiedCount = useMemo(() => state.stalls.filter((s) => s.status === 'Occupied').length, [state.stalls]);
   const availableCount = useMemo(() => state.stalls.filter((s) => s.status === 'Available').length, [state.stalls]);
   const maintenanceCount = useMemo(() => state.stalls.filter((s) => s.status === 'Maintenance').length, [state.stalls]);
@@ -575,7 +593,6 @@ function App() {
   const unpaidBills = useMemo(() => state.utilities.filter((b) => b.status === 'Unpaid'), [state.utilities]);
   const outstandingUtilities = useMemo(() => unpaidBills.reduce((sum, b) => sum + b.amount, 0), [unpaidBills]);
 
-  /** Actionable items derived from live data — each row jumps to the module that owns it. */
   const notifications = useMemo(() => {
     const items: Array<{ id: string; icon: string; tone: string; title: string; detail: string; target: ModuleKey }> = [];
     const overdue = state.utilities.filter(isOverdue);
@@ -590,20 +607,16 @@ function App() {
     return items;
   }, [state.utilities, state.tenants, state.violations, unpaidBills, outstandingUtilities, pendingApplicants, maintenanceCount]);
 
-  /** Prepends to the activity feed, keeping it capped at MAX_ACTIVITIES. */
   const withActivity = (list: ActivityItem[], icon: string, iconColor: string, highlight: string, text: string): ActivityItem[] =>
     [{ id: `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, icon, iconColor, highlight, text, time: 'Just now' }, ...list].slice(0, MAX_ACTIVITIES);
 
-  /** Builds a Logbook entry stamped with the current date and time. */
   const makeLog = (existing: LogEntry[], type: string, details: string): LogEntry =>
     ({ id: nextId('LOG', existing.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type, details });
 
-  // CRUD handlers
   const addStall = (stall: Stall) => { setState((p) => ({ ...p, stalls: [...p.stalls, stall], activities: withActivity(p.activities, 'storefront', 'blue', stall.id, ` added as new stall in ${stall.section}.`) })); showToast(`Stall ${stall.id} added successfully`); closeModal(); };
   const addApplicant = (app: Applicant) => { setState((p) => ({ ...p, applicants: [...p.applicants, app], activities: withActivity(p.activities, 'person_add', 'green', app.name, ` applied for ${app.stallType} stall.`) })); showToast(`Applicant ${app.name} added successfully`); closeModal(); };
   const addLog = (l: LogEntry) => { setState((p) => ({ ...p, logs: [...p.logs, l] })); showToast('Log entry added'); closeModal(); };
 
-  /** Adding a tenant also claims their stall so Stall Management stays in sync. */
   const addTenant = (t: Tenant) => {
     setState((p) => ({
       ...p,
@@ -645,13 +658,9 @@ function App() {
     }));
     const justApproved = previous && previous.status !== 'Approved' && updated.status === 'Approved';
     showToast(previous && previous.status !== updated.status ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
-    // Approving is the start of a tenancy, so go straight to assigning a stall
-    // instead of dropping the operator back on the list with nothing to do.
     if (justApproved) setModal({ type: 'assign-stall', data: updated });
     else closeModal();
   };
-
-  /* ---------- Violations ---------- */
 
   const addViolation = (v: Violation) => {
     setState((p) => ({
@@ -681,10 +690,6 @@ function App() {
     closeModal();
   };
 
-  /**
-   * Resolving and reopening from the row action. Resolving stamps the date so
-   * the record shows how long it stayed open; reopening clears it again.
-   */
   const toggleViolationStatus = (id: string) => {
     const current = state.violations.find((v) => v.id === id);
     if (!current) return;
@@ -704,12 +709,6 @@ function App() {
     closeModal();
   };
 
-  /**
-   * Saves an edited tenant record. A tenancy is mirrored in the stall registry,
-   * so a rename follows through to the stall's `tenant` field and a stall
-   * change releases the old stall and claims the new one — the same bookkeeping
-   * addTenant and deleteTenant do.
-   */
   const updateTenant = (updated: Tenant) => {
     const previous = state.tenants.find((t) => t.id === updated.id);
     const oldStallId = previous?.stallId ?? '';
@@ -722,9 +721,6 @@ function App() {
         if (s.id === updated.stallId) return { ...s, tenant: updated.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection };
         return s;
       }),
-      // Bills keep tenantName only for display. Correcting a misspelled name
-      // should show up there too, rather than leaving history attributed to a
-      // name that no longer exists anywhere in the system.
       utilities: previous && previous.name !== updated.name
         ? p.utilities.map((b) => (b.tenantId === updated.id ? { ...b, tenantName: updated.name } : b))
         : p.utilities,
@@ -735,10 +731,6 @@ function App() {
     closeModal();
   };
 
-  /**
-   * Saves an edited stall. The stall row is the source of truth for where a
-   * stall physically is, so a section change moves its tenant with it.
-   */
   const updateStall = (updated: Stall) => {
     setState((p) => {
       const occupant = p.tenants.find((t) => t.stallId === updated.id);
@@ -756,12 +748,6 @@ function App() {
     closeModal();
   };
 
-  /**
-   * Removes a stall from the registry. Callers must check that no tenant is
-   * assigned first — the confirm dialog blocks that case rather than orphaning
-   * a tenant record. Utility bills are deliberately kept: they are financial
-   * history keyed by stall number, not a property of the stall row.
-   */
   const deleteStall = (id: string) => {
     setState((p) => ({
       ...p,
@@ -773,10 +759,6 @@ function App() {
     closeModal();
   };
 
-  /**
-   * Removes a tenant and releases their stall back to Available — the mirror of
-   * addTenant, which claims it. Utility bills are kept as billing history.
-   */
   const deleteTenant = (tenant: Tenant) => {
     setState((p) => ({
       ...p,
@@ -800,7 +782,6 @@ function App() {
     closeModal();
   };
 
-  /** Log entries are the audit trail, so removing one is not itself logged. */
   const deleteLog = (log: LogEntry) => {
     setState((p) => ({ ...p, logs: p.logs.filter((l) => l.id !== log.id) }));
     showToast(`Log entry ${log.id} deleted`);
@@ -833,11 +814,8 @@ function App() {
 
   return (
     <div className="app-shell">
-      {/* ========== SIDEBAR ========== */}
       <aside className="sidebar">
         <div className="brand">
-          {/* Relative path: an absolute "/logo.jpg" resolves to the filesystem
-              root under the file:// origin used by the desktop build. */}
           <div className="brand-logo"><img src="./logo.jpg" alt="Municipality of Tanauan official seal" /></div>
           <div className="brand-info"><h1>Tanauan Public Market</h1><p>Market Office</p></div>
         </div>
@@ -862,7 +840,6 @@ function App() {
         </nav>
       </aside>
 
-      {/* ========== MAIN CONTENT ========== */}
       <main className="main-content">
         <header className="topbar">
           <div className="search-wrapper">
@@ -911,7 +888,6 @@ function App() {
         </div>
       </main>
 
-      {/* ========== MODALS ========== */}
       {modal.type === 'add-stall' && <Modal title="Add New Stall" onClose={closeModal}><AddStallForm existingIds={state.stalls.map(s => s.id)} onSubmit={addStall} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-applicant' && <Modal title="Add New Applicant" onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-tenant' && <Modal title="Add New Tenant" onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
@@ -929,8 +905,6 @@ function App() {
         const stall = modal.data as Stall;
         const occupant = state.tenants.find((t) => t.stallId === stall.id);
         const billCount = state.utilities.filter((b) => b.stallId === stall.id).length;
-        // A stall someone is renting must not be deletable — that would leave
-        // the tenant record pointing at a stall that no longer exists.
         if (occupant) {
           return <ConfirmDialog icon="block" iconStyle="warning" title="Cannot delete this stall"
             description={`Stall ${stall.id} is currently assigned to ${occupant.name} (${occupant.id}). Remove or reassign that tenant record first, then delete the stall.`}
@@ -969,7 +943,6 @@ function App() {
       })()}
       {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
 
-      {/* ========== TOASTS ========== */}
       {toasts.length > 0 && (
         <div className="toast-container">
           {toasts.map((t) => (
@@ -998,11 +971,42 @@ function DashboardPage({ state, occupiedCount, pendingApplicants, outstandingUti
   return (
     <>
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div><div className="stat-value">{state.stalls.length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Occupancy</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div><div className="stat-value">{occupiedCount}<span className="stat-fraction">/ {state.stalls.length}</span></div><div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${occupancyPct}%` }} /></div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Active Tenants</span><span className="material-symbols-outlined stat-icon primary">groups</span></div><div className="stat-value">{activeTenants}</div><button type="button" className="stat-link" onClick={() => onNavigate('tenants')}>View Tenants</button></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Pending Applicants</span><span className="material-symbols-outlined stat-icon warning">pending_actions</span></div><div className="stat-value">{pendingApplicants}</div><button type="button" className="stat-link" onClick={() => onNavigate('applicants')}>Review Now</button></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Unpaid Utilities</span><span className="material-symbols-outlined stat-icon danger">bolt</span></div><div className="stat-value danger">{moneyShort(outstandingUtilities)}</div><button type="button" className="stat-link" onClick={() => onNavigate('utilities')}>{unpaidBillCount} bill{unpaidBillCount === 1 ? '' : 's'} outstanding</button></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{state.stalls.length}</div>
+            <Sparkline data={trendFrom(state.stalls.length, 'total-stalls')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Occupancy</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
+          <div className="stat-value">{occupiedCount}<span className="stat-fraction">/ {state.stalls.length}</span></div>
+          <div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${occupancyPct}%` }} /></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Active Tenants</span><span className="material-symbols-outlined stat-icon primary">groups</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{activeTenants}</div>
+            <Sparkline data={trendFrom(activeTenants, 'active-tenants')} />
+          </div>
+          <button type="button" className="stat-link" onClick={() => onNavigate('tenants')}>View Tenants</button>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Pending Applicants</span><span className="material-symbols-outlined stat-icon warning">pending_actions</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{pendingApplicants}</div>
+            <Sparkline data={trendFrom(pendingApplicants, 'pending-applicants')} />
+          </div>
+          <button type="button" className="stat-link" onClick={() => onNavigate('applicants')}>Review Now</button>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Unpaid Utilities</span><span className="material-symbols-outlined stat-icon danger">bolt</span></div>
+          <div className="stat-body">
+            <div className="stat-value danger">{moneyShort(outstandingUtilities)}</div>
+            <Sparkline data={trendFrom(outstandingUtilities, 'unpaid-utilities')} />
+          </div>
+          <button type="button" className="stat-link" onClick={() => onNavigate('utilities')}>{unpaidBillCount} bill{unpaidBillCount === 1 ? '' : 's'} outstanding</button>
+        </div>
       </div>
       <div className="dashboard-grid">
         <div className="panel">
@@ -1060,10 +1064,34 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         </div>
       </div>
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div><div className="stat-value">{stalls.length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Occupied</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div><div className="stat-value primary">{occupiedCount}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Available</span><span className="material-symbols-outlined stat-icon">inventory_2</span></div><div className="stat-value">{availableCount}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Maintenance</span><span className="material-symbols-outlined stat-icon danger">build</span></div><div className="stat-value danger">{maintenanceCount}</div></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{stalls.length}</div>
+            <Sparkline data={trendFrom(stalls.length, 'stalls-total')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Occupied</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
+          <div className="stat-body">
+            <div className="stat-value primary">{occupiedCount}</div>
+            <Sparkline data={trendFrom(occupiedCount, 'stalls-occupied')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Available</span><span className="material-symbols-outlined stat-icon">inventory_2</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{availableCount}</div>
+            <Sparkline data={trendFrom(availableCount, 'stalls-available')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Maintenance</span><span className="material-symbols-outlined stat-icon danger">build</span></div>
+          <div className="stat-body">
+            <div className="stat-value danger">{maintenanceCount}</div>
+            <Sparkline data={trendFrom(maintenanceCount, 'stalls-maintenance')} />
+          </div>
+        </div>
       </div>
       <div className="panel">
         <div className="filter-row">
@@ -1113,10 +1141,34 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
         </div>
       </div>
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Total Applicants</span></div><div className="stat-value">{applicants.length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Pending Review</span></div><div className="stat-value">{pendingApplicants}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Incomplete Docs</span></div><div className="stat-value">{incompleteApplicants}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Approved (This Mo.)</span></div><div className="stat-value">{approvedApplicants}</div></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Total Applicants</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{applicants.length}</div>
+            <Sparkline data={trendFrom(applicants.length, 'applicants-total')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Pending Review</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{pendingApplicants}</div>
+            <Sparkline data={trendFrom(pendingApplicants, 'applicants-pending')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Incomplete Docs</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{incompleteApplicants}</div>
+            <Sparkline data={trendFrom(incompleteApplicants, 'applicants-incomplete')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Approved (This Mo.)</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{approvedApplicants}</div>
+            <Sparkline data={trendFrom(approvedApplicants, 'applicants-approved')} />
+          </div>
+        </div>
       </div>
       <div className="panel">
         <div className="filter-row">
@@ -1158,8 +1210,6 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
   );
 }
 
-
-
 /* ============================================================
    Tenant Records Page
    ============================================================ */
@@ -1190,10 +1240,34 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenan
         </div>
       </div>
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Total Tenants</span><span className="material-symbols-outlined stat-icon">groups</span></div><div className="stat-value">{tenants.length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Active</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div><div className="stat-value success">{tenants.filter(t => t.status === 'Active').length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Expiring Soon</span><span className="material-symbols-outlined stat-icon warning">schedule</span></div><div className="stat-value">{tenants.filter(t => t.status === 'Expiring Soon').length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Monthly Revenue</span><span className="material-symbols-outlined stat-icon primary">payments</span></div><div className="stat-value">{moneyShort(tenants.reduce((s, t) => s + t.rent, 0))}</div></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Total Tenants</span><span className="material-symbols-outlined stat-icon">groups</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{tenants.length}</div>
+            <Sparkline data={trendFrom(tenants.length, 'tenants-total')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Active</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div>
+          <div className="stat-body">
+            <div className="stat-value success">{tenants.filter(t => t.status === 'Active').length}</div>
+            <Sparkline data={trendFrom(tenants.filter(t => t.status === 'Active').length, 'tenants-active')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Expiring Soon</span><span className="material-symbols-outlined stat-icon warning">schedule</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{tenants.filter(t => t.status === 'Expiring Soon').length}</div>
+            <Sparkline data={trendFrom(tenants.filter(t => t.status === 'Expiring Soon').length, 'tenants-expiring')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Monthly Revenue</span><span className="material-symbols-outlined stat-icon primary">payments</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{moneyShort(tenants.reduce((s, t) => s + t.rent, 0))}</div>
+            <Sparkline data={trendFrom(tenants.reduce((s, t) => s + t.rent, 0), 'tenants-revenue')} />
+          </div>
+        </div>
       </div>
       <div className="panel">
         <div className="filter-row">
@@ -1269,10 +1343,38 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
       </div>
 
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Total Billed</span><span className="material-symbols-outlined stat-icon primary">receipt_long</span></div><div className="stat-value">{moneyShort(totals.billed)}</div><span className="stat-link" style={{ cursor: 'default' }}>{bills.length} bill{bills.length === 1 ? '' : 's'} on record</span></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Electricity</span><span className="material-symbols-outlined stat-icon warning">bolt</span></div><div className="stat-value">{moneyShort(totals.electricity)}</div><span className="stat-link" style={{ cursor: 'default' }}>{totals.kwh.toLocaleString()} kWh billed</span></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Water</span><span className="material-symbols-outlined stat-icon primary">water_drop</span></div><div className="stat-value">{moneyShort(totals.water)}</div><span className="stat-link" style={{ cursor: 'default' }}>{totals.cubic.toLocaleString()} m³ billed</span></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Outstanding</span><span className="material-symbols-outlined stat-icon danger">payments</span></div><div className="stat-value danger">{moneyShort(totals.unpaid)}</div><span className="stat-link" style={{ cursor: 'default' }}>{totals.unpaidCount} unpaid · {totals.overdueCount} overdue</span></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Total Billed</span><span className="material-symbols-outlined stat-icon primary">receipt_long</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{moneyShort(totals.billed)}</div>
+            <Sparkline data={trendFrom(totals.billed, 'billed-total')} />
+          </div>
+          <span className="stat-link" style={{ cursor: 'default' }}>{bills.length} bill{bills.length === 1 ? '' : 's'} on record</span>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Electricity</span><span className="material-symbols-outlined stat-icon warning">bolt</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{moneyShort(totals.electricity)}</div>
+            <Sparkline data={trendFrom(totals.electricity, 'billed-electricity')} />
+          </div>
+          <span className="stat-link" style={{ cursor: 'default' }}>{totals.kwh.toLocaleString()} kWh billed</span>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Water</span><span className="material-symbols-outlined stat-icon primary">water_drop</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{moneyShort(totals.water)}</div>
+            <Sparkline data={trendFrom(totals.water, 'billed-water')} />
+          </div>
+          <span className="stat-link" style={{ cursor: 'default' }}>{totals.cubic.toLocaleString()} m³ billed</span>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Outstanding</span><span className="material-symbols-outlined stat-icon danger">payments</span></div>
+          <div className="stat-body">
+            <div className="stat-value danger">{moneyShort(totals.unpaid)}</div>
+            <Sparkline data={trendFrom(totals.unpaid, 'billed-outstanding')} />
+          </div>
+          <span className="stat-link" style={{ cursor: 'default' }}>{totals.unpaidCount} unpaid · {totals.overdueCount} overdue</span>
+        </div>
       </div>
 
       <BillCalculator bills={bills} tenants={tenants} stalls={stalls} onAdd={onAdd} />
@@ -1329,12 +1431,10 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
   const [dueDate, setDueDate] = useState(isoDatePlusDays(15));
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
-  /** Bill already on record for this stall/utility/period, awaiting confirmation. */
   const [duplicatePrompt, setDuplicatePrompt] = useState<UtilityBill | null>(null);
 
   const preset = UTILITY_PRESETS[type];
 
-  /** Every stall number that can be billed, including stall IDs only present on tenant records. */
   const stallOptions = useMemo(() => {
     const ids = new Set<string>();
     stalls.forEach((s) => ids.add(s.id));
@@ -1350,8 +1450,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
     return stalls.find((s) => s.id === stallId)?.section ?? '';
   }, [selectedTenant, stalls, stallId]);
 
-  // Switching utility type resets the rate/charge to that utility's preset and
-  // re-reads the meter history for the selected stall.
   const applyType = (next: UtilityType) => {
     setType(next);
     setRate(String(UTILITY_PRESETS[next].rate));
@@ -1402,8 +1500,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
     if (!period) { setError('Select a billing period.'); return; }
 
     const duplicate = bills.find((b) => b.stallId === stallId && b.type === type && b.period === period);
-    // Confirmed through the app's own dialog rather than window.confirm, so it
-    // matches the styling every other confirmation in the app uses.
     if (duplicate) { setDuplicatePrompt(duplicate); return; }
     commitBill();
   };
@@ -1431,8 +1527,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
       notes: notes.trim(),
     });
 
-    // Keep the stall/utility selection so the next month can be entered quickly,
-    // and roll this month's reading forward as the new previous reading.
     setPrevious(String(currNum));
     resetForm();
   };
@@ -1575,7 +1669,6 @@ function ViolationsPage({ violations, search, onAdd, onView, onToggleStatus, onD
     return true;
   }), [violations, statusFilter, search]);
 
-  // Open first, then newest — the ones needing action are what you see on page 1.
   const ordered = useMemo(
     () => [...filtered].sort((a, b) =>
       (a.status === b.status ? 0 : a.status === 'Open' ? -1 : 1)
@@ -1589,7 +1682,6 @@ function ViolationsPage({ violations, search, onAdd, onView, onToggleStatus, onD
   const openList = useMemo(() => violations.filter((v) => v.status === 'Open'), [violations]);
   const openPoints = useMemo(() => openList.reduce((s, v) => s + v.points, 0), [openList]);
 
-  /** Tenants carrying open points, worst first — who needs following up. */
   const repeatOffenders = useMemo(() => {
     const map = new Map<string, { count: number; points: number }>();
     openList.forEach((v) => {
@@ -1611,10 +1703,34 @@ function ViolationsPage({ violations, search, onAdd, onView, onToggleStatus, onD
       </div>
 
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Total Violations</span><span className="material-symbols-outlined stat-icon">gavel</span></div><div className="stat-value">{violations.length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Open</span><span className="material-symbols-outlined stat-icon danger">error</span></div><div className="stat-value danger">{openList.length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Resolved</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div><div className="stat-value success">{violations.length - openList.length}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Open Demerit Points</span><span className="material-symbols-outlined stat-icon warning">warning</span></div><div className="stat-value">{openPoints}</div></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Total Violations</span><span className="material-symbols-outlined stat-icon">gavel</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{violations.length}</div>
+            <Sparkline data={trendFrom(violations.length, 'violations-total')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Open</span><span className="material-symbols-outlined stat-icon danger">error</span></div>
+          <div className="stat-body">
+            <div className="stat-value danger">{openList.length}</div>
+            <Sparkline data={trendFrom(openList.length, 'violations-open')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Resolved</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div>
+          <div className="stat-body">
+            <div className="stat-value success">{violations.length - openList.length}</div>
+            <Sparkline data={trendFrom(violations.length - openList.length, 'violations-resolved')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Open Demerit Points</span><span className="material-symbols-outlined stat-icon warning">warning</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{openPoints}</div>
+            <Sparkline data={trendFrom(openPoints, 'violations-points')} />
+          </div>
+        </div>
       </div>
 
       {repeatOffenders.length > 0 && (
@@ -1681,8 +1797,6 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
   const [notes, setNotes] = useState(violation?.notes ?? '');
   const [error, setError] = useState('');
 
-  // Marking it Resolved stamps today unless a date was already recorded;
-  // reopening clears it, so a reopened citation never shows a resolution date.
   const applyStatus = (next: ViolationStatus) => {
     setStatus(next);
     setDateResolved(next === 'Resolved' ? (dateResolved || todayIso()) : '');
@@ -1816,12 +1930,29 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
       </div>
       <div className="stats-row">
         <div className="stat-card"><div className="stat-header"><span className="stat-label">Occupancy Rate</span><span className="material-symbols-outlined stat-icon primary">pie_chart</span></div><div className="stat-value primary">{percent(ratio(occupiedCount, totalStalls))}</div><div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${ratio(occupiedCount, totalStalls)}%` }} /></div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Active Tenants</span><span className="material-symbols-outlined stat-icon success">groups</span></div><div className="stat-value success">{activeTenants}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Pending Applications</span><span className="material-symbols-outlined stat-icon warning">person_add</span></div><div className="stat-value">{pendingApplicants}</div></div>
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Open Violations</span><span className="material-symbols-outlined stat-icon danger">gavel</span></div><div className="stat-value danger">{openViolations}</div></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Active Tenants</span><span className="material-symbols-outlined stat-icon success">groups</span></div>
+          <div className="stat-body">
+            <div className="stat-value success">{activeTenants}</div>
+            <Sparkline data={trendFrom(activeTenants, 'analytics-active-tenants')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Pending Applications</span><span className="material-symbols-outlined stat-icon warning">person_add</span></div>
+          <div className="stat-body">
+            <div className="stat-value">{pendingApplicants}</div>
+            <Sparkline data={trendFrom(pendingApplicants, 'analytics-pending')} />
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Open Violations</span><span className="material-symbols-outlined stat-icon danger">gavel</span></div>
+          <div className="stat-body">
+            <div className="stat-value danger">{openViolations}</div>
+            <Sparkline data={trendFrom(openViolations, 'analytics-violations')} />
+          </div>
+        </div>
       </div>
       <div className="analytics-grid">
-        {/* Panel 1: Stall Status Distribution */}
         <div className="panel"><div className="panel-header"><h3 className="panel-title">Stall Status Distribution</h3></div>
           <div className="distribution-row">
             <div className="distribution-item">
@@ -1841,13 +1972,11 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
             </div>
           </div>
         </div>
-        {/* Panel 2: Occupancy by Section */}
         <div className="panel"><div className="panel-header"><h3 className="panel-title">Occupancy by Section</h3></div>
           <div className="chart-container">
             {sections.map((sec) => { const total = state.stalls.filter(s => s.section === sec).length; const occ = state.stalls.filter(s => s.section === sec && s.status === 'Occupied').length; const h = total > 0 ? (occ / total) * 100 : 0; return (<div className="chart-bar-group" key={sec}><div className="chart-bar" style={{ height: `${Math.max(h, 15)}%` }} title={`${occ}/${total}`} /><span className="chart-bar-label">{sec.split(' ')[0]}</span></div>); })}
           </div>
         </div>
-        {/* Panel 3: Applicant Pipeline */}
         <div className="panel analytics-full"><div className="panel-header"><h3 className="panel-title">Applicant Pipeline</h3></div>
           <div className="distribution-row">
             <div className="distribution-item">
@@ -1878,7 +2007,6 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
             <div className="pipeline-step"><div className="pipe-count rejected">{rejectedApplicants}</div><div className="pipe-label">Rejected</div></div>
           </div>
         </div>
-        {/* Panel 4: Tenant Distribution by Section */}
         <div className="panel"><div className="panel-header"><h3 className="panel-title">Tenant Distribution by Section</h3></div>
           <div className="analytics-stats">
             {sections.map(sec => (
@@ -1886,7 +2014,6 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
             ))}
           </div>
         </div>
-        {/* Panel 5: Violations Summary */}
         <div className="panel"><div className="panel-header"><h3 className="panel-title">Violations Summary</h3><button className="btn-outline-sm" onClick={() => onNavigate('violations')}>Manage Violations</button></div>
           <div className="distribution-row">
             <div className="distribution-item">
@@ -1908,7 +2035,6 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
             ))}
           </div>
         </div>
-        {/* Panel 6: Utility Consumption & Billing */}
         <div className="panel analytics-full"><div className="panel-header"><h3 className="panel-title">Utility Consumption & Billing</h3></div>
           <div className="distribution-row">
             <div className="distribution-item">
@@ -1939,7 +2065,6 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
             {state.utilities.length === 0 && <div className="stat-pill"><span>No utility bills recorded yet</span><strong>—</strong></div>}
           </div>
         </div>
-        {/* Panel 7: Logbook Activity Summary */}
         <div className="panel analytics-full"><div className="panel-header"><h3 className="panel-title">Logbook Activity Summary</h3></div>
           <div className="log-summary-row">
             {['Inspection', 'Incident', 'Maintenance', 'Collection', 'Announcement'].map(type => (
@@ -1967,7 +2092,6 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEnt
 
   useEffect(() => { setPage(1); }, [search]);
 
-  /** Distinct dates present in the log, newest first, for the day filter. */
   const days = useMemo(
     () => Array.from(new Set(logs.map((l) => l.date).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
     [logs],
@@ -1980,7 +2104,6 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEnt
     return true;
   }), [logs, typeFilter, dayFilter, search]);
 
-  // Newest first, so the most recent activity is what you see on page 1.
   const ordered = useMemo(
     () => [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id.localeCompare(a.id)),
     [filtered],
@@ -2102,9 +2225,6 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
     reader.onload = (evt) => {
       try {
         const parsed = JSON.parse(evt.target?.result as string);
-        // Validate structure: the core collections must be present. Newer
-        // modules (e.g. utilities) are backfilled by mergeState so that
-        // backups taken before they existed still restore cleanly.
         const requiredKeys: (keyof AppState)[] = ['applicants', 'tenants', 'stalls', 'logs', 'activities'];
         const hasAllKeys = parsed && typeof parsed === 'object' && requiredKeys.every((k) => k in parsed);
         if (!hasAllKeys) {
@@ -2121,7 +2241,6 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
       }
     };
     reader.readAsText(file);
-    // Reset input so the same file can be selected again
     e.target.value = '';
   };
 
@@ -2135,7 +2254,6 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
         <div className="support-card"><span className="material-symbols-outlined">shield</span><h4>Data Privacy</h4><p>All data is stored locally. No information is transmitted to external servers.</p></div>
       </div>
 
-      {/* Contact Information */}
       <div className="panel" style={{ marginTop: '20px' }}>
         <div className="panel-header"><h3 className="panel-title">Contact Information</h3></div>
         <div className="contact-list">
@@ -2152,7 +2270,6 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
         </div>
       </div>
 
-      {/* Backup & Restore */}
       <div className="panel" style={{ marginTop: '20px' }}>
         <div className="panel-header"><h3 className="panel-title">Backup & Restore</h3></div>
         <div className="backup-section">
@@ -2190,7 +2307,6 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
         </div>
       </div>
 
-      {/* FAQ */}
       <div className="panel" style={{ marginTop: '20px' }}>
         <div className="panel-header"><h3 className="panel-title">Frequently Asked Questions</h3></div>
         <div className="faq-list">
@@ -2252,8 +2368,6 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
   const [error, setError] = useState('');
 
   const handleSubmit = () => {
-    // An Occupied stall with no occupant is a state the rest of the app does not
-    // expect — stall assignment, for one, filters strictly on 'Available'.
     if (status === 'Occupied' && !tenant.trim()) {
       setError('Enter the tenant occupying this stall, or set the status to Available.');
       return;
@@ -2263,8 +2377,6 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
       setError(`Stall ${typedId} already exists. Use a different stall ID.`);
       return;
     }
-    // Generated last: nextId burns a number from the persistent counter, so it
-    // must not run for a submit that is about to be rejected.
     const stallId = typedId || nextId('STL', existingIds);
     onSubmit({ id: stallId, section, tenant: status === 'Available' ? 'Vacant' : (tenant.trim() || 'Vacant'), status, lastInspection: status === 'Available' ? '-' : todayStr() });
   };
@@ -2285,7 +2397,6 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
   );
 }
 
-/** Tick-box list of the documents an applicant has physically submitted. */
 function RequirementsChecklist({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
   const toggle = (req: string) => {
     onChange(selected.includes(req) ? selected.filter((r) => r !== req) : [...selected, req]);
@@ -2346,15 +2457,8 @@ function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: st
   );
 }
 
-/**
- * Shown right after an application is approved: assign a vacant stall and
- * confirm the tenancy details, carried over from the applicant record.
- */
 function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { applicant: Applicant; stalls: Stall[]; tenants: Tenant[]; onSubmit: (t: Tenant) => void; onSkip: () => void }) {
   const takenStalls = useMemo(() => new Set(tenants.map((t) => t.stallId)), [tenants]);
-  // Assignable means Available in the registry *and* unclaimed by any tenant
-  // record. Checking only tenant records would offer a stall the registry
-  // already marks Occupied (e.g. one recorded without a tenant record).
   const vacantStalls = useMemo(
     () => stalls.filter((s) => s.status === 'Available' && !takenStalls.has(s.id)),
     [stalls, takenStalls],
@@ -2458,7 +2562,6 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   const [status, setStatus] = useState('Active');
   const [error, setError] = useState('');
 
-  /** Choosing a known stall pre-selects its section so billing groups correctly. */
   const applyStall = (value: string) => {
     setStallId(value);
     setError('');
@@ -2501,8 +2604,6 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   );
 }
 
-
-
 function AddLogForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]; onSubmit: (l: LogEntry) => void; onCancel: () => void }) {
   const [type, setType] = useState(LOG_TYPES[0]);
   const [details, setDetails] = useState('');
@@ -2527,11 +2628,6 @@ function AddLogForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]
    Detail Views
    ============================================================ */
 
-/**
- * Editable stall record. When a tenant record claims this stall, the occupant
- * and the Occupied status belong to that record — editing them here would
- * desync the two, so they are locked and Tenant Records owns the change.
- */
 function StallDetailView({ stall, occupant, bills, onSave, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onSave: (s: Stall) => void; onClose: () => void }) {
   const [section, setSection] = useState(stall.section);
   const [tenant, setTenant] = useState(stall.tenant === 'Vacant' ? '' : stall.tenant);
@@ -2592,7 +2688,6 @@ function StallDetailView({ stall, occupant, bills, onSave, onClose }: { stall: S
   </>);
 }
 
-/** Editable applicant record: update details, tick requirements, decide status. */
 function ApplicantDetailView({ applicant, onSave, onClose }: { applicant: Applicant; onSave: (a: Applicant) => void; onClose: () => void }) {
   const [name, setName] = useState(applicant.name);
   const [phone, setPhone] = useState(applicant.phone);
@@ -2603,8 +2698,6 @@ function ApplicantDetailView({ applicant, onSave, onClose }: { applicant: Applic
 
   const complete = REQUIREMENTS.every((r) => requirements.includes(r));
 
-  // Ticking boxes moves an in-progress application between Incomplete and
-  // Pending Review, but never overrides a decision already made.
   const updateRequirements = (next: string[]) => {
     setRequirements(next);
     setStatus((prev) => deriveStatus(prev, next));
@@ -2656,7 +2749,6 @@ function ApplicantDetailView({ applicant, onSave, onClose }: { applicant: Applic
   </>);
 }
 
-/** Editable tenant record, with their billing history for context. */
 function TenantDetailView({ tenant, tenants, stalls, bills, onSave, onClose }: { tenant: Tenant; tenants: Tenant[]; stalls: Stall[]; bills: UtilityBill[]; onSave: (t: Tenant) => void; onClose: () => void }) {
   const [name, setName] = useState(tenant.name);
   const [phone, setPhone] = useState(tenant.phone === '—' ? '' : tenant.phone);
@@ -2668,12 +2760,9 @@ function TenantDetailView({ tenant, tenants, stalls, bills, onSave, onClose }: {
 
   const utilitiesBilled = bills.reduce((s, b) => s + b.amount, 0);
 
-  /** Their current stall plus anything genuinely free — a stall another tenant
-      record already holds must not be offered, or two tenants would claim it. */
   const stallOptions = useMemo(() => {
     const taken = new Set(tenants.filter((t) => t.id !== tenant.id).map((t) => t.stallId));
     const ids = stalls.filter((s) => !taken.has(s.id) && (s.id === tenant.stallId || s.status === 'Available')).map((s) => s.id);
-    // Keep a stall recorded on the tenant but missing from the registry selectable.
     if (tenant.stallId && tenant.stallId !== '—' && !ids.includes(tenant.stallId)) ids.unshift(tenant.stallId);
     return ids;
   }, [stalls, tenants, tenant]);
@@ -2731,8 +2820,6 @@ function TenantDetailView({ tenant, tenants, stalls, bills, onSave, onClose }: {
   </>);
 }
 
-
-
 /* ============================================================
    Shared Components
    ============================================================ */
@@ -2762,14 +2849,11 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={map[status] || 'badge'}>{status.toUpperCase()}</span>;
 }
 
-
-
 function BillStatusBadge({ bill }: { bill: UtilityBill }) {
   if (isOverdue(bill)) return <span className="badge badge-overdue">OVERDUE</span>;
   return <span className={`badge ${bill.status === 'Paid' ? 'badge-paid' : 'badge-unpaid'}`}>{bill.status.toUpperCase()}</span>;
 }
 
-/** Compact bill history embedded in stall and tenant detail modals. */
 function BillHistory({ bills, emptyText }: { bills: UtilityBill[]; emptyText: string }) {
   const sorted = [...bills].sort((a, b) => b.period.localeCompare(a.period) || b.id.localeCompare(a.id));
   const outstanding = sorted.filter((b) => b.status === 'Unpaid').reduce((s, b) => s + b.amount, 0);
