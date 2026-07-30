@@ -3,84 +3,64 @@
    ============================================================ */
 
 :root {
-  /* Brand Colors — an institutional navy rather than a bright product blue.
-     Municipal records deserve a palette closer to a seal than to a start-up. */
-  --color-primary: #1b3f72;
-  --color-primary-hover: #142f57;
-  --color-primary-light: #2d5c9e;
-  --color-primary-bg: rgba(27, 63, 114, 0.06);
+  /* Brand Colors */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #3b82f6;
+  --color-primary-bg: rgba(37, 99, 235, 0.08);
 
-  /* Brass — the single accent. Used sparingly: the active nav rule, the
-     wordmark subtitle, and the seal ring. Never as a fill. */
-  --color-accent: #a8813c;
-  --color-accent-light: #c9a563;
-  --color-accent-soft: rgba(168, 129, 60, 0.12);
-
-  /* Sidebar — a flat deep navy. The old blue-to-violet gradient read as a
-     consumer app; a single authoritative field reads as an office. */
-  --sidebar-bg: linear-gradient(180deg, #16325c 0%, #122a4c 100%);
-  --sidebar-bg-hover: rgba(255, 255, 255, 0.07);
-  --sidebar-bg-active: rgba(255, 255, 255, 0.11);
-  --sidebar-border: rgba(255, 255, 255, 0.10);
-  --sidebar-text: rgba(226, 232, 240, 0.78);
+  /* Sidebar — a blue-to-violet gradient with a warm gold active state. */
+  --sidebar-bg: linear-gradient(160deg, #243B8F 0%, #3a3aa0 55%, #4f3fb0 100%);
+  --sidebar-bg-hover: rgba(255, 255, 255, 0.10);
+  --sidebar-bg-active: #e2a63c;
+  --sidebar-border: rgba(255, 255, 255, 0.14);
+  --sidebar-text: rgba(255, 255, 255, 0.82);
   --sidebar-text-active: #ffffff;
-  --sidebar-accent: #d3ac63;
+  /* Sidebar accent for the active pill */
+  --sidebar-accent: #f3c975;
 
   /* Surface */
-  --color-bg: #f4f6f8;
+  --color-bg: #f5f7fb;
   --color-surface: #ffffff;
-  --color-surface-hover: #f8fafc;
-  --color-surface-sunken: #f1f4f7;
-  --color-border: #dfe4ea;
-  --color-border-light: #eceff3;
+  --color-surface-hover: #f9fafb;
+  --color-border: #e5e7eb;
+  --color-border-light: #f0f1f3;
 
   /* Text */
-  --color-text: #16203a;
-  --color-text-secondary: #5a6478;
-  --color-text-tertiary: #8b93a5;
+  --color-text: #1a1f36;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
 
-  /* Status — desaturated a step so they inform without shouting. */
-  --color-success: #15803d;
-  --color-success-bg: #e7f5ec;
-  --color-warning: #b45309;
-  --color-warning-bg: #fdf3e3;
-  --color-danger: #b91c1c;
-  --color-danger-bg: #fbeaea;
-  --color-info: #1b3f72;
-  --color-info-bg: #e8edf5;
+  /* Status */
+  --color-success: #16a34a;
+  --color-success-bg: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fee2e2;
+  --color-info: #2563eb;
+  --color-info-bg: #dbeafe;
 
   /* Layout */
-  --sidebar-width: 248px;
+  --sidebar-width: 240px;
   --topbar-height: 64px;
 
-  /* Radius — tightened. Large pill radii read casual; 10px is the ceiling
-     for a surface, and only genuine pills (badges, avatars) go full. */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 9px;
-  --radius-xl: 11px;
+  /* Radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
 
-  /* Shadows — low, neutral, layered. Colored glows removed. */
-  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.04);
-  --shadow-md: 0 2px 4px rgba(16, 24, 40, 0.05), 0 4px 12px rgba(16, 24, 40, 0.06);
-  --shadow-lg: 0 4px 8px rgba(16, 24, 40, 0.05), 0 12px 28px rgba(16, 24, 40, 0.08);
-
-  /* One typeface throughout. Inter is the only family vendored offline, and
-     display type earns its presence from size, weight and negative tracking
-     rather than from a second font. */
-  --font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-
-  /* Motion — one easing curve and two durations, so every panel, row and
-     control accelerates the same way. */
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --dur-fast: 140ms;
-  --dur: 220ms;
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
 
   /* Font */
-  font-family: var(--font-body);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--color-text);
@@ -90,15 +70,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Figures line up in columns when they share a width. Applied to every
-   number that sits in a table, a stat, or a currency field. */
-.stat-value,
-.data-table td,
-.stat-fraction {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
 }
 
 /* ============================================================
@@ -196,23 +167,21 @@ ul, ol {
 .brand {
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 24px 20px;
+  gap: 12px;
+  padding: 22px 20px 22px;
   border-bottom: 1px solid var(--sidebar-border);
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 
-/* The seal sits in a thin brass ring — the one place the accent is a border
-   rather than a fill, which is how a seal is actually mounted. */
 .brand-logo {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  box-shadow: 0 0 0 1px rgba(211, 172, 99, 0.85), 0 0 0 4px rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5), var(--shadow-sm);
 }
 
 .brand-logo img {
@@ -225,17 +194,17 @@ ul, ol {
   font-size: 15px;
   font-weight: 700;
   color: var(--sidebar-text-active);
-  line-height: 1.25;
-  letter-spacing: -0.005em;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .brand-info p {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   color: var(--sidebar-accent);
-  margin-top: 5px;
+  margin-top: 3px;
 }
 
 /* Navigation */
@@ -260,68 +229,99 @@ ul, ol {
   margin-top: auto;
 }
 
+/* Each row is a real <button>, so it gets the four states a button owes the
+   person using it: rest, hover, press, and keyboard focus. Named properties
+   rather than `all`, so the transform and background ease independently and
+   nothing animates that shouldn't. */
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px 10px 14px;
-  border-radius: var(--radius-sm);
-  font-size: 13.5px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
   font-weight: 500;
-  letter-spacing: 0.005em;
   color: var(--sidebar-text);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease,
+              box-shadow 0.15s ease;
   text-align: left;
   width: 100%;
-}
-
-/* The active marker is a brass rule at the leading edge, not a filled block.
-   It reads as a ledger tab and keeps the accent to a hairline. */
-.nav-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%) scaleY(0.4);
-  width: 3px;
-  height: 60%;
-  border-radius: 0 2px 2px 0;
-  background: var(--sidebar-accent);
-  opacity: 0;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .nav-item:hover {
   background: var(--sidebar-bg-hover);
   color: var(--sidebar-text-active);
+  transform: translateX(2px);
+}
+
+/* Press reads as the row taking the weight: it sinks back toward the rail and
+   the lift on the shadow collapses. */
+.nav-item:active {
+  transform: translateX(1px) scale(0.985);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.22);
+  transition-duration: 60ms;
+}
+
+/* Keyboard focus gets the gold ring — the same accent the active pill uses,
+   so tabbing through the rail is as legible as pointing at it. */
+.nav-item:focus-visible {
+  outline: 2px solid var(--sidebar-accent);
+  outline-offset: 2px;
 }
 
 .nav-item .material-symbols-outlined {
   font-size: 20px;
   flex-shrink: 0;
-  opacity: 0.85;
+  transition: transform 0.15s ease;
+}
+
+.nav-item:hover .material-symbols-outlined {
+  transform: scale(1.08);
 }
 
 .nav-item.active {
   background: var(--sidebar-bg-active);
   color: var(--sidebar-text-active);
-  font-weight: 600;
-}
-
-.nav-item.active::before {
-  opacity: 1;
-  transform: translateY(-50%) scaleY(1);
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
 .nav-item.active .material-symbols-outlined {
-  color: var(--sidebar-accent);
-  opacity: 1;
+  color: var(--sidebar-text-active);
 }
 
-.nav-item:focus-visible {
-  outline: 2px solid var(--sidebar-accent);
-  outline-offset: -2px;
+/* The current page is a destination, not a control — it shouldn't slide or
+   brighten under the pointer as though it were still somewhere to go. */
+.nav-item.active:hover {
+  background: var(--sidebar-bg-active);
+  color: var(--sidebar-text-active);
+  transform: none;
+}
+
+.nav-item.active:active {
+  transform: scale(0.99);
+  background: var(--sidebar-bg-active);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+/* Anyone who has asked the OS to stop moving things gets state through color
+   and shadow alone. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-item,
+  .nav-item .material-symbols-outlined {
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .nav-item:hover,
+  .nav-item:active,
+  .nav-item.active:active,
+  .nav-item:hover .material-symbols-outlined {
+    transform: none;
+  }
 }
 
 /* ============================================================
@@ -372,11 +372,11 @@ ul, ol {
   width: 100%;
   padding: 9px 14px 9px 40px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-sunken);
-  font-size: 13.5px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+  font-size: 14px;
   color: var(--color-text);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .search-input::placeholder {
@@ -385,9 +385,8 @@ ul, ol {
 
 .search-input:focus {
   outline: none;
-  background: var(--color-surface);
   border-color: var(--color-primary-light);
-  box-shadow: 0 0 0 3px rgba(27, 63, 114, 0.12);
+  box-shadow: 0 0 0 3px rgba(43, 93, 212, 0.1);
 }
 
 .topbar-actions {
@@ -424,19 +423,18 @@ ul, ol {
 }
 
 .user-avatar {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-full);
-  background: var(--color-primary);
+  background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary-hover));
   color: white;
   display: grid;
   place-items: center;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.03em;
   overflow: hidden;
   cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(168, 129, 60, 0.55);
+  box-shadow: 0 0 0 2px var(--color-primary-bg);
 }
 
 /* ============================================================
@@ -446,29 +444,26 @@ ul, ol {
 .btn-primary {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 9px 18px;
   background: var(--color-primary);
   color: white;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.01em;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-xs);
-  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  border-radius: var(--radius-full);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .btn-primary:hover {
   background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+  transform: translateY(-1px);
 }
 
 .btn-primary:active {
-  background: var(--color-primary-hover);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+  transform: translateY(0);
 }
 
 .btn-primary .material-symbols-outlined {
@@ -478,21 +473,21 @@ ul, ol {
 .btn-outline {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 9px 18px;
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  border-radius: var(--radius-full);
+  transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .btn-outline:hover {
   background: var(--color-surface-hover);
-  border-color: #c6cedb;
+  border-color: #d1d5db;
 }
 
 .btn-outline .material-symbols-outlined {
@@ -502,43 +497,31 @@ ul, ol {
 .btn-outline-sm {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 13px;
+  gap: 4px;
+  padding: 6px 14px;
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xs);
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
 }
 
 .btn-outline-sm:hover {
   background: var(--color-surface-hover);
   color: var(--color-text);
-  border-color: #c6cedb;
-}
-
-/* One focus treatment for every control, so keyboard operation looks
-   deliberate rather than browser-default. */
-.btn-primary:focus-visible,
-.btn-outline:focus-visible,
-.btn-outline-sm:focus-visible,
-.icon-btn:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
 }
 
 /* ============================================================
    Page Layout
    ============================================================ */
 
-/* A plain canvas. The dotted field competed with every table and chart on
-   the page; the content is the texture. */
 .page-content {
-  padding: 26px 30px 44px;
+  padding: 24px 28px 40px;
   flex: 1;
-  background: var(--color-bg);
+  background-image: radial-gradient(rgba(37, 99, 235, 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 
 .page-header {
@@ -546,24 +529,21 @@ ul, ol {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 22px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 24px;
 }
 
 .page-title {
-  font-size: 25px;
-  font-weight: 700;
+  font-size: 27px;
+  font-weight: 800;
   color: var(--color-text);
-  letter-spacing: -0.022em;
+  letter-spacing: -0.02em;
   line-height: 1.2;
 }
 
 .page-subtitle {
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--color-text-secondary);
-  margin-top: 6px;
-  max-width: 68ch;
+  margin-top: 4px;
 }
 
 .page-actions {
@@ -593,32 +573,42 @@ ul, ol {
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 126px;
+  min-height: 128px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px 20px 18px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xl);
+  padding: 22px 20px 20px;
   box-shadow: var(--shadow-xs);
   overflow: hidden;
-  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-/* A hairline rule in the brand navy instead of a glowing three-stop gradient.
-   Present enough to group the row, quiet enough to read as stationery. */
 .stat-card::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background: var(--color-primary);
-  opacity: 0.85;
+  height: 4px;
+  background: linear-gradient(90deg, #1d4ed8, #3b82f6, #60a5fa);
+  box-shadow: 0 1px 8px rgba(37, 99, 235, 0.45);
+}
+
+.stat-card::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.08), transparent 70%);
+  pointer-events: none;
 }
 
 .stat-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: #cfd6df;
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-3px);
 }
 
 .stat-header {
@@ -628,82 +618,72 @@ ul, ol {
   margin-bottom: 10px;
 }
 
-/* Stat cards that include a Sparkline: number on the left, chart anchored
-   to the right, sitting together in a row beneath the header/icon. */
-.stat-body {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 10px;
-  flex: 1;
+/* The breakdown line under the figure — "188 Occupied, 27 Available". This
+   replaced a decorative sparkline: the curve was generated from the current
+   value rather than from history, so it implied a trend the system never
+   recorded. A split of the same total is smaller and actually true. */
+.stat-caption {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin-top: 5px;
+  font-variant-numeric: tabular-nums;
 }
 
-.stat-sparkline {
-  flex-shrink: 0;
-  overflow: visible;
-  opacity: 0.9;
+/* Nothing follows the caption on most cards, so it takes the slack and keeps
+   the figure pinned to the top of the card. Where a link or progress bar does
+   follow, that element claims the slack instead and the caption sits tight
+   under the number. */
+.stat-caption:last-child {
+  margin-bottom: auto;
 }
 
 .stat-label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   color: var(--color-text-secondary);
 }
 
-/* Squared-off icon plate, tinted rather than gradient-filled. A circular
-   gradient chip is a product motif; a plate reads as a form field marker. */
 .stat-icon {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-sunken);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
   color: var(--color-text-tertiary);
-  font-size: 17px !important;
-  transition: background 0.18s ease, color 0.18s ease;
+  font-size: 18px !important;
+  box-shadow: 0 0 0 4px var(--color-bg);
+  transition: transform 0.2s ease;
 }
 
-.stat-icon.primary {
-  background: var(--color-info-bg);
-  color: var(--color-primary);
+.stat-card:hover .stat-icon {
+  transform: scale(1.08);
 }
 
-.stat-icon.success {
-  background: var(--color-success-bg);
-  color: var(--color-success);
-}
-
-.stat-icon.danger {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
+.stat-icon.primary,
+.stat-icon.success,
+.stat-icon.danger,
 .stat-icon.warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
+  background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
 }
 
 .stat-value {
-  font-size: clamp(24px, 2.1vw, 31px);
+  font-size: clamp(22px, 2.2vw, 32px);
   font-weight: 700;
   color: var(--color-text);
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+  line-height: 1.1;
 }
 
-.stat-value.primary {
-  color: var(--color-primary);
-}
-
-.stat-value.success {
-  color: var(--color-success);
-}
-
+.stat-value.primary,
+.stat-value.success,
 .stat-value.danger {
-  color: var(--color-danger);
+  color: var(--color-primary);
 }
 
 .stat-fraction {
@@ -715,15 +695,15 @@ ul, ol {
 
 .stat-progress {
   margin-top: auto;
-  height: 5px;
-  background: var(--color-surface-sunken);
+  height: 7px;
+  background: var(--color-bg);
   border-radius: var(--radius-full);
   overflow: hidden;
 }
 
 .stat-progress-fill {
   height: 100%;
-  background: var(--color-primary);
+  background: linear-gradient(90deg, var(--color-primary-light), var(--color-primary));
   border-radius: var(--radius-full);
   transition: width 0.6s ease;
 }
@@ -791,70 +771,55 @@ ul, ol {
 .panel {
   position: relative;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
-  transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05), 0 1px 2px rgba(16, 24, 40, 0.03);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
   overflow: hidden;
 }
 
-/* A navy rule along the top edge, always present — it caps every panel the
-   same way the stat cards are capped, so the row of surfaces reads as one
-   set of documents rather than lighting up one at a time under the pointer. */
-.panel::after {
+.panel::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
-  pointer-events: none;
-  z-index: 1;
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-light) 50%, transparent 100%);
+  opacity: 0.6;
 }
 
 .panel:hover {
-  box-shadow: var(--shadow-md);
-  border-color: #c9d2de;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.08), 0 2px 6px rgba(37, 99, 235, 0.06);
+  border-color: rgba(37, 99, 235, 0.15);
 }
 
-/* Header sits on a sunken field with a hairline under it. The title takes a
-   small brass tick so the masthead has an anchor without a heavy fill. */
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 20px;
-  background: linear-gradient(180deg, var(--color-surface-sunken) 0%, #f6f8fa 100%);
-  border-bottom: 1px solid var(--color-border);
+  padding: 18px 20px;
+  background: linear-gradient(180deg, var(--color-primary-bg) 0%, var(--color-surface) 100%);
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .panel-title {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 12.5px;
+  padding-left: 12px;
+  font-size: 16px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
   color: var(--color-text);
 }
 
 .panel-title::before {
   content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
   width: 3px;
-  height: 13px;
   border-radius: var(--radius-full);
-  background: var(--color-accent);
-  flex-shrink: 0;
-  transition: height var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-.panel:hover .panel-title::before {
-  height: 17px;
-  background: var(--color-primary);
+  background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
 }
 
 .panel-body {
@@ -888,59 +853,26 @@ ul, ol {
 }
 
 .chart-bar {
-  position: relative;
   width: 100%;
-  max-width: 44px;
-  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  max-width: 48px;
+  border-radius: var(--radius-md) var(--radius-md) 3px 3px;
   background: linear-gradient(180deg, var(--color-primary-light) 0%, var(--color-primary) 100%);
-  opacity: 0.9;
-  cursor: default;
-  transition: opacity var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
+  box-shadow: 0 0 0 rgba(37, 99, 235, 0);
+  opacity: 0.82;
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .chart-bar:hover {
   opacity: 1;
-  filter: brightness(1.12);
-}
-
-/* The occupied/total figure is already on the element as its title. Lifting
-   it into a chip means the number appears the moment the pointer lands,
-   instead of after the browser's tooltip delay. */
-.chart-bar::after {
-  content: attr(title);
-  position: absolute;
-  bottom: calc(100% + 7px);
-  left: 50%;
-  transform: translateX(-50%) translateY(3px);
-  padding: 3px 8px;
-  border-radius: var(--radius-xs);
-  background: var(--color-text);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-
-.chart-bar:hover::after {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-.chart-bar-group:hover .chart-bar-label {
-  color: var(--color-primary);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  transform: scaleY(1.03);
+  transform-origin: bottom;
 }
 
 .chart-bar-label {
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
   text-align: center;
-  transition: color var(--dur-fast) var(--ease);
 }
 
 /* Activity Feed */
@@ -952,29 +884,28 @@ ul, ol {
 .activity-item {
   display: flex;
   align-items: flex-start;
-  gap: 13px;
-  padding: 13px 20px;
-  border-bottom: 1px solid var(--color-border-light);
-  transition: background 0.15s ease;
+  gap: 14px;
+  padding: 14px 20px;
+  transition: background 0.15s ease, padding-left 0.15s ease;
 }
 
-.activity-item:last-child {
-  border-bottom: none;
-}
-
-/* The old rule shifted padding-left on hover, which nudged every line of the
-   feed sideways. A background change alone keeps the column steady. */
 .activity-item:hover {
   background: var(--color-surface-hover);
+  padding-left: 24px;
 }
 
 .activity-icon {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.activity-item:hover .activity-icon {
+  transform: scale(1.1);
 }
 
 .activity-icon .material-symbols-outlined {
@@ -1032,48 +963,45 @@ ul, ol {
 }
 
 .data-table th {
-  padding: 12px 16px;
-  font-size: 10.5px;
+  padding: 13px 16px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-text-secondary);
+  letter-spacing: 0.06em;
+  color: var(--color-primary);
   text-align: left;
-  background: var(--color-surface-sunken);
-  border-bottom: 1px solid var(--color-border);
-  white-space: nowrap;
+  background: var(--color-primary-bg);
+  border-bottom: 2px solid rgba(37, 99, 235, 0.15);
 }
 
 .data-table td {
-  padding: 13px 16px;
-  font-size: 13.5px;
+  padding: 14px 16px;
+  font-size: 14px;
   color: var(--color-text);
   border-bottom: 1px solid var(--color-border-light);
   vertical-align: middle;
 }
 
 .data-table tbody tr {
-  transition: background 0.12s ease, box-shadow 0.12s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Zebra striping removed — with a ruled row border it doubles up and the
-   result is busy. The hover rule is the only row emphasis. */
+.data-table tbody tr:nth-child(even) {
+  background: rgba(37, 99, 235, 0.015);
+}
+
 .data-table tbody tr:hover {
   background: var(--color-primary-bg);
-  box-shadow: inset 2px 0 0 var(--color-primary);
+  box-shadow: inset 3px 0 0 var(--color-primary);
 }
 
 .data-table tbody tr:last-child td {
   border-bottom: none;
 }
 
-/* Names of record carry a touch more weight than surrounding cells so a
-   person reads as a person and not as another data point. */
 .tenant-cell {
-  font-style: normal;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--color-text);
+  font-style: italic;
+  color: var(--color-text-secondary);
 }
 
 /* A <button>, not a <span>, so every row action can be tabbed to and activated
@@ -1155,26 +1083,23 @@ ul, ol {
    Status Badges
    ============================================================ */
 
-/* Tinted fill plus a hairline of the same hue — the border is what keeps a
-   pale pill from dissolving into a white table row. */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  font-size: 10.5px;
+  gap: 5px;
+  padding: 4px 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  letter-spacing: 0.04em;
   border-radius: var(--radius-full);
   white-space: nowrap;
 }
 
 .badge::before {
   content: '';
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
   flex-shrink: 0;
@@ -1354,7 +1279,7 @@ ul, ol {
   background: var(--color-primary);
   color: white;
   font-weight: 600;
-  box-shadow: var(--shadow-xs);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
 }
 
 .page-btn:disabled {
@@ -1431,45 +1356,23 @@ ul, ol {
 }
 
 .stat-pill {
-  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 13px 16px 13px 18px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-sunken);
-  border: 1px solid var(--color-border);
-  overflow: hidden;
-  transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease),
-              background var(--dur) var(--ease);
-}
-
-/* A navy edge marker slides in from the left on hover, matching the row
-   treatment in the data tables so both lists behave the same way. */
-.stat-pill::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--color-primary);
-  transform: scaleY(0);
-  transition: transform var(--dur) var(--ease);
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-light);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .stat-pill:hover {
-  background: var(--color-surface);
   box-shadow: var(--shadow-sm);
-  border-color: #c9d2de;
-}
-
-.stat-pill:hover::before {
-  transform: scaleY(1);
+  border-color: var(--color-primary-light);
 }
 
 .stat-pill span {
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--color-text-secondary);
 }
 
@@ -1477,8 +1380,6 @@ ul, ol {
   font-size: 18px;
   font-weight: 700;
   color: var(--color-text);
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Analytics Distribution */
@@ -1494,40 +1395,28 @@ ul, ol {
 }
 
 .distribution-item {
-  position: relative;
   flex: 1;
   min-width: 120px;
   padding: 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-sunken);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg);
   text-align: center;
-  overflow: hidden;
-  transition: box-shadow var(--dur) var(--ease), background var(--dur) var(--ease),
-              border-color var(--dur) var(--ease);
+  transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 
 .distribution-item:hover {
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   background: var(--color-surface);
-  border-color: #c9d2de;
-}
-
-.distribution-item:hover .dist-count {
-  color: var(--color-primary);
+  border-color: rgba(37, 99, 235, 0.2);
+  transform: translateY(-2px);
 }
 
 .distribution-item .dist-count {
-  transition: color var(--dur) var(--ease);
-}
-
-.distribution-item .dist-count {
-  font-size: 27px;
+  font-size: 28px;
   font-weight: 700;
   color: var(--color-text);
   line-height: 1.2;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
 }
 
 .distribution-item .dist-label {
@@ -1800,7 +1689,7 @@ ul, ol {
 .modal-card {
   background: var(--color-surface);
   border-radius: var(--radius-lg);
-  box-shadow: 0 20px 48px -12px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(16, 24, 40, 0.06);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.4), 0 0 0 1px rgba(37, 99, 235, 0.05);
   width: 100%;
   max-width: 520px;
   max-height: 90vh;
@@ -1901,7 +1790,7 @@ ul, ol {
 .form-textarea:focus {
   outline: none;
   border-color: var(--color-primary-light);
-  box-shadow: 0 0 0 3px rgba(27, 63, 114, 0.12);
+  box-shadow: 0 0 0 3px rgba(43, 93, 212, 0.1);
 }
 
 .form-select {
@@ -2169,13 +2058,11 @@ ul, ol {
   flex-shrink: 0;
 }
 
-/* Flat, muted, and drawn from one family. Five saturated gradients made the
-   Support page look like a social app; these read as a staff directory. */
-.contact-avatar.blue { background: #1b3f72; }
-.contact-avatar.teal { background: #2f6b63; }
-.contact-avatar.purple { background: #4b4570; }
-.contact-avatar.rose { background: #7d3a44; }
-.contact-avatar.amber { background: #8a6a2f; }
+.contact-avatar.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.contact-avatar.teal { background: linear-gradient(135deg, #14b8a6, #0d9488); }
+.contact-avatar.purple { background: linear-gradient(135deg, #a855f7, #7c3aed); }
+.contact-avatar.rose { background: linear-gradient(135deg, #f43f5e, #e11d48); }
+.contact-avatar.amber { background: linear-gradient(135deg, #f59e0b, #d97706); }
 
 .contact-info {
   display: flex;
@@ -2266,12 +2153,12 @@ ul, ol {
 
 .backup-icon.download {
   color: var(--color-primary);
-  background: var(--color-info-bg);
+  background: rgba(43, 93, 212, 0.08);
 }
 
 .backup-icon.upload {
-  color: #2f6b63;
-  background: rgba(47, 107, 99, 0.10);
+  color: #14b8a6;
+  background: rgba(20, 184, 166, 0.08);
 }
 
 .backup-divider {

@@ -368,96 +368,6 @@ function paginate<T>(items: T[], page: number, perPage = ITEMS_PER_PAGE) {
   };
 }
 
-/**
- * Tiny inline sparkline — draws a smooth line + soft fill through a set of
- * values, no chart library needed. Purely decorative: the app doesn't store
- * historical daily/weekly snapshots, so this doesn't represent a real trend.
- * See trendFrom() below for how the shape is derived from a live number.
- */
-function Sparkline({ data, width = 84, height = 34, color = 'var(--color-primary)' }: { data: number[]; width?: number; height?: number; color?: string }) {
-  if (data.length < 2) return null;
-  const max = Math.max(...data);
-  const min = Math.min(...data);
-  const range = max - min || 1;
-  const stepX = width / (data.length - 1);
-  const top = 4;
-  const bottom = height - 6;
-
-  const points = data.map((v, i) => {
-    const x = i * stepX;
-    const y = bottom - ((v - min) / range) * (bottom - top);
-    return [x, y];
-  });
-
-  /** Catmull-Rom → cubic Bezier conversion for a smooth, flowing curve
-      instead of straight jagged segments between points. */
-  const toSmoothPath = (pts: number[][]) => {
-    let d = `M ${pts[0][0]},${pts[0][1]}`;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i === 0 ? i : i - 1];
-      const p1 = pts[i];
-      const p2 = pts[i + 1];
-      const p3 = pts[i + 2 === pts.length ? i + 1 : i + 2];
-      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
-      const c1y = p1[1] + (p2[1] - p0[1]) / 6;
-      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
-      const c2y = p2[1] - (p3[1] - p1[1]) / 6;
-      d += ` C ${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
-    }
-    return d;
-  };
-
-  const linePath = toSmoothPath(points);
-  const fillPath = `${linePath} L${width},${height} L0,${height} Z`;
-  const [endX, endY] = points[points.length - 1];
-  const uid = `${Math.round(min)}-${Math.round(max)}-${data.length}-${Math.round(data[data.length - 1])}`;
-  const gradientId = `spark-fill-${uid}`;
-  const lineGradientId = `spark-line-${uid}`;
-
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="stat-sparkline">
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
-          <stop offset="65%" stopColor={color} stopOpacity="0.05" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-        <linearGradient id={lineGradientId} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={color} stopOpacity="0.5" />
-          <stop offset="100%" stopColor={color} stopOpacity="1" />
-        </linearGradient>
-      </defs>
-      {/* Faint baseline for a grounded, formal chart feel rather than a line floating in empty space. */}
-      <line x1="0" y1={height - 1} x2={width} y2={height - 1} stroke="var(--color-border)" strokeWidth="1" opacity="0.6" />
-      <path d={fillPath} fill={`url(#${gradientId})`} stroke="none" />
-      <path d={linePath} fill="none" stroke={`url(#${lineGradientId})`} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={endX} cy={endY} r="5" fill={color} opacity="0.15" />
-      <circle cx={endX} cy={endY} r="2.5" fill={color} stroke="var(--color-surface)" strokeWidth="1.25" />
-    </svg>
-  );
-}
-
-/**
- * Fabricates a gentle 6-point trend line that ends at `value`. Deterministic
- * (seeded from the value + a label) so the same stat always draws the same
- * shape instead of jittering on every render — but it is decorative, not a
- * record of what this number actually did over time.
- */
-function trendFrom(value: number, seedLabel = ''): number[] {
-  let seed = value * 31 + seedLabel.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
-  const rand = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  const base = Math.max(value, 1);
-  const points: number[] = [];
-  for (let i = 0; i < 5; i++) {
-    points.push(Math.max(0, base * (0.65 + rand() * 0.35)));
-  }
-  points.push(value);
-  return points;
-}
-
 function todayStr() {
   return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -821,21 +731,21 @@ function App() {
         </div>
         <nav className="nav-main">
           {navigation.map((item) => (
-            <button key={item.key} className={`nav-item${active === item.key ? ' active' : ''}`} onClick={() => { setActive(item.key); setSearchTerm(''); }}>
-              <span className="material-symbols-outlined">{item.icon}</span>
+            <button key={item.key} type="button" aria-current={active === item.key ? 'page' : undefined} className={`nav-item${active === item.key ? ' active' : ''}`} onClick={() => { setActive(item.key); setSearchTerm(''); }}>
+              <span className="material-symbols-outlined" aria-hidden="true">{item.icon}</span>
               <span>{item.label}</span>
             </button>
           ))}
         </nav>
         <nav className="nav-bottom">
-          <button className={`nav-item${active === 'settings' ? ' active' : ''}`} onClick={() => setActive('settings')}>
-            <span className="material-symbols-outlined">settings</span><span>Settings</span>
+          <button type="button" aria-current={active === 'settings' ? 'page' : undefined} className={`nav-item${active === 'settings' ? ' active' : ''}`} onClick={() => setActive('settings')}>
+            <span className="material-symbols-outlined" aria-hidden="true">settings</span><span>Settings</span>
           </button>
-          <button className={`nav-item${active === 'support' ? ' active' : ''}`} onClick={() => setActive('support')}>
-            <span className="material-symbols-outlined">help</span><span>Support</span>
+          <button type="button" aria-current={active === 'support' ? 'page' : undefined} className={`nav-item${active === 'support' ? ' active' : ''}`} onClick={() => setActive('support')}>
+            <span className="material-symbols-outlined" aria-hidden="true">help</span><span>Support</span>
           </button>
-          <button className="nav-item" onClick={handleLogout}>
-            <span className="material-symbols-outlined">logout</span><span>Log Out</span>
+          <button type="button" className="nav-item" onClick={handleLogout}>
+            <span className="material-symbols-outlined" aria-hidden="true">logout</span><span>Log Out</span>
           </button>
         </nav>
       </aside>
@@ -966,6 +876,15 @@ function DashboardPage({ state, occupiedCount, pendingApplicants, outstandingUti
   const occupancyPct = ratio(occupiedCount, state.stalls.length);
   const activeTenants = state.tenants.filter(t => t.status === 'Active').length;
 
+  /* Breakdowns for the caption line under each stat. Every figure is counted
+     from live records — the cards used to carry a fabricated sparkline, and a
+     real split of the same total is worth more than a decorative curve. */
+  const availableCount = state.stalls.filter(s => s.status === 'Available').length;
+  const maintenanceCount = state.stalls.filter(s => s.status === 'Maintenance').length;
+  const expiringTenants = state.tenants.filter(t => t.status === 'Expiring Soon').length;
+  const incompleteApplicants = state.applicants.filter(a => a.status === 'Incomplete').length;
+  const overdueBillCount = state.utilities.filter(isOverdue).length;
+
   const sections = Array.from(new Set(state.stalls.map(s => s.section)));
 
   return (
@@ -973,38 +892,31 @@ function DashboardPage({ state, occupiedCount, pendingApplicants, outstandingUti
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{state.stalls.length}</div>
-            <Sparkline data={trendFrom(state.stalls.length, 'total-stalls')} />
-          </div>
+          <div className="stat-value">{state.stalls.length}</div>
+          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available{maintenanceCount > 0 ? `, ${maintenanceCount} Maintenance` : ''}</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Occupancy</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
           <div className="stat-value">{occupiedCount}<span className="stat-fraction">/ {state.stalls.length}</span></div>
+          <div className="stat-caption">{percent(occupancyPct)} of stalls in use</div>
           <div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${occupancyPct}%` }} /></div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Active Tenants</span><span className="material-symbols-outlined stat-icon primary">groups</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{activeTenants}</div>
-            <Sparkline data={trendFrom(activeTenants, 'active-tenants')} />
-          </div>
+          <div className="stat-value">{activeTenants}</div>
+          <div className="stat-caption">{state.tenants.length} on record, {expiringTenants} Expiring</div>
           <button type="button" className="stat-link" onClick={() => onNavigate('tenants')}>View Tenants</button>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Pending Applicants</span><span className="material-symbols-outlined stat-icon warning">pending_actions</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{pendingApplicants}</div>
-            <Sparkline data={trendFrom(pendingApplicants, 'pending-applicants')} />
-          </div>
+          <div className="stat-value">{pendingApplicants}</div>
+          <div className="stat-caption">{incompleteApplicants} Incomplete, {state.applicants.length} Total</div>
           <button type="button" className="stat-link" onClick={() => onNavigate('applicants')}>Review Now</button>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Unpaid Utilities</span><span className="material-symbols-outlined stat-icon danger">bolt</span></div>
-          <div className="stat-body">
-            <div className="stat-value danger">{moneyShort(outstandingUtilities)}</div>
-            <Sparkline data={trendFrom(outstandingUtilities, 'unpaid-utilities')} />
-          </div>
+          <div className="stat-value danger">{moneyShort(outstandingUtilities)}</div>
+          <div className="stat-caption">{unpaidBillCount} Unpaid, {overdueBillCount} Overdue</div>
           <button type="button" className="stat-link" onClick={() => onNavigate('utilities')}>{unpaidBillCount} bill{unpaidBillCount === 1 ? '' : 's'} outstanding</button>
         </div>
       </div>
@@ -1066,31 +978,23 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{stalls.length}</div>
-            <Sparkline data={trendFrom(stalls.length, 'stalls-total')} />
-          </div>
+          <div className="stat-value">{stalls.length}</div>
+          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Occupied</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
-          <div className="stat-body">
-            <div className="stat-value primary">{occupiedCount}</div>
-            <Sparkline data={trendFrom(occupiedCount, 'stalls-occupied')} />
-          </div>
+          <div className="stat-value primary">{occupiedCount}</div>
+          <div className="stat-caption">{percent(ratio(occupiedCount, stalls.length))} of {stalls.length} stalls</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Available</span><span className="material-symbols-outlined stat-icon">inventory_2</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{availableCount}</div>
-            <Sparkline data={trendFrom(availableCount, 'stalls-available')} />
-          </div>
+          <div className="stat-value">{availableCount}</div>
+          <div className="stat-caption">{percent(ratio(availableCount, stalls.length))} of {stalls.length} stalls</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Maintenance</span><span className="material-symbols-outlined stat-icon danger">build</span></div>
-          <div className="stat-body">
-            <div className="stat-value danger">{maintenanceCount}</div>
-            <Sparkline data={trendFrom(maintenanceCount, 'stalls-maintenance')} />
-          </div>
+          <div className="stat-value danger">{maintenanceCount}</div>
+          <div className="stat-caption">{maintenanceCount === 0 ? 'None out of service' : `${maintenanceCount} out of service`}</div>
         </div>
       </div>
       <div className="panel">
@@ -1143,31 +1047,23 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Applicants</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{applicants.length}</div>
-            <Sparkline data={trendFrom(applicants.length, 'applicants-total')} />
-          </div>
+          <div className="stat-value">{applicants.length}</div>
+          <div className="stat-caption">{pendingApplicants} Pending, {approvedApplicants} Approved</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Pending Review</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{pendingApplicants}</div>
-            <Sparkline data={trendFrom(pendingApplicants, 'applicants-pending')} />
-          </div>
+          <div className="stat-value">{pendingApplicants}</div>
+          <div className="stat-caption">{percent(ratio(pendingApplicants, applicants.length))} of all applicants</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Incomplete Docs</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{incompleteApplicants}</div>
-            <Sparkline data={trendFrom(incompleteApplicants, 'applicants-incomplete')} />
-          </div>
+          <div className="stat-value">{incompleteApplicants}</div>
+          <div className="stat-caption">{incompleteApplicants === 0 ? 'All requirements filed' : 'Awaiting requirements'}</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Approved (This Mo.)</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{approvedApplicants}</div>
-            <Sparkline data={trendFrom(approvedApplicants, 'applicants-approved')} />
-          </div>
+          <div className="stat-value">{approvedApplicants}</div>
+          <div className="stat-caption">{applicants.filter(a => a.status === 'Rejected').length} Rejected, {applicants.length} Total</div>
         </div>
       </div>
       <div className="panel">
@@ -1219,6 +1115,10 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenan
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
 
+  const activeCount = tenants.filter(t => t.status === 'Active').length;
+  const expiringCount = tenants.filter(t => t.status === 'Expiring Soon').length;
+  const monthlyRent = tenants.reduce((s, t) => s + t.rent, 0);
+
   useEffect(() => { setPage(1); }, [search]);
 
   const filtered = useMemo(() => tenants.filter((t) => {
@@ -1242,31 +1142,23 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenan
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Tenants</span><span className="material-symbols-outlined stat-icon">groups</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{tenants.length}</div>
-            <Sparkline data={trendFrom(tenants.length, 'tenants-total')} />
-          </div>
+          <div className="stat-value">{tenants.length}</div>
+          <div className="stat-caption">{activeCount} Active, {expiringCount} Expiring</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Active</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div>
-          <div className="stat-body">
-            <div className="stat-value success">{tenants.filter(t => t.status === 'Active').length}</div>
-            <Sparkline data={trendFrom(tenants.filter(t => t.status === 'Active').length, 'tenants-active')} />
-          </div>
+          <div className="stat-value success">{activeCount}</div>
+          <div className="stat-caption">{percent(ratio(activeCount, tenants.length))} of all tenants</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Expiring Soon</span><span className="material-symbols-outlined stat-icon warning">schedule</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{tenants.filter(t => t.status === 'Expiring Soon').length}</div>
-            <Sparkline data={trendFrom(tenants.filter(t => t.status === 'Expiring Soon').length, 'tenants-expiring')} />
-          </div>
+          <div className="stat-value">{expiringCount}</div>
+          <div className="stat-caption">{expiringCount === 0 ? 'No leases due' : 'Leases due for renewal'}</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Monthly Revenue</span><span className="material-symbols-outlined stat-icon primary">payments</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{moneyShort(tenants.reduce((s, t) => s + t.rent, 0))}</div>
-            <Sparkline data={trendFrom(tenants.reduce((s, t) => s + t.rent, 0), 'tenants-revenue')} />
-          </div>
+          <div className="stat-value">{moneyShort(monthlyRent)}</div>
+          <div className="stat-caption">{money(Math.round(monthlyRent / Math.max(tenants.length, 1)))} average rent</div>
         </div>
       </div>
       <div className="panel">
@@ -1326,6 +1218,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
       water: bills.filter((b) => b.type === 'Water').reduce((s, b) => s + b.amount, 0),
       unpaid: bills.filter((b) => b.status === 'Unpaid').reduce((s, b) => s + b.amount, 0),
       unpaidCount: bills.filter((b) => b.status === 'Unpaid').length,
+      paidCount: bills.filter((b) => b.status === 'Paid').length,
       overdueCount: bills.filter(isOverdue).length,
       kwh: bills.filter((b) => b.type === 'Electricity').reduce((s, b) => s + b.consumption, 0),
       cubic: bills.filter((b) => b.type === 'Water').reduce((s, b) => s + b.consumption, 0),
@@ -1345,35 +1238,23 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Billed</span><span className="material-symbols-outlined stat-icon primary">receipt_long</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{moneyShort(totals.billed)}</div>
-            <Sparkline data={trendFrom(totals.billed, 'billed-total')} />
-          </div>
-          <span className="stat-link" style={{ cursor: 'default' }}>{bills.length} bill{bills.length === 1 ? '' : 's'} on record</span>
+          <div className="stat-value">{moneyShort(totals.billed)}</div>
+          <div className="stat-caption">{bills.length} bill{bills.length === 1 ? '' : 's'} on record, {totals.paidCount} Paid</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Electricity</span><span className="material-symbols-outlined stat-icon warning">bolt</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{moneyShort(totals.electricity)}</div>
-            <Sparkline data={trendFrom(totals.electricity, 'billed-electricity')} />
-          </div>
-          <span className="stat-link" style={{ cursor: 'default' }}>{totals.kwh.toLocaleString()} kWh billed</span>
+          <div className="stat-value">{moneyShort(totals.electricity)}</div>
+          <div className="stat-caption">{totals.kwh.toLocaleString()} kWh billed</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Water</span><span className="material-symbols-outlined stat-icon primary">water_drop</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{moneyShort(totals.water)}</div>
-            <Sparkline data={trendFrom(totals.water, 'billed-water')} />
-          </div>
-          <span className="stat-link" style={{ cursor: 'default' }}>{totals.cubic.toLocaleString()} m³ billed</span>
+          <div className="stat-value">{moneyShort(totals.water)}</div>
+          <div className="stat-caption">{totals.cubic.toLocaleString()} m³ billed</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Outstanding</span><span className="material-symbols-outlined stat-icon danger">payments</span></div>
-          <div className="stat-body">
-            <div className="stat-value danger">{moneyShort(totals.unpaid)}</div>
-            <Sparkline data={trendFrom(totals.unpaid, 'billed-outstanding')} />
-          </div>
-          <span className="stat-link" style={{ cursor: 'default' }}>{totals.unpaidCount} unpaid · {totals.overdueCount} overdue</span>
+          <div className="stat-value danger">{moneyShort(totals.unpaid)}</div>
+          <div className="stat-caption">{totals.unpaidCount} Unpaid, {totals.overdueCount} Overdue</div>
         </div>
       </div>
 
@@ -1705,31 +1586,23 @@ function ViolationsPage({ violations, search, onAdd, onView, onToggleStatus, onD
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Violations</span><span className="material-symbols-outlined stat-icon">gavel</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{violations.length}</div>
-            <Sparkline data={trendFrom(violations.length, 'violations-total')} />
-          </div>
+          <div className="stat-value">{violations.length}</div>
+          <div className="stat-caption">{openList.length} Open, {violations.length - openList.length} Resolved</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Open</span><span className="material-symbols-outlined stat-icon danger">error</span></div>
-          <div className="stat-body">
-            <div className="stat-value danger">{openList.length}</div>
-            <Sparkline data={trendFrom(openList.length, 'violations-open')} />
-          </div>
+          <div className="stat-value danger">{openList.length}</div>
+          <div className="stat-caption">{percent(ratio(openList.length, violations.length))} of all cases</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Resolved</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div>
-          <div className="stat-body">
-            <div className="stat-value success">{violations.length - openList.length}</div>
-            <Sparkline data={trendFrom(violations.length - openList.length, 'violations-resolved')} />
-          </div>
+          <div className="stat-value success">{violations.length - openList.length}</div>
+          <div className="stat-caption">{percent(ratio(violations.length - openList.length, violations.length))} of all cases</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Open Demerit Points</span><span className="material-symbols-outlined stat-icon warning">warning</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{openPoints}</div>
-            <Sparkline data={trendFrom(openPoints, 'violations-points')} />
-          </div>
+          <div className="stat-value">{openPoints}</div>
+          <div className="stat-caption">Across {openList.length} open case{openList.length === 1 ? '' : 's'}</div>
         </div>
       </div>
 
@@ -1929,27 +1802,26 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
         <div className="page-actions"><button className="btn-primary" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Report</button></div>
       </div>
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-header"><span className="stat-label">Occupancy Rate</span><span className="material-symbols-outlined stat-icon primary">pie_chart</span></div><div className="stat-value primary">{percent(ratio(occupiedCount, totalStalls))}</div><div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${ratio(occupiedCount, totalStalls)}%` }} /></div></div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Occupancy Rate</span><span className="material-symbols-outlined stat-icon primary">pie_chart</span></div>
+          <div className="stat-value primary">{percent(ratio(occupiedCount, totalStalls))}</div>
+          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available</div>
+          <div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${ratio(occupiedCount, totalStalls)}%` }} /></div>
+        </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Active Tenants</span><span className="material-symbols-outlined stat-icon success">groups</span></div>
-          <div className="stat-body">
-            <div className="stat-value success">{activeTenants}</div>
-            <Sparkline data={trendFrom(activeTenants, 'analytics-active-tenants')} />
-          </div>
+          <div className="stat-value success">{activeTenants}</div>
+          <div className="stat-caption">{state.tenants.length} on record, {availableCount} stalls open</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Pending Applications</span><span className="material-symbols-outlined stat-icon warning">person_add</span></div>
-          <div className="stat-body">
-            <div className="stat-value">{pendingApplicants}</div>
-            <Sparkline data={trendFrom(pendingApplicants, 'analytics-pending')} />
-          </div>
+          <div className="stat-value">{pendingApplicants}</div>
+          <div className="stat-caption">{incompleteApplicants} Incomplete, {approvedApplicants} Approved</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Open Violations</span><span className="material-symbols-outlined stat-icon danger">gavel</span></div>
-          <div className="stat-body">
-            <div className="stat-value danger">{openViolations}</div>
-            <Sparkline data={trendFrom(openViolations, 'analytics-violations')} />
-          </div>
+          <div className="stat-value danger">{openViolations}</div>
+          <div className="stat-caption">{state.violations.length} total, {state.violations.length - openViolations} Resolved</div>
         </div>
       </div>
       <div className="analytics-grid">
