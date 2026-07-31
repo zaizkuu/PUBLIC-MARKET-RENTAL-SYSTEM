@@ -1006,7 +1006,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div className="table-wrap">
           <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Last Inspection</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="action-link" onClick={() => onView(s)}>View Details</button><button type="button" className="action-link danger" onClick={() => onDelete(s)}>Delete</button></div></td></tr>))}
+              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
               {paged.items.length === 0 && <tr><td colSpan={6}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
             </tbody>
           </table>
@@ -1092,7 +1092,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
                       </div>
                     </td>
                     <td><StatusBadge status={a.status} /></td>
-                    <td><div className="row-actions"><button type="button" className="action-link" onClick={() => onView(a)}>Review</button><button type="button" className="action-link danger" onClick={() => onDelete(a)}>Delete</button></div></td>
+                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="Review applicant" aria-label="Review applicant" onClick={() => onView(a)}><span className="material-symbols-outlined">person_search</span></button><button type="button" className="row-icon-btn danger" title="Delete applicant" aria-label="Delete applicant" onClick={() => onDelete(a)}><span className="material-symbols-outlined">delete</span></button></div></td>
                   </tr>
                 );
               })}
@@ -1170,7 +1170,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenan
         <div className="table-wrap">
           <table className="data-table"><thead><tr><th>Tenant ID</th><th>Name</th><th>Stall ID</th><th>Section</th><th>Monthly Rent</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((t) => (<tr key={t.id}><td><strong>{t.id}</strong></td><td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{t.phone || '—'}</div></div></td><td>{t.stallId}</td><td>{t.section}</td><td>{money(t.rent)}</td><td><TenantStatusBadge status={t.status} /></td><td><div className="row-actions"><button type="button" className="action-link" onClick={() => onView(t)}>View Details</button><button type="button" className="action-link danger" onClick={() => onDelete(t)}>Delete</button></div></td></tr>))}
+              {paged.items.map((t) => (<tr key={t.id}><td><strong>{t.id}</strong></td><td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{t.phone || '—'}</div></div></td><td>{t.stallId}</td><td>{t.section}</td><td>{money(t.rent)}</td><td><TenantStatusBadge status={t.status} /></td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
               {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">groups</span>No tenants match the current filters.</div></td></tr>}
             </tbody>
           </table>
@@ -1283,9 +1283,9 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
                   <td><BillStatusBadge bill={b} /></td>
                   <td>
                     <div className="row-actions">
-                      <button type="button" className="action-link" onClick={() => onView(b)}>View</button>
-                      <button type="button" className="action-link" onClick={() => onToggleStatus(b.id)}>{b.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>
-                      <button type="button" className="action-link danger" onClick={() => onDelete(b)}>Delete</button>
+                      <button type="button" className="row-icon-btn" title="View bill" aria-label="View bill" onClick={() => onView(b)}><span className="material-symbols-outlined">visibility</span></button>
+                      <button type="button" className="row-icon-btn" title={b.status === 'Paid' ? 'Mark unpaid' : 'Mark paid'} aria-label={b.status === 'Paid' ? 'Mark unpaid' : 'Mark paid'} onClick={() => onToggleStatus(b.id)}><span className="material-symbols-outlined">{b.status === 'Paid' ? 'undo' : 'check_circle'}</span></button>
+                      <button type="button" className="row-icon-btn danger" title="Delete bill" aria-label="Delete bill" onClick={() => onDelete(b)}><span className="material-symbols-outlined">delete</span></button>
                     </div>
                   </td>
                 </tr>
@@ -1636,9 +1636,9 @@ function ViolationsPage({ violations, search, onAdd, onView, onToggleStatus, onD
                   <td><StatusBadge status={v.status} /></td>
                   <td>
                     <div className="row-actions">
-                      <button type="button" className="action-link" onClick={() => onView(v)}>View</button>
-                      <button type="button" className="action-link" onClick={() => onToggleStatus(v.id)}>{v.status === 'Open' ? 'Resolve' : 'Reopen'}</button>
-                      <button type="button" className="action-link danger" onClick={() => onDelete(v)}>Delete</button>
+                      <button type="button" className="row-icon-btn" title="View violation" aria-label="View violation" onClick={() => onView(v)}><span className="material-symbols-outlined">visibility</span></button>
+                      <button type="button" className="row-icon-btn" title={v.status === 'Open' ? 'Resolve violation' : 'Reopen violation'} aria-label={v.status === 'Open' ? 'Resolve violation' : 'Reopen violation'} onClick={() => onToggleStatus(v.id)}><span className="material-symbols-outlined">{v.status === 'Open' ? 'check_circle' : 'replay'}</span></button>
+                      <button type="button" className="row-icon-btn danger" title="Delete violation" aria-label="Delete violation" onClick={() => onDelete(v)}><span className="material-symbols-outlined">delete</span></button>
                     </div>
                   </td>
                 </tr>
@@ -2008,7 +2008,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEnt
               <span className="log-time">{log.time}</span>
               <span className="log-type">{log.type}</span>
               <span className="log-details">{log.details}</span>
-              <button type="button" className="action-link danger" onClick={() => onDelete(log)}>Delete</button>
+              <button type="button" className="row-icon-btn danger" title="Delete log entry" aria-label="Delete log entry" onClick={() => onDelete(log)}><span className="material-symbols-outlined">delete</span></button>
             </div>
           ))}
           {paged.items.length === 0 && <div className="empty-state"><span className="material-symbols-outlined">menu_book</span>No log entries found.</div>}
@@ -2612,8 +2612,8 @@ function ApplicantDetailView({ applicant, onSave, onClose }: { applicant: Applic
       <div className="applicant-decision">
         <button className="btn-outline" onClick={onClose}>Cancel</button>
         <div className="applicant-decision-right">
-          {applicant.status !== 'Rejected' && <button className="btn-danger" onClick={() => commit('Rejected')}><span className="material-symbols-outlined">close</span>Reject</button>}
-          {applicant.status !== 'Approved' && <button className="btn-success" onClick={() => commit('Approved')}><span className="material-symbols-outlined">check_circle</span>Approve</button>}
+          {applicant.status !== 'Rejected' && <button className="btn-outline-danger" onClick={() => commit('Rejected')}>Reject</button>}
+          {applicant.status !== 'Approved' && <button className="btn-outline-success" onClick={() => commit('Approved')}>Approve</button>}
           <button className="btn-primary" onClick={() => commit(status)}>Save Changes</button>
         </div>
       </div>
@@ -2718,12 +2718,12 @@ function StatusBadge({ status }: { status: string }) {
     'Pending Review': 'badge badge-pending', 'Incomplete': 'badge badge-incomplete', 'Approved': 'badge badge-approved', 'Rejected': 'badge badge-rejected',
     'Active': 'badge badge-active', 'Expiring Soon': 'badge badge-expiring', 'Open': 'badge badge-open', 'Resolved': 'badge badge-resolved',
   };
-  return <span className={map[status] || 'badge'}>{status.toUpperCase()}</span>;
+  return <span className={map[status] || 'badge'}>{status}</span>;
 }
 
 function BillStatusBadge({ bill }: { bill: UtilityBill }) {
-  if (isOverdue(bill)) return <span className="badge badge-overdue">OVERDUE</span>;
-  return <span className={`badge ${bill.status === 'Paid' ? 'badge-paid' : 'badge-unpaid'}`}>{bill.status.toUpperCase()}</span>;
+  if (isOverdue(bill)) return <span className="badge badge-overdue">Overdue</span>;
+  return <span className={`badge ${bill.status === 'Paid' ? 'badge-paid' : 'badge-unpaid'}`}>{bill.status}</span>;
 }
 
 function BillHistory({ bills, emptyText }: { bills: UtilityBill[]; emptyText: string }) {
@@ -2787,9 +2787,10 @@ function BillDetailView({ bill, onToggleStatus, onClose }: { bill: UtilityBill; 
 }
 
 function TenantStatusBadge({ status }: { status: string }) {
-  if (status === 'Active') return <span className="tenant-status"><span className="status-dot active" /><span>Active</span></span>;
-  if (status === 'Expiring Soon') return <span className="tenant-status"><span className="status-dot expiring" /><span>Expiring Soon</span></span>;
-  return <span>{status}</span>;
+  const map: Record<string, string> = {
+    'Active': 'badge badge-active', 'Expiring Soon': 'badge badge-expiring',
+  };
+  return <span className={map[status] || 'badge'}>{status}</span>;
 }
 
 export default App;
