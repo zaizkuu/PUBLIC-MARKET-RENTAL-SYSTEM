@@ -770,8 +770,8 @@ ul, ol {
   align-items: center;
   justify-content: space-between;
   padding: 18px 20px;
-  background: linear-gradient(180deg, var(--color-primary-bg) 0%, var(--color-surface) 100%);
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .panel-title {
