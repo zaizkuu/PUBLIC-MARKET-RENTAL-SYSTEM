@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 
 /* ============================================================
    Types
@@ -28,6 +29,7 @@ type ModalType =
   | null
   | 'add-stall' | 'add-applicant' | 'add-tenant' | 'add-log' | 'assign-stall' | 'add-violation'
   | 'view-stall' | 'view-applicant' | 'view-tenant' | 'view-bill' | 'view-violation'
+  | 'edit-tenant' | 'edit-stall' | 'edit-applicant' | 'edit-violation'
   | 'confirm-logout' | 'confirm-reset' | 'confirm-delete-bill' | 'confirm-delete-stall'
   | 'confirm-delete-tenant' | 'confirm-delete-applicant' | 'confirm-delete-log'
   | 'confirm-delete-violation';
@@ -42,15 +44,27 @@ type Applicant = {
   requirements: string[];
 };
 
+/* A stall may be tended by more than one person — a spouse on market days, a
+   hired helper on the rest — so a tenant carries a list of them. */
+type Stallkeeper = {
+  id: string;
+  name: string;
+  phone: string;
+  relation: string;
+  barangay: string;
+};
+
 type Tenant = {
   id: string;
   name: string;
   phone: string;
+  barangay: string;
   stallId: string;
   section: string;
   rent: number;
   status: string;
   applicantId?: string;
+  keepers: Stallkeeper[];
 };
 
 type Stall = {
@@ -79,7 +93,12 @@ type UtilityBill = {
   tenantId: string;
   tenantName: string;
   section: string;
+  /* `period` is the YYYY-MM the bill belongs to — it groups and de-duplicates
+     bills by month. `periodStart`/`periodEnd` are the actual days covered,
+     which is what the tenant is shown. */
   period: string;
+  periodStart: string;
+  periodEnd: string;
   previousReading: number;
   currentReading: number;
   consumption: number;
@@ -116,6 +135,7 @@ type ActivityItem = {
 const ITEMS_PER_PAGE = 5;
 const MAX_ACTIVITIES = 50;
 const SECTIONS = ['Meat & Poultry', 'Fish & Seafood', 'Vegetables & Fruits', 'Dry Goods'];
+const KEEPER_RELATIONS = ['Self (tenant tends the stall)', 'Spouse', 'Child', 'Parent', 'Sibling', 'Other Relative', 'Hired Helper'];
 const STALL_TYPES = ['Produce (Wet)', 'Dry Goods', 'Vegetables', 'Fish & Seafood', 'Meat & Poultry'];
 const LOG_TYPES = ['Inspection', 'Incident', 'Maintenance', 'Collection', 'Announcement'];
 const VIOLATION_ISSUES = [
@@ -152,21 +172,21 @@ const UTILITY_PRESETS: Record<UtilityType, { rate: number; fixedCharge: number; 
 
 const initialState = {
   applicants: [
-    { id: 'APP-001', name: 'Juan Santos', phone: '0917-123-4567', stallType: 'Produce (Wet)', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 12, 2023', requirements: [...REQUIREMENTS] },
-    { id: 'APP-002', name: 'Maria Reyes', phone: '0920-987-6543', stallType: 'Dry Goods', status: 'Incomplete' as ApplicantStatus, dateApplied: 'Oct 14, 2023', requirements: REQUIREMENTS.slice(0, 2) },
-    { id: 'APP-003', name: 'Liza Cruz', phone: '0918-555-1234', stallType: 'Vegetables', status: 'Approved' as ApplicantStatus, dateApplied: 'Oct 10, 2023', requirements: [...REQUIREMENTS] },
-    { id: 'APP-004', name: 'Pedro Garcia', phone: '0915-333-7890', stallType: 'Fish & Seafood', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 16, 2023', requirements: REQUIREMENTS.slice(0, 3) },
-    { id: 'APP-005', name: 'Ana Villanueva', phone: '0922-444-5678', stallType: 'Meat & Poultry', status: 'Rejected' as ApplicantStatus, dateApplied: 'Oct 8, 2023', requirements: REQUIREMENTS.slice(0, 1) },
+    { id: 'APP-001', name: 'Juan Santos', phone: '09171234567', stallType: 'Produce (Wet)', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 12, 2023', requirements: [...REQUIREMENTS] },
+    { id: 'APP-002', name: 'Maria Reyes', phone: '09209876543', stallType: 'Dry Goods', status: 'Incomplete' as ApplicantStatus, dateApplied: 'Oct 14, 2023', requirements: REQUIREMENTS.slice(0, 2) },
+    { id: 'APP-003', name: 'Liza Cruz', phone: '09185551234', stallType: 'Vegetables', status: 'Approved' as ApplicantStatus, dateApplied: 'Oct 10, 2023', requirements: [...REQUIREMENTS] },
+    { id: 'APP-004', name: 'Pedro Garcia', phone: '09153337890', stallType: 'Fish & Seafood', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 16, 2023', requirements: REQUIREMENTS.slice(0, 3) },
+    { id: 'APP-005', name: 'Ana Villanueva', phone: '09224445678', stallType: 'Meat & Poultry', status: 'Rejected' as ApplicantStatus, dateApplied: 'Oct 8, 2023', requirements: REQUIREMENTS.slice(0, 1) },
   ] satisfies Applicant[],
   tenants: [
-    { id: 'TEN-001', name: 'Maria Santos', phone: '0917-222-1100', stallId: 'A-001', section: 'Meat & Poultry', rent: 5000, status: 'Active' },
-    { id: 'TEN-002', name: 'Juan Dela Cruz', phone: '0918-333-2211', stallId: 'A-002', section: 'Fish & Seafood', rent: 4500, status: 'Active' },
-    { id: 'TEN-003', name: 'Liza Reyes', phone: '0920-444-3322', stallId: 'B-015', section: 'Dry Goods', rent: 3500, status: 'Active' },
-    { id: 'TEN-004', name: "Rosa's Butchery", phone: '0921-555-4433', stallId: 'M-101', section: 'Meat & Poultry', rent: 5500, status: 'Active' },
-    { id: 'TEN-005', name: 'Green Farm Organics', phone: '0922-666-5544', stallId: 'V-045', section: 'Vegetables & Fruits', rent: 4000, status: 'Active' },
-    { id: 'TEN-006', name: 'Deep Blue Catch', phone: '0915-777-6655', stallId: 'F-012', section: 'Fish & Seafood', rent: 4200, status: 'Expiring Soon' },
-    { id: 'TEN-007', name: 'Santos General Store', phone: '0919-888-7766', stallId: 'D-203', section: 'Dry Goods', rent: 3800, status: 'Active' },
-  ] satisfies Tenant[],
+    { id: 'TEN-001', name: 'Maria Santos', phone: '09172221100', stallId: 'A-001', section: 'Meat & Poultry', rent: 5000, status: 'Active', barangay: '', keepers: [] },
+    { id: 'TEN-002', name: 'Juan Dela Cruz', phone: '09183332211', stallId: 'A-002', section: 'Fish & Seafood', rent: 4500, status: 'Active', barangay: '', keepers: [] },
+    { id: 'TEN-003', name: 'Liza Reyes', phone: '09204443322', stallId: 'B-015', section: 'Dry Goods', rent: 3500, status: 'Active', barangay: '', keepers: [] },
+    { id: 'TEN-004', name: "Rosa's Butchery", phone: '09215554433', stallId: 'M-101', section: 'Meat & Poultry', rent: 5500, status: 'Active', barangay: '', keepers: [] },
+    { id: 'TEN-005', name: 'Green Farm Organics', phone: '09226665544', stallId: 'V-045', section: 'Vegetables & Fruits', rent: 4000, status: 'Active', barangay: '', keepers: [] },
+    { id: 'TEN-006', name: 'Deep Blue Catch', phone: '09157776655', stallId: 'F-012', section: 'Fish & Seafood', rent: 4200, status: 'Expiring Soon', barangay: '', keepers: [] },
+    { id: 'TEN-007', name: 'Santos General Store', phone: '09198887766', stallId: 'D-203', section: 'Dry Goods', rent: 3800, status: 'Active', barangay: '', keepers: [] },
+  ] satisfies Tenant[] as Tenant[],
   stalls: [
     { id: 'M-101', section: 'Meat & Poultry', tenant: "Rosa's Butchery", status: 'Occupied' as StallStatus, lastInspection: 'Oct 12, 2023' },
     { id: 'M-102', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, lastInspection: '-' },
@@ -184,11 +204,11 @@ const initialState = {
   ] satisfies Violation[],
 
   utilities: [
-    { id: 'UTL-001', type: 'Electricity' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', period: '2023-09', previousReading: 1240, currentReading: 1512, consumption: 272, rate: 11.5, fixedCharge: 150, amount: 3278, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'Refrigeration units running 24/7.' },
-    { id: 'UTL-002', type: 'Water' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', period: '2023-09', previousReading: 84, currentReading: 103, consumption: 19, rate: 25, fixedCharge: 80, amount: 555, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-003', type: 'Electricity' as UtilityType, stallId: 'V-045', tenantId: 'TEN-005', tenantName: 'Green Farm Organics', section: 'Vegetables & Fruits', period: '2023-09', previousReading: 640, currentReading: 745, consumption: 105, rate: 11.5, fixedCharge: 150, amount: 1357.5, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-004', type: 'Water' as UtilityType, stallId: 'F-012', tenantId: 'TEN-006', tenantName: 'Deep Blue Catch', section: 'Fish & Seafood', period: '2023-09', previousReading: 210, currentReading: 268, consumption: 58, rate: 25, fixedCharge: 80, amount: 1530, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'High usage — check for leaking hose.' },
-    { id: 'UTL-005', type: 'Electricity' as UtilityType, stallId: 'D-203', tenantId: 'TEN-007', tenantName: 'Santos General Store', section: 'Dry Goods', period: '2023-09', previousReading: 320, currentReading: 388, consumption: 68, rate: 11.5, fixedCharge: 150, amount: 932, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
+    { id: 'UTL-001', type: 'Electricity' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 1240, currentReading: 1512, consumption: 272, rate: 11.5, fixedCharge: 150, amount: 3278, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'Refrigeration units running 24/7.' },
+    { id: 'UTL-002', type: 'Water' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 84, currentReading: 103, consumption: 19, rate: 25, fixedCharge: 80, amount: 555, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
+    { id: 'UTL-003', type: 'Electricity' as UtilityType, stallId: 'V-045', tenantId: 'TEN-005', tenantName: 'Green Farm Organics', section: 'Vegetables & Fruits', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 640, currentReading: 745, consumption: 105, rate: 11.5, fixedCharge: 150, amount: 1357.5, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
+    { id: 'UTL-004', type: 'Water' as UtilityType, stallId: 'F-012', tenantId: 'TEN-006', tenantName: 'Deep Blue Catch', section: 'Fish & Seafood', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 210, currentReading: 268, consumption: 58, rate: 25, fixedCharge: 80, amount: 1530, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'High usage — check for leaking hose.' },
+    { id: 'UTL-005', type: 'Electricity' as UtilityType, stallId: 'D-203', tenantId: 'TEN-007', tenantName: 'Santos General Store', section: 'Dry Goods', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 320, currentReading: 388, consumption: 68, rate: 11.5, fixedCharge: 150, amount: 932, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
   ] satisfies UtilityBill[],
 
   logs: [
@@ -223,7 +243,7 @@ const navigation: Array<{ key: ModuleKey; label: string; icon: string }> = [
 ];
 
 const searchPlaceholders: Record<ModuleKey, string> = {
-  dashboard: 'Search dashboard...',
+  dashboard: 'Search tenants, stalls, applicants, bills, violations...',
   stalls: 'Search stall ID, tenant, or section...',
   tenants: 'Search tenant name, ID, or stall...',
   applicants: 'Search applicant name, phone, or stall type...',
@@ -235,7 +255,7 @@ const searchPlaceholders: Record<ModuleKey, string> = {
   support: 'Search is not used on Support',
 };
 
-const searchableModules: ModuleKey[] = ['stalls', 'tenants', 'applicants', 'utilities', 'violations', 'logbook'];
+const searchableModules: ModuleKey[] = ['dashboard', 'stalls', 'tenants', 'applicants', 'utilities', 'violations', 'logbook'];
 
 /* ============================================================
    Helpers
@@ -257,13 +277,55 @@ function normalizeApplicant(raw: Applicant): Applicant {
   };
 }
 
+/* A tenant used to hold one stallkeeper in four flat fields. Those records are
+   read as a list of one, so nothing filed before this change is lost. */
+function normalizeTenant(raw: Tenant): Tenant {
+  const legacy = raw as unknown as { keeperName?: unknown; keeperPhone?: unknown; keeperRelation?: unknown; keeperBarangay?: unknown };
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const fromList = Array.isArray(raw?.keepers)
+    ? raw.keepers
+        .map((k, i) => ({
+          id: text((k as Stallkeeper)?.id) || `KPR-${i + 1}`,
+          name: text((k as Stallkeeper)?.name),
+          phone: text((k as Stallkeeper)?.phone),
+          relation: text((k as Stallkeeper)?.relation),
+          barangay: text((k as Stallkeeper)?.barangay),
+        }))
+        .filter((k) => k.name)
+    : text(legacy.keeperName)
+      ? [{ id: 'KPR-1', name: text(legacy.keeperName), phone: text(legacy.keeperPhone), relation: text(legacy.keeperRelation), barangay: text(legacy.keeperBarangay) }]
+      : [];
+  return {
+    id: raw.id,
+    name: raw.name,
+    phone: typeof raw?.phone === 'string' && raw.phone ? raw.phone : '—',
+    barangay: text(raw?.barangay),
+    stallId: raw.stallId,
+    section: raw.section,
+    rent: raw.rent,
+    status: raw.status,
+    applicantId: raw.applicantId,
+    keepers: fromList,
+  };
+}
+
+/* Bills used to carry only the month they covered. An older bill keeps that
+   month and is read as running from its first day to its last. */
+function normalizeBill(raw: UtilityBill): UtilityBill {
+  const period = typeof raw?.period === 'string' && raw.period ? raw.period.slice(0, 7) : currentPeriod();
+  const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const periodStart = isDay(raw?.periodStart) ? raw.periodStart : monthStartIso(period);
+  const periodEnd = isDay(raw?.periodEnd) ? raw.periodEnd : monthEndIso(period);
+  return { ...raw, period: periodOf(periodEnd) || period, periodStart, periodEnd };
+}
+
 function mergeState(input: unknown): AppState {
   const parsed = (input && typeof input === 'object' ? input : {}) as Partial<AppState>;
   const pick = <K extends keyof AppState>(key: K): AppState[K] =>
     (Array.isArray(parsed[key]) ? parsed[key] : initialState[key]) as AppState[K];
   return {
     applicants: pick('applicants').map(normalizeApplicant),
-    tenants: pick('tenants').map((t) => ({ ...t, phone: typeof t?.phone === 'string' && t.phone ? t.phone : '—' })),
+    tenants: pick('tenants').map(normalizeTenant),
     logs: pick('logs').map((l) => ({ ...l, date: typeof l?.date === 'string' ? l.date : '' })),
     activities: pick('activities').slice(0, MAX_ACTIVITIES),
     stalls: pick('stalls'),
@@ -274,7 +336,7 @@ function mergeState(input: unknown): AppState {
       dateResolved: typeof v?.dateResolved === 'string' ? v.dateResolved : '',
       notes: typeof v?.notes === 'string' ? v.notes : '',
     })),
-    utilities: pick('utilities'),
+    utilities: pick('utilities').map(normalizeBill),
   };
 }
 
@@ -331,6 +393,114 @@ function getInitials(name: string) {
 const avatarColors = ['blue', 'teal', 'purple', 'rose', 'amber'];
 function getAvatarColor(i: number) { return avatarColors[i % avatarColors.length]; }
 
+/* ---------- Stallkeepers ---------- */
+
+/* A row in the stallkeeper editor. `base` is the person already on record:
+   their inputs open blank and a blank field keeps what is filed, exactly like
+   every other field on an edit form. A row with no `base` is a new entry, so
+   its inputs are the values themselves. */
+type KeeperDraft = {
+  key: string;
+  base?: Stallkeeper;
+  name: string;
+  phone: string;
+  relation: string;
+  barangay: string;
+};
+
+function newKeeperKey() {
+  return `KPR-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function blankKeeperDraft(): KeeperDraft {
+  return { key: newKeeperKey(), name: '', phone: '', relation: '', barangay: '' };
+}
+
+function keeperDraftsFrom(keepers: Stallkeeper[]): KeeperDraft[] {
+  return keepers.map((k) => ({ key: k.id, base: k, name: '', phone: '', relation: '', barangay: '' }));
+}
+
+/* What a single row amounts to: the person on record with whatever has been
+   typed over them, or the new entry as typed. */
+function resolveKeeperDraft(d: KeeperDraft): Stallkeeper {
+  return d.base
+    ? {
+        ...d.base,
+        name: keepText(d.name, d.base.name),
+        phone: keepText(d.phone, d.base.phone),
+        relation: d.relation || d.base.relation,
+        barangay: keepText(d.barangay, d.base.barangay),
+      }
+    : { id: d.key, name: d.name.trim(), phone: d.phone.trim(), relation: d.relation, barangay: d.barangay.trim() };
+}
+
+/* What the rows amount to once saved. A new row left without a name is one the
+   officer opened and did not use, so it is dropped. */
+function resolveKeepers(drafts: KeeperDraft[]): Stallkeeper[] {
+  return drafts.map(resolveKeeperDraft).filter((k) => k.name);
+}
+
+/* Anything typed into a row counts as a change, even a row that would resolve
+   away — otherwise a half-filled entry leaves Save disabled and the officer is
+   never told why it is being ignored. */
+function keeperDraftsTouched(drafts: KeeperDraft[]) {
+  return drafts.some((d) => d.name.trim() || d.phone.trim() || d.relation || d.barangay.trim());
+}
+
+/* '' when the rows can be saved, otherwise what is wrong with them. An entry is
+   named in the complaint, never numbered — the officer knows the person, not
+   their position in the list. */
+function keeperDraftsProblem(drafts: KeeperDraft[]) {
+  for (const d of drafts) {
+    const who = d.base ? `${d.base.name}'s` : 'The new stallkeeper’s';
+    const badPhone = phoneProblem(d.phone, `${who} contact number`);
+    if (badPhone) return badPhone;
+    if (!d.base && !d.name.trim() && (d.phone.trim() || d.relation || d.barangay.trim())) {
+      return 'The new stallkeeper needs a name — enter one, or remove the entry.';
+    }
+  }
+  const names = resolveKeepers(drafts).map((k) => k.name.toLowerCase());
+  const repeated = names.find((name, i) => names.indexOf(name) !== i);
+  if (repeated) return 'The same stallkeeper is listed twice. Remove the duplicate entry.';
+  return '';
+}
+
+function keeperSummary(keepers: Stallkeeper[]) {
+  if (keepers.length === 0) return '';
+  return keepers.map((k) => (k.relation ? `${k.name} — ${k.relation}` : k.name)).join('; ');
+}
+
+/* ---------- Contact numbers ---------- */
+
+/* A Philippine mobile number: eleven digits, 09 prefix. Contact fields accept
+   nothing but digits — letters and punctuation are dropped as they are typed
+   rather than reported back afterwards. */
+const PHONE_LENGTH = 11;
+
+function digitsOnly(raw: string) {
+  return raw.replace(/\D/g, '').slice(0, PHONE_LENGTH);
+}
+
+/* Groups a stored number for reading: 09171234567 → 0917 123 4567. Anything
+   that is not a full mobile number (legacy records, '—') is left as it is. */
+function formatPhone(raw?: string) {
+  const value = (raw ?? '').trim();
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== PHONE_LENGTH) return value;
+  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+}
+
+/* '' when the typed number is acceptable, otherwise why it is not. Blank is
+   acceptable — a contact number is optional everywhere it appears. */
+function phoneProblem(typed: string, label = 'Mobile number') {
+  const digits = typed.trim();
+  if (!digits) return '';
+  if (digits.length !== PHONE_LENGTH || !digits.startsWith('09')) {
+    return `${label} must be 11 digits starting with 09 — for example 09171234567.`;
+  }
+  return '';
+}
+
 function readIdCounters(): Record<string, number> {
   try {
     const parsed = JSON.parse(localStorage.getItem(idCounterKey) ?? '{}');
@@ -351,6 +521,42 @@ function nextId(prefix: string, existingIds: string[]) {
   counters[prefix] = next;
   try { localStorage.setItem(idCounterKey, JSON.stringify(counters)); } catch { /* falls back to max(existing) next time */ }
   return `${prefix}-${String(next).padStart(3, '0')}`;
+}
+
+/* ---------- Graph data ---------- */
+
+const STALL_STATUS_SERIES: GraphSeries[] = [
+  { key: 'Occupied', label: 'Occupied', tone: 'occupied' },
+  { key: 'Available', label: 'Available', tone: 'available' },
+  { key: 'Maintenance', label: 'Maintenance', tone: 'maintenance' },
+];
+
+const UTILITY_SERIES: GraphSeries[] = [
+  { key: 'Electricity', label: 'Electricity', tone: 'electricity' },
+  { key: 'Water', label: 'Water', tone: 'water' },
+];
+
+/* Axis labels have a column's width to live in — 'Vegetables & Fruits' does not
+   fit, but the part before the ampersand names the section unambiguously. */
+function shortSection(section: string) {
+  return section.split(' & ')[0];
+}
+
+/* One column per market section, stacked by stall status. Shared by the
+   dashboard overview graph and the analytics report so both read alike. */
+function sectionOccupancyColumns(stalls: Stall[]): GraphColumn[] {
+  return Array.from(new Set(stalls.map((s) => s.section))).map((section) => {
+    const inSection = stalls.filter((s) => s.section === section);
+    return {
+      label: shortSection(section),
+      caption: `${inSection.length} stall${inSection.length === 1 ? '' : 's'}`,
+      values: {
+        Occupied: inSection.filter((s) => s.status === 'Occupied').length,
+        Available: inSection.filter((s) => s.status === 'Available').length,
+        Maintenance: inSection.filter((s) => s.status === 'Maintenance').length,
+      },
+    };
+  });
 }
 
 function paginate<T>(items: T[], page: number, perPage = ITEMS_PER_PAGE) {
@@ -386,10 +592,12 @@ function todayIso() {
   return isoDate(new Date());
 }
 
-function isoDatePlusDays(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return isoDate(d);
+function isoPlusDays(iso: string, days: number) {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return isoDate(dt);
 }
 
 function formatIsoDate(iso: string) {
@@ -407,6 +615,52 @@ function formatPeriod(period: string) {
   const [y, m] = period.split('-').map(Number);
   if (!y || !m) return period || '—';
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+/* ---------- Billing period (the days a bill covers) ---------- */
+
+/* The month a dated period belongs to — bills are still grouped and
+   de-duplicated by month even though they are read to the day. */
+function periodOf(endIso: string) {
+  return endIso.slice(0, 7);
+}
+
+function monthStartIso(period: string) {
+  return `${period}-01`;
+}
+
+function monthEndIso(period: string) {
+  const [y, m] = period.split('-').map(Number);
+  if (!y || !m) return period;
+  return isoDate(new Date(y, m, 0)); // day 0 of the next month is the last of this one
+}
+
+/* "Sep 1 – 30, 2023", collapsing whatever the two dates share. */
+function formatPeriodRange(start: string, end: string) {
+  if (!start || !end) return formatPeriod(periodOf(end || start));
+  if (start === end) return formatIsoDate(start);
+  const [sy, sm, sd] = start.split('-').map(Number);
+  const [ey, em, ed] = end.split('-').map(Number);
+  if (!sy || !ey) return formatPeriod(periodOf(end));
+  const from = new Date(sy, sm - 1, sd);
+  const to = new Date(ey, em - 1, ed);
+  const month = (d: Date) => d.toLocaleDateString('en-US', { month: 'short' });
+  if (sy === ey && sm === em) return `${month(from)} ${sd} – ${ed}, ${ey}`;
+  if (sy === ey) return `${month(from)} ${sd} – ${month(to)} ${ed}, ${ey}`;
+  return `${month(from)} ${sd}, ${sy} – ${month(to)} ${ed}, ${ey}`;
+}
+
+function billPeriodText(bill: UtilityBill) {
+  return formatPeriodRange(bill.periodStart, bill.periodEnd);
+}
+
+/* Days covered, inclusive of both ends — a 1st-to-30th period is 30 days. */
+function periodDays(start: string, end: string) {
+  const [sy, sm, sd] = start.split('-').map(Number);
+  const [ey, em, ed] = end.split('-').map(Number);
+  if (!sy || !ey) return 0;
+  const ms = new Date(ey, em - 1, ed).getTime() - new Date(sy, sm - 1, sd).getTime();
+  return Math.round(ms / 86400000) + 1;
 }
 
 function computeBill(previousReading: number, currentReading: number, rate: number, fixedCharge: number) {
@@ -517,6 +771,14 @@ function App() {
     return items;
   }, [state.utilities, state.tenants, state.violations, unpaidBills, outstandingUtilities, pendingApplicants, maintenanceCount]);
 
+  /* A modal holds the record as it was when it opened. A save made from one
+     form leaves that snapshot stale, so detail sheets and the "on record"
+     hints read the live copy instead. */
+  const liveStall = (s: Stall) => state.stalls.find((x) => x.id === s.id) ?? s;
+  const liveTenant = (t: Tenant) => state.tenants.find((x) => x.id === t.id) ?? t;
+  const liveApplicant = (a: Applicant) => state.applicants.find((x) => x.id === a.id) ?? a;
+  const liveViolation = (v: Violation) => state.violations.find((x) => x.id === v.id) ?? v;
+
   const withActivity = (list: ActivityItem[], icon: string, iconColor: string, highlight: string, text: string): ActivityItem[] =>
     [{ id: `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, icon, iconColor, highlight, text, time: 'Just now' }, ...list].slice(0, MAX_ACTIVITIES);
 
@@ -543,7 +805,7 @@ function App() {
       ...p,
       utilities: [bill, ...p.utilities],
       activities: withActivity(p.activities, UTILITY_PRESETS[bill.type].icon, bill.type === 'Electricity' ? 'amber' : 'blue', `${bill.type} bill`, ` of ${money(bill.amount)} issued to stall ${bill.stallId}.`),
-      logs: [...p.logs, makeLog(p.logs, 'Collection', `${bill.type} bill ${bill.id} (${formatPeriod(bill.period)}) issued to stall ${bill.stallId}${bill.tenantName ? ` — ${bill.tenantName}` : ''}: ${money(bill.amount)}.`)],
+      logs: [...p.logs, makeLog(p.logs, 'Collection', `${bill.type} bill ${bill.id} (${billPeriodText(bill)}) issued to stall ${bill.stallId}${bill.tenantName ? ` — ${bill.tenantName}` : ''}: ${money(bill.amount)}.`)],
     }));
     showToast(`${bill.type} bill ${bill.id} saved to stall ${bill.stallId}`);
   };
@@ -554,22 +816,25 @@ function App() {
     showToast(bill?.status === 'Paid' ? `${id} marked as unpaid` : `${id} marked as paid`);
   };
 
-  const updateApplicant = (updated: Applicant) => {
-    const previous = state.applicants.find((a) => a.id === updated.id);
+  const updateApplicant = (updated: Applicant, opts: SaveOpts = {}, snapshot?: Applicant, promptAssign?: boolean) => {
+    const { log = true, close = true } = opts;
+    // `snapshot` is the record as it stood when the form opened, so a second
+    // save in the same session still logs against its true starting point.
+    const previous = snapshot ?? state.applicants.find((a) => a.id === updated.id);
+    const statusChanged = !!previous && previous.status !== updated.status;
     setState((p) => ({
       ...p,
       applicants: p.applicants.map((a) => (a.id === updated.id ? updated : a)),
-      ...(previous && previous.status !== updated.status
+      ...(log
         ? {
-            activities: withActivity(p.activities, 'person_add', updated.status === 'Approved' ? 'green' : updated.status === 'Rejected' ? 'red' : 'amber', updated.name, `'s application was marked ${updated.status}.`),
-            logs: [...p.logs, makeLog(p.logs, 'Announcement', `Application ${updated.id} (${updated.name}) changed from ${previous.status} to ${updated.status}.`)],
+            activities: withActivity(p.activities, 'person_add', updated.status === 'Approved' ? 'green' : updated.status === 'Rejected' ? 'red' : 'amber', updated.name, statusChanged ? `'s application was marked ${updated.status}.` : `'s application details were updated.`),
+            logs: [...p.logs, makeLog(p.logs, 'Announcement', statusChanged && previous ? `Application ${updated.id} (${updated.name}) changed from ${previous.status} to ${updated.status}.` : `Application ${updated.id} (${updated.name}) was updated.`)],
           }
         : {}),
     }));
-    const justApproved = previous && previous.status !== 'Approved' && updated.status === 'Approved';
-    showToast(previous && previous.status !== updated.status ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
-    if (justApproved) setModal({ type: 'assign-stall', data: updated });
-    else closeModal();
+    if (log) showToast(statusChanged ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
+    if (promptAssign) setModal({ type: 'assign-stall', data: updated });
+    else if (close) closeModal();
   };
 
   const addViolation = (v: Violation) => {
@@ -583,29 +848,22 @@ function App() {
     closeModal();
   };
 
-  const updateViolation = (updated: Violation) => {
-    const previous = state.violations.find((v) => v.id === updated.id);
-    const statusChanged = previous && previous.status !== updated.status;
+  const updateViolation = (updated: Violation, opts: SaveOpts = {}, snapshot?: Violation) => {
+    const { log = true, close = true } = opts;
+    const previous = snapshot ?? state.violations.find((v) => v.id === updated.id);
+    const statusChanged = !!previous && previous.status !== updated.status;
     setState((p) => ({
       ...p,
       violations: p.violations.map((v) => (v.id === updated.id ? updated : v)),
-      ...(statusChanged
+      ...(log
         ? {
-            activities: withActivity(p.activities, 'gavel', updated.status === 'Resolved' ? 'green' : 'red', updated.tenant, `'s violation ${updated.id} was marked ${updated.status}.`),
-            logs: [...p.logs, makeLog(p.logs, 'Incident', `Violation ${updated.id} (${updated.tenant}) changed from ${previous.status} to ${updated.status}.`)],
+            activities: withActivity(p.activities, 'gavel', updated.status === 'Resolved' ? 'green' : 'red', updated.tenant, statusChanged ? `'s violation ${updated.id} was marked ${updated.status}.` : `'s violation ${updated.id} was updated.`),
+            logs: [...p.logs, makeLog(p.logs, 'Incident', statusChanged && previous ? `Violation ${updated.id} (${updated.tenant}) changed from ${previous.status} to ${updated.status}.` : `Violation ${updated.id} (${updated.tenant}) was updated.`)],
           }
         : {}),
     }));
-    showToast(statusChanged ? `${updated.id} marked as ${updated.status}` : `Violation ${updated.id} updated`);
-    closeModal();
-  };
-
-  const toggleViolationStatus = (id: string) => {
-    const current = state.violations.find((v) => v.id === id);
-    if (!current) return;
-    updateViolation(current.status === 'Open'
-      ? { ...current, status: 'Resolved', dateResolved: todayIso() }
-      : { ...current, status: 'Open', dateResolved: '' });
+    if (log) showToast(statusChanged ? `${updated.id} marked as ${updated.status}` : `Violation ${updated.id} updated`);
+    if (close) closeModal();
   };
 
   const deleteViolation = (violation: Violation) => {
@@ -619,29 +877,39 @@ function App() {
     closeModal();
   };
 
-  const updateTenant = (updated: Tenant) => {
-    const previous = state.tenants.find((t) => t.id === updated.id);
-    const oldStallId = previous?.stallId ?? '';
-    const movedStall = oldStallId !== updated.stallId;
-    setState((p) => ({
-      ...p,
-      tenants: p.tenants.map((t) => (t.id === updated.id ? updated : t)),
-      stalls: p.stalls.map((s) => {
-        if (movedStall && s.id === oldStallId) return { ...s, tenant: 'Vacant', status: 'Available' as StallStatus };
-        if (s.id === updated.stallId) return { ...s, tenant: updated.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection };
-        return s;
-      }),
-      utilities: previous && previous.name !== updated.name
-        ? p.utilities.map((b) => (b.tenantId === updated.id ? { ...b, tenantName: updated.name } : b))
-        : p.utilities,
-      activities: withActivity(p.activities, 'groups', 'blue', updated.name, `'s tenant record was updated.`),
-      logs: [...p.logs, makeLog(p.logs, 'Announcement', `Tenant ${updated.id} (${updated.name}) was updated${movedStall ? `; stall changed from ${oldStallId || '—'} to ${updated.stallId || '—'}` : ''}.`)],
-    }));
-    showToast(`Tenant ${updated.name} updated`);
-    closeModal();
+  const updateTenant = (updated: Tenant, opts: SaveOpts = {}, snapshot?: Tenant) => {
+    const { log = true, close = true } = opts;
+    setState((p) => {
+      const previous = p.tenants.find((t) => t.id === updated.id);
+      const oldStallId = previous?.stallId ?? '';
+      const movedStall = oldStallId !== updated.stallId;
+      const loggedFrom = snapshot ?? previous;
+      const loggedMove = !!loggedFrom && loggedFrom.stallId !== updated.stallId;
+      return {
+        ...p,
+        tenants: p.tenants.map((t) => (t.id === updated.id ? updated : t)),
+        stalls: p.stalls.map((s) => {
+          if (movedStall && s.id === oldStallId) return { ...s, tenant: 'Vacant', status: 'Available' as StallStatus };
+          if (s.id === updated.stallId) return { ...s, tenant: updated.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection };
+          return s;
+        }),
+        utilities: previous && previous.name !== updated.name
+          ? p.utilities.map((b) => (b.tenantId === updated.id ? { ...b, tenantName: updated.name } : b))
+          : p.utilities,
+        ...(log
+          ? {
+              activities: withActivity(p.activities, 'groups', 'blue', updated.name, `'s tenant record was updated.`),
+              logs: [...p.logs, makeLog(p.logs, 'Announcement', `Tenant ${updated.id} (${updated.name}) was updated${loggedMove && loggedFrom ? `; stall changed from ${loggedFrom.stallId || '—'} to ${updated.stallId || '—'}` : ''}.`)],
+            }
+          : {}),
+      };
+    });
+    if (log) showToast(`Tenant ${updated.name} updated`);
+    if (close) closeModal();
   };
 
-  const updateStall = (updated: Stall) => {
+  const updateStall = (updated: Stall, opts: SaveOpts = {}) => {
+    const { log = true, close = true } = opts;
     setState((p) => {
       const occupant = p.tenants.find((t) => t.stallId === updated.id);
       return {
@@ -650,12 +918,16 @@ function App() {
         tenants: occupant && occupant.section !== updated.section
           ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section } : t))
           : p.tenants,
-        activities: withActivity(p.activities, 'storefront', 'blue', updated.id, ' was updated in stall management.'),
-        logs: [...p.logs, makeLog(p.logs, 'Maintenance', `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}.`)],
+        ...(log
+          ? {
+              activities: withActivity(p.activities, 'storefront', 'blue', updated.id, ' was updated in stall management.'),
+              logs: [...p.logs, makeLog(p.logs, 'Maintenance', `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}.`)],
+            }
+          : {}),
       };
     });
-    showToast(`Stall ${updated.id} updated`);
-    closeModal();
+    if (log) showToast(`Stall ${updated.id} updated`);
+    if (close) closeModal();
   };
 
   const deleteStall = (id: string) => {
@@ -706,14 +978,7 @@ function App() {
 
   const resetData = () => { localStorage.removeItem(storageKey); resetIdCounters(); setState(initialState); showToast('Data reset to defaults'); closeModal(); };
 
-  const handleNewEntry = () => {
-    const map: Partial<Record<ModuleKey, ModalType>> = {
-      stalls: 'add-stall', applicants: 'add-applicant', tenants: 'add-tenant',
-      violations: 'add-violation', logbook: 'add-log', dashboard: 'add-log',
-    };
-    if (active === 'utilities') { setActive('utilities'); showToast('Use the calculator below to issue a new bill'); return; }
-    setModal({ type: map[active] || 'add-log' });
-  };
+  const handleNewEntry = () => setModal({ type: 'add-log' });
 
   const handleLogout = () => setModal({ type: 'confirm-logout' });
 
@@ -752,11 +1017,13 @@ function App() {
 
       <main className="main-content">
         <header className="topbar">
-          <div className="search-wrapper">
-            <span className="material-symbols-outlined">search</span>
-            <input className="search-input" type="text" placeholder={searchPlaceholders[active]} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} disabled={!searchableModules.includes(active)} />
-            {searchTerm && <button className="search-clear" title="Clear search" onClick={() => setSearchTerm('')}><span className="material-symbols-outlined">close</span></button>}
-          </div>
+          {searchableModules.includes(active) ? (
+            <div className="search-wrapper">
+              <span className="material-symbols-outlined">search</span>
+              <input className="search-input" type="text" placeholder={searchPlaceholders[active]} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              {searchTerm && <button className="search-clear" title="Clear search" onClick={() => setSearchTerm('')}><span className="material-symbols-outlined">close</span></button>}
+            </div>
+          ) : <div className="topbar-spacer" />}
           <div className="topbar-actions">
             <div className="notif-wrapper">
               <button className="icon-btn" title="Notifications" onClick={() => setNotifOpen((v) => !v)}>
@@ -780,34 +1047,38 @@ function App() {
               )}
             </div>
             <div className="user-avatar" title="Admin">AD</div>
-            <button className="btn-primary" onClick={handleNewEntry}><span className="material-symbols-outlined">add</span>New Entry</button>
+            {active === 'dashboard' && <button className="btn-primary" onClick={handleNewEntry}><span className="material-symbols-outlined">add</span>New Log Entry</button>}
           </div>
         </header>
 
         <div className="page-content">
-          {active === 'dashboard' && <DashboardPage state={state} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Period','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', formatPeriod(b.period), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
-          {active === 'stalls' && <StallManagementPage stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
-          {active === 'tenants' && <TenantRecordsPage tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} />}
-          {active === 'applicants' && <ApplicantManagementPage applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
-          {active === 'violations' && <ViolationsPage violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onToggleStatus={toggleViolationStatus} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
+          {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
+          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'stalls' && <StallManagementPage stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onEdit={(s) => setModal({ type: 'edit-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
+          {active === 'tenants' && <TenantRecordsPage tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onEdit={(t) => setModal({ type: 'edit-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} />}
+          {active === 'applicants' && <ApplicantManagementPage applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
+          {active === 'violations' && <ViolationsPage violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
-          {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} />}
+          {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
       </main>
 
       {modal.type === 'add-stall' && <Modal title="Add New Stall" onClose={closeModal}><AddStallForm existingIds={state.stalls.map(s => s.id)} onSubmit={addStall} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-applicant' && <Modal title="Add New Applicant" onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
-      {modal.type === 'add-tenant' && <Modal title="Add New Tenant" onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-tenant' && <Modal title="Add New Tenant" wide onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
       {modal.type === 'assign-stall' && <Modal title="Assign Stall & Create Tenant" wide onClose={closeModal}><AssignStallForm applicant={modal.data as Applicant} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onSkip={closeModal} /></Modal>}
       {modal.type === 'add-log' && <Modal title="Add Log Entry" onClose={closeModal}><AddLogForm existingIds={state.logs.map(l => l.id)} onSubmit={addLog} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-violation' && <Modal title="Record a Violation" wide onClose={closeModal}><ViolationForm existingIds={state.violations.map(v => v.id)} tenants={state.tenants} onSubmit={addViolation} onCancel={closeModal} /></Modal>}
-      {modal.type === 'view-violation' && <Modal title="Violation Details" wide onClose={closeModal}><ViolationForm violation={modal.data as Violation} existingIds={state.violations.map(v => v.id)} tenants={state.tenants} onSubmit={updateViolation} onCancel={closeModal} /></Modal>}
-      {modal.type === 'view-stall' && <Modal title="Stall Details" wide onClose={closeModal}><StallDetailView stall={modal.data as Stall} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onSave={updateStall} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantDetailView applicant={modal.data as Applicant} onSave={updateApplicant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-tenant' && <Modal title="Tenant Details" wide onClose={closeModal}><TenantDetailView tenant={modal.data as Tenant} tenants={state.tenants} stalls={state.stalls} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSave={updateTenant} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-violation' && <Modal title="Violation Details" wide onClose={closeModal}><ViolationDetailView violation={liveViolation(modal.data as Violation)} onEdit={() => setModal({ type: 'edit-violation', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'edit-violation' && <Modal title="Edit Violation" wide onClose={closeModal}><ViolationEditForm violation={modal.data as Violation} current={liveViolation(modal.data as Violation)} tenants={state.tenants} onSave={updateViolation} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-stall' && <Modal title="Stall Details" wide onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'edit-stall' && <Modal title="Edit Stall Details" wide onClose={closeModal}><StallEditForm stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onSave={updateStall} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-applicant' && <Modal title="Applicant Details" wide onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-tenant' && <Modal title="Tenant Details" wide onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'edit-tenant' && <Modal title="Edit Tenant Details" wide onClose={closeModal}><TenantEditForm tenant={modal.data as Tenant} current={liveTenant(modal.data as Tenant)} tenants={state.tenants} stalls={state.stalls} onSave={updateTenant} onClose={closeModal} /></Modal>}
       {modal.type === 'view-bill' && <Modal title="Utility Bill Details" wide onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onClose={closeModal} /></Modal>}
       {modal.type === 'confirm-logout' && <ConfirmDialog icon="logout" iconStyle="warning" title="Log Out?" description="Are you sure you want to log out? All data is saved locally." confirmLabel="Log Out" onConfirm={() => { showToast('Logged out successfully'); closeModal(); }} onCancel={closeModal} />}
       {modal.type === 'confirm-reset' && <ConfirmDialog icon="delete_forever" iconStyle="danger" title="Reset All Data?" description="This will permanently reset all data to factory defaults. This cannot be undone." confirmLabel="Reset Data" confirmDanger onConfirm={resetData} onCancel={closeModal} />}
@@ -872,7 +1143,7 @@ function App() {
    Dashboard Page
    ============================================================ */
 
-function DashboardPage({ state, occupiedCount, pendingApplicants, outstandingUtilities, unpaidBillCount, onNavigate }: { state: AppState; occupiedCount: number; pendingApplicants: number; outstandingUtilities: number; unpaidBillCount: number; onNavigate: (k: ModuleKey) => void }) {
+function DashboardPage({ state, search, occupiedCount, pendingApplicants, outstandingUtilities, unpaidBillCount, onNavigate }: { state: AppState; search: string; occupiedCount: number; pendingApplicants: number; outstandingUtilities: number; unpaidBillCount: number; onNavigate: (k: ModuleKey) => void }) {
   const occupancyPct = ratio(occupiedCount, state.stalls.length);
   const activeTenants = state.tenants.filter(t => t.status === 'Active').length;
 
@@ -885,7 +1156,60 @@ function DashboardPage({ state, occupiedCount, pendingApplicants, outstandingUti
   const incompleteApplicants = state.applicants.filter(a => a.status === 'Incomplete').length;
   const overdueBillCount = state.utilities.filter(isOverdue).length;
 
-  const sections = Array.from(new Set(state.stalls.map(s => s.section)));
+  const occupancyColumns = useMemo(() => sectionOccupancyColumns(state.stalls), [state.stalls]);
+
+  /* Global search. The dashboard has no table of its own, so the topbar
+     search looks across every record set and offers a jump to the module
+     that owns the match. */
+  const q = search.trim().toLowerCase();
+  const hits = useMemo(() => {
+    if (!q) return [];
+    const has = (...vals: (string | undefined)[]) => vals.some((v) => (v || '').toLowerCase().includes(q));
+    const out: { key: string; module: ModuleKey; icon: string; label: string; detail: string; kind: string }[] = [];
+    state.tenants.filter((t) => has(t.name, t.id, t.stallId, ...t.keepers.map((k) => k.name))).forEach((t) =>
+      out.push({ key: `t${t.id}`, module: 'tenants', icon: 'groups', label: t.name, detail: `${t.id} \u00b7 Stall ${t.stallId} \u00b7 ${t.section}`, kind: 'Tenant' }));
+    state.stalls.filter((st) => has(st.id, st.tenant, st.section)).forEach((st) =>
+      out.push({ key: `s${st.id}`, module: 'stalls', icon: 'storefront', label: `Stall ${st.id}`, detail: `${st.section} \u00b7 ${st.tenant}`, kind: 'Stall' }));
+    state.applicants.filter((a) => has(a.name, a.id, a.phone, a.stallType)).forEach((a) =>
+      out.push({ key: `a${a.id}`, module: 'applicants', icon: 'assignment_ind', label: a.name, detail: `${a.id} \u00b7 ${a.stallType}`, kind: 'Applicant' }));
+    state.utilities.filter((b) => has(b.id, b.stallId, b.tenantName)).forEach((b) =>
+      out.push({ key: `b${b.id}`, module: 'utilities', icon: 'receipt_long', label: `${b.type} \u2014 Stall ${b.stallId}`, detail: `${b.id} \u00b7 ${billPeriodText(b)} \u00b7 ${money(b.amount)}`, kind: 'Bill' }));
+    state.violations.filter((v) => has(v.id, v.tenant, v.issue)).forEach((v) =>
+      out.push({ key: `v${v.id}`, module: 'violations', icon: 'gavel', label: v.issue, detail: `${v.id} \u00b7 ${v.tenant}`, kind: 'Violation' }));
+    return out.slice(0, 24);
+  }, [q, state]);
+
+  if (q) {
+    return (
+      <>
+        <div className="page-header">
+          <div>
+            <h2 className="page-title">Search Results</h2>
+            <p className="page-subtitle">{hits.length === 0 ? `Nothing on record matches "${search.trim()}".` : `${hits.length} record${hits.length === 1 ? '' : 's'} matching "${search.trim()}".`}</p>
+          </div>
+        </div>
+        <div className="panel">
+          {hits.length === 0 ? (
+            <div className="empty-state"><span className="material-symbols-outlined">search_off</span>Try a name, record ID, or stall number.</div>
+          ) : (
+            <div className="search-results">
+              {hits.map((h) => (
+                <button className="search-result" key={h.key} onClick={() => onNavigate(h.module)}>
+                  <span className="material-symbols-outlined">{h.icon}</span>
+                  <span className="search-result-text">
+                    <span className="search-result-label">{h.label}</span>
+                    <span className="search-result-detail">{h.detail}</span>
+                  </span>
+                  <span className="search-result-kind">{h.kind}</span>
+                  <span className="material-symbols-outlined search-result-go">chevron_right</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -922,13 +1246,27 @@ function DashboardPage({ state, occupiedCount, pendingApplicants, outstandingUti
       </div>
       <div className="dashboard-grid">
         <div className="panel">
-          <div className="panel-header"><h3 className="panel-title">Stall Occupancy Overview</h3><button className="btn-outline-sm" onClick={() => onNavigate('analytics')}>View Analytics</button></div>
-          <div className="chart-container">{sections.map((sec) => { const total = state.stalls.filter(s => s.section === sec).length; const occ = state.stalls.filter(s => s.section === sec && s.status === 'Occupied').length; const h = total > 0 ? (occ / total) * 100 : 0; return (<div className="chart-bar-group" key={sec}><div className="chart-bar" style={{ height: `${Math.max(h, 15)}%` }} title={`${occ}/${total}`} /><span className="chart-bar-label">{sec.split(' ')[0]}</span></div>); })}</div>
+          <div className="panel-header">
+            <div className="panel-heading">
+              <h3 className="panel-title">Stall Occupancy Analytics</h3>
+              <span className="panel-caption">Stalls by section and current status · {percent(occupancyPct)} occupied overall</span>
+            </div>
+            <button className="btn-outline-sm" onClick={() => onNavigate('analytics')}>Full Report</button>
+          </div>
+          <StackedBarGraph columns={occupancyColumns} series={STALL_STATUS_SERIES} emptyText="No stalls are on record yet." />
         </div>
         <div className="panel">
-          <div className="panel-header"><h3 className="panel-title">Recent Activity</h3></div>
+          <div className="panel-header">
+            <div className="panel-heading">
+              <h3 className="panel-title">Recent Activity</h3>
+              <span className="panel-caption">{state.activities.length} entr{state.activities.length === 1 ? 'y' : 'ies'} on record</span>
+            </div>
+          </div>
           <div className="activity-list">
-            {state.activities.slice(0, 6).map((act) => (
+            {state.activities.length === 0 && (
+              <div className="activity-empty"><span className="material-symbols-outlined">history</span>No activity recorded yet.</div>
+            )}
+            {state.activities.map((act) => (
               <div className="activity-item" key={act.id}>
                 <div className={`activity-icon ${act.iconColor}`}><span className="material-symbols-outlined">{act.icon}</span></div>
                 <div><p className="activity-text"><strong>{act.highlight}</strong>{act.text}</p><span className="activity-time">{act.time}</span></div>
@@ -945,7 +1283,7 @@ function DashboardPage({ state, occupiedCount, pendingApplicants, outstandingUti
    Stall Management Page
    ============================================================ */
 
-function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onDelete }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onDelete: (s: Stall) => void }) {
+function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onEdit, onDelete }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onEdit: (s: Stall) => void; onDelete: (s: Stall) => void }) {
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -1006,7 +1344,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div className="table-wrap">
           <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Last Inspection</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
+              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit stall" aria-label="Edit stall" onClick={() => onEdit(s)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
               {paged.items.length === 0 && <tr><td colSpan={6}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
             </tbody>
           </table>
@@ -1021,7 +1359,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
    Applicant Management Page
    ============================================================ */
 
-function ApplicantManagementPage({ applicants, pendingApplicants, incompleteApplicants, approvedApplicants, search, onAdd, onView, onDelete }: { applicants: Applicant[]; pendingApplicants: number; incompleteApplicants: number; approvedApplicants: number; search: string; onAdd: () => void; onView: (a: Applicant) => void; onDelete: (a: Applicant) => void }) {
+function ApplicantManagementPage({ applicants, pendingApplicants, incompleteApplicants, approvedApplicants, search, onAdd, onView, onEdit, onDelete }: { applicants: Applicant[]; pendingApplicants: number; incompleteApplicants: number; approvedApplicants: number; search: string; onAdd: () => void; onView: (a: Applicant) => void; onEdit: (a: Applicant) => void; onDelete: (a: Applicant) => void }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
 
@@ -1078,7 +1416,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
                 const done = submittedCount(a);
                 return (
                   <tr key={a.id}>
-                    <td><div className="applicant-cell"><div className={`avatar-initials ${getAvatarColor(i)}`}>{getInitials(a.name)}</div><div className="applicant-info"><div className="name">{a.name}</div><div className="phone">{a.phone}</div></div></div></td>
+                    <td><div className="applicant-cell"><div className={`avatar-initials ${getAvatarColor(i)}`}>{getInitials(a.name)}</div><div className="applicant-info"><div className="name">{a.name}</div><div className="phone">{formatPhone(a.phone)}</div></div></div></td>
                     <td>{a.dateApplied}</td>
                     <td>{a.stallType}</td>
                     <td>
@@ -1092,7 +1430,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
                       </div>
                     </td>
                     <td><StatusBadge status={a.status} /></td>
-                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="Review applicant" aria-label="Review applicant" onClick={() => onView(a)}><span className="material-symbols-outlined">person_search</span></button><button type="button" className="row-icon-btn danger" title="Delete applicant" aria-label="Delete applicant" onClick={() => onDelete(a)}><span className="material-symbols-outlined">delete</span></button></div></td>
+                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(a)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Review applicant" aria-label="Review applicant" onClick={() => onEdit(a)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete applicant" aria-label="Delete applicant" onClick={() => onDelete(a)}><span className="material-symbols-outlined">delete</span></button></div></td>
                   </tr>
                 );
               })}
@@ -1110,7 +1448,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
    Tenant Records Page
    ============================================================ */
 
-function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void }) {
+function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onEdit: (t: Tenant) => void; onDelete: (t: Tenant) => void }) {
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -1124,7 +1462,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenan
   const filtered = useMemo(() => tenants.filter((t) => {
     if (sectionFilter && t.section !== sectionFilter) return false;
     if (statusFilter && t.status !== statusFilter) return false;
-    if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) return false; }
+    if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q) && !t.keepers.some((k) => k.name.toLowerCase().includes(q))) return false; }
     return true;
   }), [tenants, sectionFilter, statusFilter, search]);
 
@@ -1141,7 +1479,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenan
       </div>
       <div className="stats-row">
         <div className="stat-card">
-          <div className="stat-header"><span className="stat-label">Total Tenants</span><span className="material-symbols-outlined stat-icon">groups</span></div>
+          <div className="stat-header"><span className="stat-label">Total Tenants</span><span className="material-symbols-outlined stat-icon primary">groups</span></div>
           <div className="stat-value">{tenants.length}</div>
           <div className="stat-caption">{activeCount} Active, {expiringCount} Expiring</div>
         </div>
@@ -1170,7 +1508,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete }: { tenan
         <div className="table-wrap">
           <table className="data-table"><thead><tr><th>Tenant ID</th><th>Name</th><th>Stall ID</th><th>Section</th><th>Monthly Rent</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((t) => (<tr key={t.id}><td><strong>{t.id}</strong></td><td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{t.phone || '—'}</div></div></td><td>{t.stallId}</td><td>{t.section}</td><td>{money(t.rent)}</td><td><TenantStatusBadge status={t.status} /></td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
+              {paged.items.map((t) => (<tr key={t.id}><td><strong>{t.id}</strong></td><td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{formatPhone(t.phone) || '—'}</div></div></td><td>{t.stallId}</td><td>{t.section}</td><td>{money(t.rent)}</td><td><TenantStatusBadge status={t.status} /></td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit tenant" aria-label="Edit tenant" onClick={() => onEdit(t)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
               {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">groups</span>No tenants match the current filters.</div></td></tr>}
             </tbody>
           </table>
@@ -1202,7 +1540,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
     else if (statusFilter && b.status !== statusFilter) return false;
     if (search) {
       const q = search.toLowerCase();
-      if (!b.id.toLowerCase().includes(q) && !b.stallId.toLowerCase().includes(q) && !b.tenantName.toLowerCase().includes(q) && !formatPeriod(b.period).toLowerCase().includes(q)) return false;
+      if (!b.id.toLowerCase().includes(q) && !b.stallId.toLowerCase().includes(q) && !b.tenantName.toLowerCase().includes(q) && !billPeriodText(b).toLowerCase().includes(q)) return false;
     }
     return true;
   }), [bills, typeFilter, statusFilter, search]);
@@ -1277,7 +1615,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
                   <td><span className={`utility-tag ${b.type.toLowerCase()}`}><span className="material-symbols-outlined">{UTILITY_PRESETS[b.type].icon}</span>{b.type}</span></td>
                   <td><strong>{b.stallId}</strong></td>
                   <td className={b.tenantName ? '' : 'tenant-cell'}>{b.tenantName || 'Unassigned'}</td>
-                  <td>{formatPeriod(b.period)}</td>
+                  <td>{billPeriodText(b)}</td>
                   <td>{b.consumption.toLocaleString()} {UTILITY_PRESETS[b.type].unit}</td>
                   <td><strong>{money(b.amount)}</strong></td>
                   <td><BillStatusBadge bill={b} /></td>
@@ -1304,12 +1642,25 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
   const [type, setType] = useState<UtilityType>('Electricity');
   const [stallId, setStallId] = useState('');
   const [tenantId, setTenantId] = useState('');
-  const [period, setPeriod] = useState(currentPeriod());
+  /* The period is read to the day. It still belongs to the month its end date
+     falls in, which is what groups and de-duplicates bills. */
+  const [periodStart, setPeriodStart] = useState(() => monthStartIso(currentPeriod()));
+  const [periodEnd, setPeriodEnd] = useState(() => monthEndIso(currentPeriod()));
+  const period = periodOf(periodEnd);
+
+  const applyPeriodEnd = (next: string) => {
+    setPeriodEnd(next);
+    if (!dueTouched && next) setDueDate(isoPlusDays(next, 15));
+    setError('');
+  };
   const [previous, setPrevious] = useState('');
   const [current, setCurrent] = useState('');
   const [rate, setRate] = useState(String(UTILITY_PRESETS.Electricity.rate));
   const [fixedCharge, setFixedCharge] = useState(String(UTILITY_PRESETS.Electricity.fixedCharge));
-  const [dueDate, setDueDate] = useState(isoDatePlusDays(15));
+  /* The bill falls due after the period it covers. Moving the period end drags
+     the due date with it, until the officer sets one of their own. */
+  const [dueDate, setDueDate] = useState(() => isoPlusDays(monthEndIso(currentPeriod()), 15));
+  const [dueTouched, setDueTouched] = useState(false);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [duplicatePrompt, setDuplicatePrompt] = useState<UtilityBill | null>(null);
@@ -1378,7 +1729,9 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
     if (readingsInverted) { setError('Current reading cannot be lower than the previous reading.'); return; }
     if (rateNum <= 0) { setError('Rate per unit must be greater than zero.'); return; }
     if (isNegative(fixedCharge)) { setError('Fixed / service charge cannot be negative.'); return; }
-    if (!period) { setError('Select a billing period.'); return; }
+    if (!periodStart || !periodEnd) { setError('Set the days this billing period covers.'); return; }
+    if (periodEnd < periodStart) { setError('The billing period cannot end before it starts.'); return; }
+    if (dueDate && dueDate < periodEnd) { setError('The due date falls before the billing period ends.'); return; }
 
     const duplicate = bills.find((b) => b.stallId === stallId && b.type === type && b.period === period);
     if (duplicate) { setDuplicatePrompt(duplicate); return; }
@@ -1396,6 +1749,8 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
       tenantName: tenant?.name ?? '',
       section,
       period,
+      periodStart,
+      periodEnd,
       previousReading: prevNum,
       currentReading: currNum,
       consumption,
@@ -1450,12 +1805,34 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
 
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Billing Period</label>
-              <input className="form-input" type="month" value={period} onChange={(e) => { setPeriod(e.target.value); setError(''); }} />
+              <label className="form-label">Period Covered — From *</label>
+              <input className="form-input" type="date" value={periodStart} onChange={(e) => { setPeriodStart(e.target.value); setError(''); }} />
+              <span className="form-hint">First day the reading covers.</span>
             </div>
             <div className="form-group">
+              <label className="form-label">Period Covered — To *</label>
+              <input className="form-input" type="date" min={periodStart} value={periodEnd} onChange={(e) => applyPeriodEnd(e.target.value)} />
+              <span className="form-hint">{periodEnd && periodStart && periodEnd >= periodStart ? `${periodDays(periodStart, periodEnd)} day${periodDays(periodStart, periodEnd) === 1 ? '' : 's'} · filed under ${formatPeriod(period)}.` : 'Day the meter was read.'}</span>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
               <label className="form-label">Due Date</label>
-              <input className="form-input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <input className="form-input" type="date" min={periodEnd} value={dueDate} onChange={(e) => { setDueTouched(true); setDueDate(e.target.value); setError(''); }} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Whole Month</label>
+              <button
+                className="btn-outline"
+                type="button"
+                onClick={() => {
+                  setPeriodStart(monthStartIso(period));
+                  applyPeriodEnd(monthEndIso(period));
+                }}
+              >
+                <span className="material-symbols-outlined">event_repeat</span>Cover all of {formatPeriod(period)}
+              </button>
             </div>
           </div>
 
@@ -1497,7 +1874,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
               <span>{stallId ? `Stall ${stallId}` : 'No stall selected'}{selectedTenant ? ` · ${selectedTenant.name}` : ''}</span>
             </div>
           </div>
-          <div className="calc-row"><span>Billing period</span><strong>{formatPeriod(period)}</strong></div>
+          <div className="calc-row"><span>Period covered</span><strong>{formatPeriodRange(periodStart, periodEnd)}</strong></div>
           <div className="calc-row"><span>Previous reading</span><strong>{prevNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row"><span>Current reading</span><strong>{currNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row highlight"><span>Consumption</span><strong>{consumption.toLocaleString()} {preset.unit}</strong></div>
@@ -1531,10 +1908,10 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
    Violations Page — the register of citations issued to tenants
    ============================================================ */
 
-function ViolationsPage({ violations, search, onAdd, onView, onToggleStatus, onDelete, onExport }: {
+function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, onExport }: {
   violations: Violation[]; search: string;
-  onAdd: () => void; onView: (v: Violation) => void;
-  onToggleStatus: (id: string) => void; onDelete: (v: Violation) => void; onExport: () => void;
+  onAdd: () => void; onView: (v: Violation) => void; onEdit: (v: Violation) => void;
+  onDelete: (v: Violation) => void; onExport: () => void;
 }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -1637,7 +2014,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onToggleStatus, onD
                   <td>
                     <div className="row-actions">
                       <button type="button" className="row-icon-btn" title="View violation" aria-label="View violation" onClick={() => onView(v)}><span className="material-symbols-outlined">visibility</span></button>
-                      <button type="button" className="row-icon-btn" title={v.status === 'Open' ? 'Resolve violation' : 'Reopen violation'} aria-label={v.status === 'Open' ? 'Resolve violation' : 'Reopen violation'} onClick={() => onToggleStatus(v.id)}><span className="material-symbols-outlined">{v.status === 'Open' ? 'check_circle' : 'replay'}</span></button>
+                      <button type="button" className="row-icon-btn edit" title="Edit violation — resolve or reopen it here" aria-label="Edit violation" onClick={() => onEdit(v)}><span className="material-symbols-outlined">edit</span></button>
                       <button type="button" className="row-icon-btn danger" title="Delete violation" aria-label="Delete violation" onClick={() => onDelete(v)}><span className="material-symbols-outlined">delete</span></button>
                     </div>
                   </td>
@@ -1748,208 +2125,449 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
   );
 }
 
+function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
+  violation: Violation; current: Violation; tenants: Tenant[];
+  onSave: (v: Violation, opts?: SaveOpts, previous?: Violation) => void; onClose: () => void;
+}) {
+  // Blank draft — anything left blank keeps what the citation already has.
+  const [tenant, setTenant] = useState('');
+  const [issue, setIssue] = useState('');
+  const [points, setPoints] = useState('');
+  const [status, setStatus] = useState<'' | ViolationStatus>('');
+  const [dateRecorded, setDateRecorded] = useState('');
+  const [dateResolved, setDateResolved] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const effectiveStatus: ViolationStatus = status || current.status;
+  const dirty = !!(tenant.trim() || issue.trim() || points.trim() || status || dateRecorded || dateResolved || notes.trim());
+
+  const merged = (): Violation => {
+    const resolvedOn = dateResolved || current.dateResolved || todayIso();
+    return {
+      ...current,
+      tenant: keepText(tenant, current.tenant),
+      issue: keepText(issue, current.issue),
+      points: points.trim() ? toAmount(points) : current.points,
+      status: effectiveStatus,
+      dateRecorded: dateRecorded || current.dateRecorded,
+      dateResolved: effectiveStatus === 'Resolved' ? resolvedOn : '',
+      notes: keepText(notes, current.notes ?? ''),
+    };
+  };
+
+  const commit = () => {
+    const next = merged();
+    if (next.dateResolved && next.dateRecorded && next.dateResolved < next.dateRecorded) {
+      return 'Resolution date cannot be earlier than the date recorded.';
+    }
+    onSave(next, {}, violation);
+    return '';
+  };
+
+  const form = useSaveChanges(dirty, commit);
+  const edit = <T,>(set: (v: T) => void) => (value: T) => { form.clearError(); set(value); };
+
+  return (
+    <div className="form-grid">
+      <SaveNote error={form.error} />
+      <div className="form-row">
+        <div className="form-group"><label className="form-label">Violation ID</label><input className="form-input" value={current.id} disabled /></div>
+        <div className="form-group">
+          <label className="form-label">Status</label>
+          <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value as ViolationStatus)}>
+            <option value="">— Keep {current.status}</option>
+            <option value="Open">Open</option><option value="Resolved">Resolved</option>
+          </select>
+          <span className="form-hint">
+            {current.status === 'Open'
+              ? 'Set this to Resolved to close the citation — the resolution date is stamped when you save.'
+              : 'Set this back to Open to reopen the citation — the resolution date is cleared when you save.'}
+          </span>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Tenant / Party Cited</label>
+          <input className="form-input" list="violation-edit-tenant-options" placeholder={keepHint(current.tenant)} value={tenant} onChange={(e) => edit(setTenant)(e.target.value)} />
+          <datalist id="violation-edit-tenant-options">{tenants.map((t) => <option key={t.id} value={t.name}>{t.stallId}</option>)}</datalist>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Demerit Points</label>
+          <input className="form-input" type="number" min="0" step="1" placeholder={keepHint(String(current.points))} value={points} onChange={(e) => edit(setPoints)(e.target.value)} />
+        </div>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Violation</label>
+        <input className="form-input" list="violation-edit-issue-options" placeholder={keepHint(current.issue)} value={issue} onChange={(e) => edit(setIssue)(e.target.value)} />
+        <datalist id="violation-edit-issue-options">{VIOLATION_ISSUES.map((v) => <option key={v} value={v} />)}</datalist>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Date Recorded</label>
+          <input className="form-input" type="date" value={dateRecorded} onChange={(e) => edit(setDateRecorded)(e.target.value)} />
+          <span className="form-hint">{keepHint(current.dateRecorded ? formatIsoDate(current.dateRecorded) : '')}</span>
+        </div>
+        {effectiveStatus === 'Resolved' && (
+          <div className="form-group">
+            <label className="form-label">Date Resolved</label>
+            <input className="form-input" type="date" value={dateResolved} onChange={(e) => edit(setDateResolved)(e.target.value)} />
+            <span className="form-hint">{current.dateResolved ? keepHint(formatIsoDate(current.dateResolved)) : 'Left blank, resolving stamps today.'}</span>
+          </div>
+        )}
+      </div>
+      <div className="form-group">
+        <label className="form-label">Notes</label>
+        <textarea className="form-textarea" placeholder={keepHint(current.notes)} value={notes} onChange={(e) => edit(setNotes)(e.target.value)} />
+      </div>
+      <EditActions dirty={dirty} onSave={form.save} onCancel={onClose} />
+    </div>
+  );
+}
+
 /* ============================================================
    Analytics Page
    ============================================================ */
 
+/* The analytics module is presented as an official operations report: a
+   masthead, numbered sections, and figures set in tables rather than in
+   decorative cards, so it can be read — or printed — as a document. */
+
+function ReportSection({ index, title, summary, action, children }: {
+  index: string; title: string; summary: string; action?: ReactNode; children: ReactNode;
+}) {
+  return (
+    <section className="report-section">
+      <header className="report-section-head">
+        <span className="report-index">{index}</span>
+        <div className="report-section-title">
+          <h3>{title}</h3>
+          <p>{summary}</p>
+        </div>
+        {action && <div className="report-section-action">{action}</div>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function ReportFigure({ label, value, basis, tone, meter }: {
+  label: string; value: string; basis: string; tone?: string; meter?: number;
+}) {
+  return (
+    <div className="report-figure">
+      <span className="report-figure-label">{label}</span>
+      <strong className={`report-figure-value${tone ? ` ${tone}` : ''}`}>{value}</strong>
+      <span className="report-figure-basis">{basis}</span>
+      {typeof meter === 'number' && (
+        <div className="report-meter">
+          <div className={`report-meter-fill${tone ? ` ${tone}` : ''}`} style={{ width: `${Math.min(100, Math.max(0, meter))}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Proportion cell — the rule carries the comparison, the figure carries the
+   precision, so a column of them can be scanned or quoted. */
+function ReportShare({ value, tone }: { value: number; tone?: string }) {
+  return (
+    <div className="report-share">
+      <div className="report-share-track">
+        <div className={`report-share-fill${tone ? ` ${tone}` : ''}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+      </div>
+      <span>{percent(value)}</span>
+    </div>
+  );
+}
+
 function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount, onExport, onNavigate }: { state: AppState; occupiedCount: number; availableCount: number; maintenanceCount: number; onExport: () => void; onNavigate: (k: ModuleKey) => void }) {
-  const sections = useMemo(() => Array.from(new Set(state.stalls.map((s) => s.section))), [state.stalls]);
+  /* Stamped once when the report is opened — every figure below is read from
+     the records as they stood at that moment. */
+  const [generatedAt] = useState(() => new Date());
   const totalStalls = state.stalls.length;
 
-  const activeTenants = useMemo(() => state.tenants.filter(t => t.status === 'Active').length, [state.tenants]);
-  const pendingApplicants = useMemo(() => state.applicants.filter(a => a.status === 'Pending Review').length, [state.applicants]);
-  const incompleteApplicants = useMemo(() => state.applicants.filter(a => a.status === 'Incomplete').length, [state.applicants]);
-  const approvedApplicants = useMemo(() => state.applicants.filter(a => a.status === 'Approved').length, [state.applicants]);
-  const rejectedApplicants = useMemo(() => state.applicants.filter(a => a.status === 'Rejected').length, [state.applicants]);
-  const openViolations = useMemo(() => state.violations.filter(v => v.status === 'Open').length, [state.violations]);
-  const resolvedViolations = useMemo(() => state.violations.filter(v => v.status === 'Resolved').length, [state.violations]);
+  const sections = useMemo(
+    () => Array.from(new Set([...state.stalls.map((s) => s.section), ...state.tenants.map((t) => t.section)])),
+    [state.stalls, state.tenants],
+  );
 
-  const tenantsBySection = useMemo(() => {
-    const map: Record<string, number> = {};
-    sections.forEach(sec => { map[sec] = state.tenants.filter(t => t.section === sec).length; });
-    return map;
-  }, [state.tenants, sections]);
+  const activeTenants = useMemo(() => state.tenants.filter((t) => t.status === 'Active').length, [state.tenants]);
+  const expiringTenants = useMemo(() => state.tenants.filter((t) => t.status === 'Expiring Soon').length, [state.tenants]);
+  const monthlyRent = useMemo(() => state.tenants.reduce((s, t) => s + t.rent, 0), [state.tenants]);
 
-  const logCounts = useMemo(() => {
-    const map: Record<string, number> = {};
-    state.logs.forEach(l => { map[l.type] = (map[l.type] || 0) + 1; });
-    return map;
-  }, [state.logs]);
+  const applicantRows = useMemo(() => {
+    const statuses: ApplicantStatus[] = ['Pending Review', 'Incomplete', 'Approved', 'Rejected'];
+    return statuses.map((status) => ({ status, count: state.applicants.filter((a) => a.status === status).length }));
+  }, [state.applicants]);
+  const pendingApplicants = applicantRows[0].count;
+  const incompleteApplicants = applicantRows[1].count;
+  const approvedApplicants = applicantRows[2].count;
 
-  const utilityStats = useMemo(() => {
-    const electricity = state.utilities.filter(b => b.type === 'Electricity');
-    const water = state.utilities.filter(b => b.type === 'Water');
-    const sum = (list: UtilityBill[]) => list.reduce((s, b) => s + b.amount, 0);
-    const bySection: Record<string, number> = {};
-    state.utilities.forEach(b => { const key = b.section || 'Unassigned'; bySection[key] = (bySection[key] || 0) + b.amount; });
+  const openViolations = useMemo(() => state.violations.filter((v) => v.status === 'Open').length, [state.violations]);
+  const resolvedViolations = state.violations.length - openViolations;
+  const demeritPoints = useMemo(() => state.violations.reduce((s, v) => s + v.points, 0), [state.violations]);
+  const recentViolations = useMemo(
+    () => [...state.violations].sort((a, b) => (b.dateRecorded || '').localeCompare(a.dateRecorded || '')).slice(0, 5),
+    [state.violations],
+  );
+
+  const occupancyColumns = useMemo(() => sectionOccupancyColumns(state.stalls), [state.stalls]);
+
+  const tenancyRows = useMemo(() => sections.map((section) => {
+    const stalls = state.stalls.filter((s) => s.section === section);
+    const tenants = state.tenants.filter((t) => t.section === section);
     return {
-      electricityTotal: sum(electricity),
-      waterTotal: sum(water),
-      total: sum(state.utilities),
-      paidTotal: sum(state.utilities.filter(b => b.status === 'Paid')),
-      unpaidTotal: sum(state.utilities.filter(b => b.status === 'Unpaid')),
-      overdueCount: state.utilities.filter(isOverdue).length,
-      kwh: electricity.reduce((s, b) => s + b.consumption, 0),
-      cubic: water.reduce((s, b) => s + b.consumption, 0),
-      bySection,
+      section,
+      stalls: stalls.length,
+      occupied: stalls.filter((s) => s.status === 'Occupied').length,
+      tenants: tenants.length,
+      rent: tenants.reduce((s, t) => s + t.rent, 0),
     };
+  }), [sections, state.stalls, state.tenants]);
+
+  const utilityRows = useMemo(() => UTILITY_TYPES.map((type) => {
+    const list = state.utilities.filter((b) => b.type === type);
+    const billed = list.reduce((s, b) => s + b.amount, 0);
+    const collected = list.filter((b) => b.status === 'Paid').reduce((s, b) => s + b.amount, 0);
+    return {
+      type,
+      count: list.length,
+      consumption: list.reduce((s, b) => s + b.consumption, 0),
+      unit: UTILITY_PRESETS[type].unit,
+      billed,
+      collected,
+      outstanding: billed - collected,
+    };
+  }), [state.utilities]);
+
+  const billedTotal = utilityRows.reduce((s, r) => s + r.billed, 0);
+  const collectedTotal = utilityRows.reduce((s, r) => s + r.collected, 0);
+  const outstandingTotal = billedTotal - collectedTotal;
+  const overdueCount = useMemo(() => state.utilities.filter(isOverdue).length, [state.utilities]);
+
+  const utilityColumns = useMemo<GraphColumn[]>(() => {
+    const keys = Array.from(new Set(state.utilities.map((b) => b.section || 'Unassigned')));
+    return keys.map((section) => {
+      const inSection = state.utilities.filter((b) => (b.section || 'Unassigned') === section);
+      return {
+        label: shortSection(section),
+        caption: `${inSection.length} bill${inSection.length === 1 ? '' : 's'}`,
+        values: {
+          Electricity: inSection.filter((b) => b.type === 'Electricity').reduce((s, b) => s + b.amount, 0),
+          Water: inSection.filter((b) => b.type === 'Water').reduce((s, b) => s + b.amount, 0),
+        },
+      };
+    });
   }, [state.utilities]);
 
+  const logRows = useMemo(
+    () => LOG_TYPES.map((type) => ({ type, count: state.logs.filter((l) => l.type === type).length })),
+    [state.logs],
+  );
+
+  const occupancyRate = ratio(occupiedCount, totalStalls);
+  const collectionRate = ratio(collectedTotal, billedTotal);
+  const stallRows: Array<{ label: string; count: number; tone: string }> = [
+    { label: 'Occupied', count: occupiedCount, tone: 'occupied' },
+    { label: 'Available', count: availableCount, tone: 'available' },
+    { label: 'Maintenance', count: maintenanceCount, tone: 'maintenance' },
+  ];
+
+  const reference = `PMRMS-AR-${isoDate(generatedAt).replace(/-/g, '')}`;
+  const stamp = generatedAt.toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' });
+
   return (
-    <>
-      <div className="page-header">
-        <div><h2 className="page-title">Analytics</h2><p className="page-subtitle">Comprehensive operational dashboard and insights.</p></div>
-        <div className="page-actions"><button className="btn-primary" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Report</button></div>
-      </div>
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-header"><span className="stat-label">Occupancy Rate</span><span className="material-symbols-outlined stat-icon primary">pie_chart</span></div>
-          <div className="stat-value primary">{percent(ratio(occupiedCount, totalStalls))}</div>
-          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available</div>
-          <div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${ratio(occupiedCount, totalStalls)}%` }} /></div>
+    <div className="report">
+      <header className="report-masthead">
+        <div className="report-seal"><img src="./logo.jpg" alt="" aria-hidden="true" /></div>
+        <div className="report-identity">
+          <span className="report-office">Municipality of Tanauan, Leyte &middot; Market Office</span>
+          <h2 className="report-title">Market Operations Analytics Report</h2>
+          <span className="report-meta">Reference {reference} &middot; Compiled from live records as of {stamp}</span>
         </div>
-        <div className="stat-card">
-          <div className="stat-header"><span className="stat-label">Active Tenants</span><span className="material-symbols-outlined stat-icon success">groups</span></div>
-          <div className="stat-value success">{activeTenants}</div>
-          <div className="stat-caption">{state.tenants.length} on record, {availableCount} stalls open</div>
+        <div className="report-actions">
+          <button className="btn-primary" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Report</button>
         </div>
-        <div className="stat-card">
-          <div className="stat-header"><span className="stat-label">Pending Applications</span><span className="material-symbols-outlined stat-icon warning">person_add</span></div>
-          <div className="stat-value">{pendingApplicants}</div>
-          <div className="stat-caption">{incompleteApplicants} Incomplete, {approvedApplicants} Approved</div>
+      </header>
+
+      <ReportSection index="I" title="Executive Summary" summary="Headline indicators for the market as currently recorded.">
+        <div className="report-figures">
+          <ReportFigure label="Stall Occupancy" value={percent(occupancyRate)} basis={`${occupiedCount} of ${totalStalls} stalls occupied`} meter={occupancyRate} />
+          <ReportFigure label="Active Tenancies" value={String(activeTenants)} basis={`${state.tenants.length} on record · ${expiringTenants} expiring`} tone="success" />
+          <ReportFigure label="Applications Pending" value={String(pendingApplicants)} basis={`${incompleteApplicants} incomplete · ${state.applicants.length} filed`} tone="warning" />
+          <ReportFigure label="Collection Efficiency" value={billedTotal > 0 ? percent(collectionRate) : '—'} basis={`${money(outstandingTotal)} outstanding`} meter={billedTotal > 0 ? collectionRate : undefined} tone={collectionRate >= 75 || billedTotal === 0 ? 'success' : 'danger'} />
+          <ReportFigure label="Open Violations" value={String(openViolations)} basis={`${demeritPoints} demerit point${demeritPoints === 1 ? '' : 's'} on register`} tone={openViolations > 0 ? 'danger' : 'success'} />
         </div>
-        <div className="stat-card">
-          <div className="stat-header"><span className="stat-label">Open Violations</span><span className="material-symbols-outlined stat-icon danger">gavel</span></div>
-          <div className="stat-value danger">{openViolations}</div>
-          <div className="stat-caption">{state.violations.length} total, {state.violations.length - openViolations} Resolved</div>
-        </div>
-      </div>
-      <div className="analytics-grid">
-        <div className="panel"><div className="panel-header"><h3 className="panel-title">Stall Status Distribution</h3></div>
-          <div className="distribution-row">
-            <div className="distribution-item">
-              <div className="dist-count">{occupiedCount}</div>
-              <div className="dist-label">Occupied</div>
-              <div className="dist-bar"><div className="dist-bar-fill occupied" style={{ width: `${totalStalls > 0 ? (occupiedCount / totalStalls) * 100 : 0}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{availableCount}</div>
-              <div className="dist-label">Available</div>
-              <div className="dist-bar"><div className="dist-bar-fill available" style={{ width: `${totalStalls > 0 ? (availableCount / totalStalls) * 100 : 0}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{maintenanceCount}</div>
-              <div className="dist-label">Maintenance</div>
-              <div className="dist-bar"><div className="dist-bar-fill maintenance" style={{ width: `${totalStalls > 0 ? (maintenanceCount / totalStalls) * 100 : 0}%` }} /></div>
+      </ReportSection>
+
+      <ReportSection index="II" title="Stall Utilization" summary="Distribution of stalls across market sections and their present condition.">
+        <div className="report-split">
+          <div className="report-panel">
+            <div className="report-panel-head">Stalls by section and status</div>
+            <StackedBarGraph columns={occupancyColumns} series={STALL_STATUS_SERIES} emptyText="No stalls are on record yet." />
+          </div>
+          <div className="report-panel">
+            <div className="report-panel-head">Status summary</div>
+            <div className="report-table-wrap">
+              <table className="report-table">
+              <thead><tr><th>Status</th><th className="num">Stalls</th><th className="share">Share</th></tr></thead>
+              <tbody>
+                {stallRows.map((row) => (
+                  <tr key={row.label}>
+                    <td>{row.label}</td>
+                    <td className="num">{row.count}</td>
+                    <td className="share"><ReportShare value={ratio(row.count, totalStalls)} tone={row.tone} /></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td>Total stalls</td><td className="num">{totalStalls}</td><td className="share">{totalStalls > 0 ? '100.0%' : '—'}</td></tr></tfoot>
+              </table>
             </div>
           </div>
         </div>
-        <div className="panel"><div className="panel-header"><h3 className="panel-title">Occupancy by Section</h3></div>
-          <div className="chart-container">
-            {sections.map((sec) => { const total = state.stalls.filter(s => s.section === sec).length; const occ = state.stalls.filter(s => s.section === sec && s.status === 'Occupied').length; const h = total > 0 ? (occ / total) * 100 : 0; return (<div className="chart-bar-group" key={sec}><div className="chart-bar" style={{ height: `${Math.max(h, 15)}%` }} title={`${occ}/${total}`} /><span className="chart-bar-label">{sec.split(' ')[0]}</span></div>); })}
-          </div>
-        </div>
-        <div className="panel analytics-full"><div className="panel-header"><h3 className="panel-title">Applicant Pipeline</h3></div>
-          <div className="distribution-row">
-            <div className="distribution-item">
-              <div className="dist-count">{pendingApplicants}</div>
-              <div className="dist-label">Pending Review</div>
-              <div className="dist-bar"><div className="dist-bar-fill pending" style={{ width: `${state.applicants.length > 0 ? (pendingApplicants / state.applicants.length) * 100 : 0}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{incompleteApplicants}</div>
-              <div className="dist-label">Incomplete</div>
-              <div className="dist-bar"><div className="dist-bar-fill incomplete" style={{ width: `${state.applicants.length > 0 ? (incompleteApplicants / state.applicants.length) * 100 : 0}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{approvedApplicants}</div>
-              <div className="dist-label">Approved</div>
-              <div className="dist-bar"><div className="dist-bar-fill approved" style={{ width: `${state.applicants.length > 0 ? (approvedApplicants / state.applicants.length) * 100 : 0}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{rejectedApplicants}</div>
-              <div className="dist-label">Rejected</div>
-              <div className="dist-bar"><div className="dist-bar-fill rejected" style={{ width: `${state.applicants.length > 0 ? (rejectedApplicants / state.applicants.length) * 100 : 0}%` }} /></div>
-            </div>
-          </div>
-          <div className="pipeline-row">
-            <div className="pipeline-step"><div className="pipe-count pending">{pendingApplicants}</div><div className="pipe-label">Pending</div></div>
-            <div className="pipeline-step"><div className="pipe-count incomplete">{incompleteApplicants}</div><div className="pipe-label">Incomplete</div></div>
-            <div className="pipeline-step"><div className="pipe-count approved">{approvedApplicants}</div><div className="pipe-label">Approved</div></div>
-            <div className="pipeline-step"><div className="pipe-count rejected">{rejectedApplicants}</div><div className="pipe-label">Rejected</div></div>
-          </div>
-        </div>
-        <div className="panel"><div className="panel-header"><h3 className="panel-title">Tenant Distribution by Section</h3></div>
-          <div className="analytics-stats">
-            {sections.map(sec => (
-              <div className="stat-pill" key={sec}><span>{sec}</span><strong>{tenantsBySection[sec] || 0}</strong></div>
+      </ReportSection>
+
+      <ReportSection index="III" title="Applicant Processing" summary="Standing of every application filed with the market office." action={<button className="btn-outline-sm" onClick={() => onNavigate('applicants')}>Open Applicants</button>}>
+        <div className="report-table-wrap">
+          <table className="report-table">
+          <thead><tr><th>Application Status</th><th className="num">Applications</th><th className="share">Share of filings</th></tr></thead>
+          <tbody>
+            {applicantRows.map((row) => (
+              <tr key={row.status}>
+                <td>{row.status}</td>
+                <td className="num">{row.count}</td>
+                <td className="share"><ReportShare value={ratio(row.count, state.applicants.length)} /></td>
+              </tr>
             ))}
-          </div>
+            {state.applicants.length === 0 && <tr><td colSpan={3} className="report-empty">No applications have been filed yet.</td></tr>}
+          </tbody>
+          <tfoot><tr><td>Total filed</td><td className="num">{state.applicants.length}</td><td className="share">{approvedApplicants} approved to date</td></tr></tfoot>
+          </table>
         </div>
-        <div className="panel"><div className="panel-header"><h3 className="panel-title">Violations Summary</h3><button className="btn-outline-sm" onClick={() => onNavigate('violations')}>Manage Violations</button></div>
-          <div className="distribution-row">
-            <div className="distribution-item">
-              <div className="dist-count">{openViolations}</div>
-              <div className="dist-label">Open</div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{resolvedViolations}</div>
-              <div className="dist-label">Resolved</div>
-            </div>
-          </div>
-          <div className="violation-list">
-            {state.violations.slice(0, 5).map(v => (
-              <div className="violation-item" key={v.id}>
-                <span className="violation-tenant">{v.tenant}</span>
-                <span className="violation-issue">{v.issue}</span>
-                <StatusBadge status={v.status} />
-              </div>
+      </ReportSection>
+
+      <ReportSection index="IV" title="Tenancy and Rental Coverage" summary="Tenants and contracted monthly rent by market section.">
+        <div className="report-table-wrap">
+          <table className="report-table">
+          <thead><tr><th>Section</th><th className="num">Stalls</th><th className="num">Occupied</th><th className="num">Tenants</th><th className="num">Monthly Rent</th><th className="share">Occupancy</th></tr></thead>
+          <tbody>
+            {tenancyRows.map((row) => (
+              <tr key={row.section}>
+                <td>{row.section}</td>
+                <td className="num">{row.stalls}</td>
+                <td className="num">{row.occupied}</td>
+                <td className="num">{row.tenants}</td>
+                <td className="num">{money(row.rent)}</td>
+                <td className="share"><ReportShare value={ratio(row.occupied, row.stalls)} tone="occupied" /></td>
+              </tr>
             ))}
+            {tenancyRows.length === 0 && <tr><td colSpan={6} className="report-empty">No sections are on record yet.</td></tr>}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>All sections</td>
+              <td className="num">{totalStalls}</td>
+              <td className="num">{occupiedCount}</td>
+              <td className="num">{state.tenants.length}</td>
+              <td className="num">{money(monthlyRent)}</td>
+              <td className="share">{percent(occupancyRate)}</td>
+            </tr>
+          </tfoot>
+          </table>
+        </div>
+      </ReportSection>
+
+      <ReportSection index="V" title="Utility Billing and Collection" summary="Electricity and water charged to stalls, and how much of it has been settled." action={<button className="btn-outline-sm" onClick={() => onNavigate('utilities')}>Open Billing</button>}>
+        <div className="report-split table-wide">
+          <div className="report-panel">
+            <div className="report-panel-head">Amount billed by section</div>
+            <StackedBarGraph columns={utilityColumns} series={UTILITY_SERIES} format={(n) => (n >= 1000 ? `₱${(n / 1000).toFixed(1)}K` : `₱${Math.round(n)}`)} emptyText="No utility bills have been issued yet." />
+          </div>
+          <div className="report-panel">
+            <div className="report-panel-head">Collection standing</div>
+            <div className="report-table-wrap">
+              <table className="report-table">
+              <thead><tr><th>Utility</th><th className="num">Consumption</th><th className="num">Billed</th><th className="num">Collected</th><th className="num">Outstanding</th></tr></thead>
+              <tbody>
+                {utilityRows.map((row) => (
+                  <tr key={row.type}>
+                    <td>{row.type}<small>{row.count} bill{row.count === 1 ? '' : 's'}</small></td>
+                    <td className="num">{row.consumption.toLocaleString()} {row.unit}</td>
+                    <td className="num">{money(row.billed)}</td>
+                    <td className="num">{money(row.collected)}</td>
+                    <td className={`num${row.outstanding > 0 ? ' danger' : ''}`}>{money(row.outstanding)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>All utilities</td>
+                  <td className="num">{state.utilities.length} bill{state.utilities.length === 1 ? '' : 's'}</td>
+                  <td className="num">{money(billedTotal)}</td>
+                  <td className="num">{money(collectedTotal)}</td>
+                  <td className={`num${outstandingTotal > 0 ? ' danger' : ''}`}>{money(outstandingTotal)}</td>
+                </tr>
+              </tfoot>
+              </table>
+            </div>
+            <p className="report-note">{overdueCount > 0 ? `${overdueCount} bill${overdueCount === 1 ? ' is' : 's are'} past the due date and should be served a demand notice.` : 'No bill is past its due date.'}</p>
           </div>
         </div>
-        <div className="panel analytics-full"><div className="panel-header"><h3 className="panel-title">Utility Consumption & Billing</h3></div>
-          <div className="distribution-row">
-            <div className="distribution-item">
-              <div className="dist-count">{money(utilityStats.electricityTotal)}</div>
-              <div className="dist-label">Electricity — {utilityStats.kwh.toLocaleString()} kWh</div>
-              <div className="dist-bar"><div className="dist-bar-fill electricity" style={{ width: `${ratio(utilityStats.electricityTotal, utilityStats.total)}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{money(utilityStats.waterTotal)}</div>
-              <div className="dist-label">Water — {utilityStats.cubic.toLocaleString()} m³</div>
-              <div className="dist-bar"><div className="dist-bar-fill water" style={{ width: `${ratio(utilityStats.waterTotal, utilityStats.total)}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{money(utilityStats.paidTotal)}</div>
-              <div className="dist-label">Collected</div>
-              <div className="dist-bar"><div className="dist-bar-fill approved" style={{ width: `${ratio(utilityStats.paidTotal, utilityStats.total)}%` }} /></div>
-            </div>
-            <div className="distribution-item">
-              <div className="dist-count">{money(utilityStats.unpaidTotal)}</div>
-              <div className="dist-label">Outstanding{utilityStats.overdueCount > 0 ? ` · ${utilityStats.overdueCount} overdue` : ''}</div>
-              <div className="dist-bar"><div className="dist-bar-fill rejected" style={{ width: `${ratio(utilityStats.unpaidTotal, utilityStats.total)}%` }} /></div>
-            </div>
-          </div>
-          <div className="analytics-stats" style={{ marginTop: '4px' }}>
-            {Object.entries(utilityStats.bySection).map(([sec, amt]) => (
-              <div className="stat-pill" key={sec}><span>{sec}</span><strong>{money(amt)}</strong></div>
+      </ReportSection>
+
+      <ReportSection index="VI" title="Compliance and Violations" summary="Citations issued against tenants and their present standing." action={<button className="btn-outline-sm" onClick={() => onNavigate('violations')}>Open Register</button>}>
+        <div className="report-figures compact">
+          <ReportFigure label="Open Citations" value={String(openViolations)} basis="Awaiting compliance" tone={openViolations > 0 ? 'danger' : 'success'} />
+          <ReportFigure label="Resolved" value={String(resolvedViolations)} basis={`${percent(ratio(resolvedViolations, state.violations.length))} of the register`} tone="success" />
+          <ReportFigure label="Demerit Points" value={String(demeritPoints)} basis={`Across ${state.violations.length} citation${state.violations.length === 1 ? '' : 's'}`} />
+        </div>
+        <div className="report-table-wrap">
+          <table className="report-table">
+          <thead><tr><th>Reference</th><th>Party Cited</th><th>Violation</th><th className="num">Points</th><th>Recorded</th><th>Status</th></tr></thead>
+          <tbody>
+            {recentViolations.map((v) => (
+              <tr key={v.id}>
+                <td>{v.id}</td>
+                <td>{v.tenant}</td>
+                <td>{v.issue}</td>
+                <td className="num">{v.points}</td>
+                <td>{v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—'}</td>
+                <td><StatusBadge status={v.status} /></td>
+              </tr>
             ))}
-            {state.utilities.length === 0 && <div className="stat-pill"><span>No utility bills recorded yet</span><strong>—</strong></div>}
-          </div>
+            {recentViolations.length === 0 && <tr><td colSpan={6} className="report-empty">No violations have been recorded.</td></tr>}
+          </tbody>
+          </table>
         </div>
-        <div className="panel analytics-full"><div className="panel-header"><h3 className="panel-title">Logbook Activity Summary</h3></div>
-          <div className="log-summary-row">
-            {['Inspection', 'Incident', 'Maintenance', 'Collection', 'Announcement'].map(type => (
-              <div className="log-summary-item" key={type}>
-                <span className="material-symbols-outlined">{type === 'Inspection' ? 'search' : type === 'Incident' ? 'report' : type === 'Maintenance' ? 'build' : type === 'Collection' ? 'payments' : 'campaign'}</span>
-                <span>{type}</span>
-                <strong>{logCounts[type] || 0}</strong>
-              </div>
+      </ReportSection>
+
+      <ReportSection index="VII" title="Logbook Activity" summary="Entries recorded in the market office logbook, by type." action={<button className="btn-outline-sm" onClick={() => onNavigate('logbook')}>Open Logbook</button>}>
+        <div className="report-table-wrap">
+          <table className="report-table">
+          <thead><tr><th>Entry Type</th><th className="num">Entries</th><th className="share">Share of logbook</th></tr></thead>
+          <tbody>
+            {logRows.map((row) => (
+              <tr key={row.type}>
+                <td>{row.type}</td>
+                <td className="num">{row.count}</td>
+                <td className="share"><ReportShare value={ratio(row.count, state.logs.length)} /></td>
+              </tr>
             ))}
-          </div>
+          </tbody>
+          <tfoot><tr><td>Total entries</td><td className="num">{state.logs.length}</td><td className="share">{state.logs.length > 0 ? '100.0%' : '—'}</td></tr></tfoot>
+          </table>
         </div>
-      </div>
-    </>
+      </ReportSection>
+
+      <footer className="report-footer">
+        <span className="material-symbols-outlined">verified</span>
+        <p>
+          This report is compiled automatically from the records held on this workstation and is
+          unsigned. Export it for filing, or have it certified by the Market Supervisor before it is
+          used outside the office.
+        </p>
+      </footer>
+    </div>
   );
 }
 
@@ -2013,7 +2631,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEnt
           ))}
           {paged.items.length === 0 && <div className="empty-state"><span className="material-symbols-outlined">menu_book</span>No log entries found.</div>}
         </div>
-        <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+        <PaginationBar compact info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
       </div>
     </>
   );
@@ -2023,7 +2641,56 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEnt
    Settings Page
    ============================================================ */
 
-function SettingsPage({ state, lastSaved, onReset, onExport }: { state: AppState; lastSaved: string; onReset: () => void; onExport: () => void }) {
+/* Reads a backup file and hands back the state it holds. Shared by the Settings
+   import and the Support restore so both accept exactly the same files. */
+function useBackupFile(onLoaded: (data: AppState, file: File) => void) {
+  const [problem, setProblem] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const choose = () => { setProblem(''); inputRef.current?.click(); };
+
+  const complain = (message: string) => {
+    setProblem(message);
+    setTimeout(() => setProblem(''), 6000);
+  };
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // so choosing the same file twice still fires
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onerror = () => complain('That file could not be read. Try downloading the backup again.');
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target?.result as string);
+        const requiredKeys: (keyof AppState)[] = ['applicants', 'tenants', 'stalls', 'logs', 'activities'];
+        const looksRight = parsed && typeof parsed === 'object' && requiredKeys.every((k) => k in parsed);
+        if (!looksRight) {
+          complain('That is not a system backup — the file is missing the tenant, stall, or applicant records.');
+          return;
+        }
+        onLoaded(mergeState(parsed), file);
+      } catch {
+        complain('That file could not be read as a backup. Select the .json file downloaded from this system.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const field = <input ref={inputRef} type="file" accept="application/json,.json" onChange={onFile} style={{ display: 'none' }} />;
+
+  return { choose, problem, field };
+}
+
+function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state: AppState; lastSaved: string; onReset: () => void; onExport: () => void; onImport: (data: AppState) => void }) {
+  /* An import replaces every record on this workstation, so the file is read
+     first and its contents shown before anything is overwritten. */
+  const [pending, setPending] = useState<{ data: AppState; fileName: string } | null>(null);
+  const backup = useBackupFile((data, file) => setPending({ data, fileName: file.name }));
+
+  const countOf = (data: AppState) =>
+    data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length;
+
   return (
     <>
       <div className="page-header"><div><h2 className="page-title">Settings</h2><p className="page-subtitle">System configuration and data management.</p></div></div>
@@ -2051,14 +2718,34 @@ function SettingsPage({ state, lastSaved, onReset, onExport }: { state: AppState
         <div className="settings-section full">
           <div className="settings-section-header">Data Management</div>
           <div className="settings-section-body">
-            <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>Export all system data or reset to factory defaults. All data is stored locally in your browser.</p>
+            <p className="settings-lead">Export the records held on this workstation, import them onto another, or reset the system to factory defaults. All data is stored locally in this browser.</p>
             <div className="settings-actions">
               <button className="btn-primary" onClick={onExport}><span className="material-symbols-outlined">download</span>Export All Data</button>
-              <button className="btn-danger" onClick={onReset}><span className="material-symbols-outlined">delete_forever</span>Reset to Defaults</button>
+              <button className="btn-outline" onClick={backup.choose}><span className="material-symbols-outlined">upload</span>Import Data</button>
+              {/* Held apart from the two routine actions: it destroys the record. */}
+              <button className="btn-outline-danger" onClick={onReset}><span className="material-symbols-outlined">delete_forever</span>Reset to Defaults</button>
             </div>
+            {backup.field}
+            <p className="settings-note">
+              <span className="material-symbols-outlined">info</span>
+              Importing reads a file exported from this system and replaces every record currently held. Export the present data first if it has not been filed elsewhere.
+            </p>
+            {backup.problem && <div className="form-error" style={{ marginTop: '12px' }}><span className="material-symbols-outlined">error</span>{backup.problem}</div>}
           </div>
         </div>
       </div>
+
+      {pending && (
+        <ConfirmDialog
+          icon="upload_file"
+          iconStyle="warning"
+          title="Import and replace all records?"
+          description={`"${pending.fileName}" holds ${countOf(pending.data)} records — ${pending.data.tenants.length} tenants, ${pending.data.stalls.length} stalls, ${pending.data.applicants.length} applicants, ${pending.data.utilities.length} utility bills, ${pending.data.violations.length} violations, and ${pending.data.logs.length} logbook entries. Importing replaces the ${countOf(state)} records on this workstation. This cannot be undone.`}
+          confirmLabel="Import and Replace"
+          onConfirm={() => { onImport(pending.data); setPending(null); }}
+          onCancel={() => setPending(null)}
+        />
+      )}
     </>
   );
 }
@@ -2077,6 +2764,7 @@ const faqs = [
   { q: 'Where can I view analytics?', a: 'The Analytics page provides a comprehensive view of stall occupancy, applicant pipeline, tenant distribution, violations summary, utility consumption and billing, and logbook activity.' },
   { q: 'Where is my data stored?', a: 'All data is stored locally in your browser\'s localStorage. It persists across sessions but is not synced to a server.' },
   { q: 'How do I export reports?', a: 'You can export data from the Analytics page or Settings. Reports are available as JSON files. The Logbook page also offers CSV export.' },
+  { q: 'How do I move records to another computer?', a: 'On the computer holding the records, open Settings → Data Management and click "Export All Data" to download a JSON file. Carry that file to the other computer, open Settings there, and click "Import Data". You will be shown what the file holds and what it will replace before anything is overwritten — nothing changes until you confirm. Importing replaces every record on that workstation, so export its current data first if it has not been filed elsewhere.' },
   { q: 'How do I backup and restore data?', a: 'Use the "Download Full Backup" button on this Support page to download all system data as a JSON file. To restore on another computer, click "Upload Backup" and select the previously downloaded file. The system will load all data from the backup.' },
 ];
 
@@ -2088,34 +2776,13 @@ const contactList = [
 
 function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestore: (data: AppState) => void; onBackup: () => void }) {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [restoreStatus, setRestoreStatus] = useState<string>('');
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const parsed = JSON.parse(evt.target?.result as string);
-        const requiredKeys: (keyof AppState)[] = ['applicants', 'tenants', 'stalls', 'logs', 'activities'];
-        const hasAllKeys = parsed && typeof parsed === 'object' && requiredKeys.every((k) => k in parsed);
-        if (!hasAllKeys) {
-          setRestoreStatus('Invalid backup file: missing required data fields.');
-          setTimeout(() => setRestoreStatus(''), 4000);
-          return;
-        }
-        onRestore(mergeState(parsed));
-        setRestoreStatus('Data restored successfully!');
-        setTimeout(() => setRestoreStatus(''), 4000);
-      } catch {
-        setRestoreStatus('Error: Could not parse backup file. Please ensure it is a valid JSON file.');
-        setTimeout(() => setRestoreStatus(''), 4000);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
+  /* Same reader as the Settings import, so both accept the same files. */
+  const [restored, setRestored] = useState(false);
+  const backup = useBackupFile((data) => {
+    onRestore(data);
+    setRestored(true);
+    setTimeout(() => setRestored(false), 5000);
+  });
   return (
     <>
       <div className="page-header"><div><h2 className="page-title">Support</h2><p className="page-subtitle">Help center, contacts, and data backup.</p></div></div>
@@ -2165,15 +2832,15 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
                 <p>Restore data from a previously downloaded backup file. This will <strong>replace all current data</strong> with the contents of the backup file.</p>
               </div>
             </div>
-            <label className="btn-outline upload-btn">
+            <button className="btn-outline upload-btn" onClick={backup.choose}>
               <span className="material-symbols-outlined">upload_file</span>Upload Backup File
-              <input type="file" accept=".json" onChange={handleFileUpload} style={{ display: 'none' }} />
-            </label>
+            </button>
+            {backup.field}
           </div>
-          {restoreStatus && (
-            <div className={`restore-status ${restoreStatus.startsWith('Error') || restoreStatus.startsWith('Invalid') ? 'error' : 'success'}`}>
-              <span className="material-symbols-outlined">{restoreStatus.startsWith('Error') || restoreStatus.startsWith('Invalid') ? 'error' : 'check_circle'}</span>
-              {restoreStatus}
+          {(backup.problem || restored) && (
+            <div className={`restore-status ${backup.problem ? 'error' : 'success'}`}>
+              <span className="material-symbols-outlined">{backup.problem ? 'error' : 'check_circle'}</span>
+              {backup.problem || 'Data restored successfully.'}
             </div>
           )}
         </div>
@@ -2197,14 +2864,113 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
 }
 
 /* ============================================================
+   Saving edits — shared by every edit form
+   ============================================================
+
+   Edit forms open with their inputs blank. A blank field means
+   "keep whatever is on record", so the form only ever carries the
+   changes the officer is making right now. Nothing is written until
+   Save Changes is pressed: until then the record on file is
+   untouched and closing the form discards the draft. Closing and
+   reopening remounts the form, so the inputs are blank again.       */
+
+/* Every record update goes through these options. `log` writes the
+   activity feed and logbook entry; `close` dismisses the modal. Both
+   default to true, which is what every caller wants. */
+type SaveOpts = { log?: boolean; close?: boolean };
+
+/**
+ * Wires up a form's Save Changes button. `commit()` returns '' when it
+ * saved, or the reason the draft cannot be saved yet — which is shown
+ * above the form until the officer fixes it.
+ */
+function useSaveChanges(dirty: boolean, commit: () => string) {
+  const [error, setError] = useState('');
+
+  const save = () => {
+    if (!dirty) return;
+    const problem = commit();
+    setError(problem);
+  };
+
+  // A fresh keystroke clears a stale complaint about the previous attempt.
+  const clearError = () => setError('');
+
+  return { error, save, clearError, showError: setError };
+}
+
+function SaveNote({ error }: { error: string }) {
+  if (error) {
+    return <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>;
+  }
+  return (
+    <div className="save-note">
+      <span className="material-symbols-outlined">edit_note</span>
+      <span>Fill in only what you are changing — every blank field keeps the value on record. Nothing is saved until you press <strong>Save Changes</strong>.</span>
+    </div>
+  );
+}
+
+/* The footer every edit form closes with. Save Changes stays disabled
+   until something has actually been changed. */
+function EditActions({ dirty, onSave, onCancel, saveLabel = 'Save Changes' }: {
+  dirty: boolean; onSave: () => void; onCancel: () => void; saveLabel?: string;
+}) {
+  return (
+    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+      <button className="btn-outline" onClick={onCancel}>Cancel</button>
+      <button className="btn-primary" onClick={onSave} disabled={!dirty} title={dirty ? undefined : 'Change a field first'}>
+        <span className="material-symbols-outlined">save</span>{saveLabel}
+      </button>
+    </div>
+  );
+}
+
+/* Placeholder text that tells the officer what the blank field currently holds. */
+function keepHint(current?: string) {
+  const shown = current && current !== '—' && current !== '-' ? current : '';
+  return shown ? `On record: ${shown} — leave blank to keep` : 'Leave blank if none';
+}
+
+/* A blank draft field keeps the recorded value. */
+function keepText(draft: string, current: string) {
+  return draft.trim() || current;
+}
+
+/* ============================================================
    Modal Component
    ============================================================ */
 
-function Modal({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
+/* `stacked` is for a dialog opened from inside another one: it sits on a higher
+   layer and swallows Escape before the form underneath sees it, so closing the
+   sub-dialog never dismisses the record being edited. */
+function Modal({ title, subtitle, onClose, wide, narrow, stacked, children }: {
+  title: string; subtitle?: string; onClose: () => void; wide?: boolean; narrow?: boolean; stacked?: boolean; children: ReactNode;
+}) {
+  useEffect(() => {
+    if (!stacked) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      /* stopImmediatePropagation, not just stopPropagation: the form beneath
+         listens on window too, and a plain stop would leave it to fire. */
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey, true); // capture: ahead of the form below
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [stacked, onClose]);
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className={`modal-card${wide ? ' wide' : ''}`} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header"><h3>{title}</h3><button className="modal-close" onClick={onClose}><span className="material-symbols-outlined">close</span></button></div>
+    <div className={`modal-overlay${stacked ? ' stacked' : ''}`} onClick={onClose}>
+      <div className={`modal-card${wide ? ' wide' : ''}${narrow ? ' narrow' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-heading">
+            <h3>{title}</h3>
+            {subtitle && <p className="modal-subtitle">{subtitle}</p>}
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><span className="material-symbols-outlined">close</span></button>
+        </div>
         <div className="modal-body">{children}</div>
       </div>
     </div>
@@ -2214,14 +2980,17 @@ function Modal({ title, onClose, wide, children }: { title: string; onClose: () 
 function ConfirmDialog({ icon, iconStyle, title, description, confirmLabel, confirmDanger, hideConfirm, cancelLabel = 'Cancel', onConfirm, onCancel }: { icon: string; iconStyle: string; title: string; description: string; confirmLabel?: string; confirmDanger?: boolean; hideConfirm?: boolean; cancelLabel?: string; onConfirm: () => void; onCancel: () => void }) {
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-        <div className="modal-body">
-          <div className={`confirm-icon ${iconStyle}`}><span className="material-symbols-outlined">{icon}</span></div>
-          <div className="confirm-text"><h4>{title}</h4><p>{description}</p></div>
-          <div className="confirm-actions">
-            <button className="btn-outline" onClick={onCancel}>{cancelLabel}</button>
-            {!hideConfirm && <button className={confirmDanger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm}>{confirmLabel}</button>}
-          </div>
+      <div className={`confirm-card ${iconStyle}`} onClick={(e) => e.stopPropagation()}>
+        <div className="confirm-head">
+          <span className={`confirm-icon ${iconStyle}`}><span className="material-symbols-outlined">{icon}</span></span>
+          <h4 className="confirm-title">{title}</h4>
+        </div>
+        <div className="confirm-body">
+          <p>{description}</p>
+        </div>
+        <div className="confirm-actions">
+          <button className="btn-outline" onClick={onCancel}>{cancelLabel}</button>
+          {!hideConfirm && <button className={confirmDanger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm}>{confirmLabel}</button>}
         </div>
       </div>
     </div>
@@ -2269,27 +3038,41 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
   );
 }
 
+/* The documentary requirements, presented as the ruled register the office
+   actually keeps: one document per line, each carrying its own standing. */
 function RequirementsChecklist({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
   const toggle = (req: string) => {
     onChange(selected.includes(req) ? selected.filter((r) => r !== req) : [...selected, req]);
   };
   const done = REQUIREMENTS.filter((r) => selected.includes(r)).length;
+  const complete = done === REQUIREMENTS.length;
+
   return (
-    <div className="form-group">
-      <label className="form-label">Requirements Submitted<span className="req-counter">{done} of {REQUIREMENTS.length}</span></label>
-      <div className="req-checklist">
+    <section className="form-section req-section">
+      <header className="form-section-head">
+        <div className="form-section-title">
+          <h4>Documentary Requirements</h4>
+          <span className="form-section-note">Tick each document as it is handed in over the counter.</span>
+        </div>
+        <span className={`req-tally${complete ? ' complete' : ''}`}>{done} of {REQUIREMENTS.length} submitted</span>
+      </header>
+
+      <ul className="req-register">
         {REQUIREMENTS.map((req) => {
           const checked = selected.includes(req);
           return (
-            <label className={`req-check${checked ? ' checked' : ''}`} key={req}>
-              <input type="checkbox" checked={checked} onChange={() => toggle(req)} />
-              <span className="material-symbols-outlined">{checked ? 'check_box' : 'check_box_outline_blank'}</span>
-              <span>{req}</span>
-            </label>
+            <li key={req}>
+              <label className={`req-row${checked ? ' done' : ''}`}>
+                <input type="checkbox" checked={checked} onChange={() => toggle(req)} />
+                <span className="material-symbols-outlined req-mark">{checked ? 'check_box' : 'check_box_outline_blank'}</span>
+                <span className="req-name">{req}</span>
+                <span className="req-state">{checked ? 'Submitted' : 'Not submitted'}</span>
+              </label>
+            </li>
           );
         })}
-      </div>
-    </div>
+      </ul>
+    </section>
   );
 }
 
@@ -2302,6 +3085,8 @@ function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: st
 
   const handleSubmit = () => {
     if (!name.trim()) { setError('Full name is required.'); return; }
+    const badPhone = phoneProblem(phone);
+    if (badPhone) { setError(badPhone); return; }
     onSubmit({
       id: nextId('APP', existingIds),
       name: name.trim(),
@@ -2317,7 +3102,11 @@ function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: st
     <div className="form-grid">
       <div className="form-row">
         <div className="form-group"><label className="form-label">Full Name *</label><input className="form-input" placeholder="e.g. Juan Santos" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
-        <div className="form-group"><label className="form-label">Phone Number</label><input className="form-input" placeholder="e.g. 0917-123-4567" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+        <div className="form-group">
+          <label className="form-label">Mobile Number</label>
+          <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
+          <span className="form-hint">Digits only — 11-digit mobile number.</span>
+        </div>
       </div>
       <div className="form-row">
         <div className="form-group"><label className="form-label">Stall Type</label><select className="form-select" value={stallType} onChange={(e) => setStallType(e.target.value)}>{STALL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
@@ -2338,7 +3127,7 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
 
   const [stallId, setStallId] = useState(vacantStalls[0]?.id ?? '');
   const [name, setName] = useState(applicant.name);
-  const [phone, setPhone] = useState(applicant.phone);
+  const [phone, setPhone] = useState(() => digitsOnly(applicant.phone));
   const [section, setSection] = useState(() => vacantStalls[0]?.section ?? SECTIONS[0]);
   const [rent, setRent] = useState(3500);
   const [status, setStatus] = useState('Active');
@@ -2356,8 +3145,12 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
   const handleSubmit = () => {
     if (!name.trim()) { setError('Tenant name is required.'); return; }
     if (!stallId) { setError('Select a stall to assign, or skip for now.'); return; }
+    const badPhone = phoneProblem(phone);
+    if (badPhone) { setError(badPhone); return; }
     onSubmit({
       id: nextId('TEN', tenants.map((t) => t.id)),
+      keepers: [],
+      barangay: '',
       name: name.trim(),
       phone: phone.trim() || '—',
       stallId,
@@ -2401,7 +3194,7 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
 
           <div className="form-row">
             <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
-            <div className="form-group"><label className="form-label">Phone Number</label><input className="form-input" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Mobile Number</label><PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} /></div>
           </div>
 
           <div className="form-row">
@@ -2432,6 +3225,8 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   const [section, setSection] = useState(SECTIONS[0]);
   const [rent, setRent] = useState(3500);
   const [status, setStatus] = useState('Active');
+  const [barangay, setBarangay] = useState('');
+  const [keeperDrafts, setKeeperDrafts] = useState<KeeperDraft[]>([]);
   const [error, setError] = useState('');
 
   const applyStall = (value: string) => {
@@ -2448,16 +3243,30 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
       const occupant = tenants.find((t) => t.stallId.toLowerCase() === trimmedStall.toLowerCase());
       if (occupant) { setError(`Stall ${trimmedStall} is already assigned to ${occupant.name}.`); return; }
     }
-    onSubmit({ id: nextId('TEN', existingIds), name: name.trim(), phone: phone.trim() || '—', stallId: trimmedStall || '—', section, rent, status });
+    const problem = phoneProblem(phone) || keeperDraftsProblem(keeperDrafts);
+    if (problem) { setError(problem); return; }
+    onSubmit({
+      id: nextId('TEN', existingIds), name: name.trim(), phone: phone.trim() || '—', barangay: barangay.trim(),
+      stallId: trimmedStall || '—', section, rent, status,
+      keepers: resolveKeepers(keeperDrafts),
+    });
   };
 
   return (
     <div className="form-grid">
       <div className="form-row">
         <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="e.g. Maria Santos" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
-        <div className="form-group"><label className="form-label">Phone Number</label><input className="form-input" placeholder="e.g. 0917-123-4567" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+        <div className="form-group">
+          <label className="form-label">Mobile Number</label>
+          <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
+          <span className="form-hint">Digits only — 11-digit mobile number.</span>
+        </div>
       </div>
       <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Barangay</label>
+          <input className="form-input" placeholder="e.g. Barangay Poblacion" value={barangay} onChange={(e) => { setBarangay(e.target.value); setError(''); }} />
+        </div>
         <div className="form-group">
           <label className="form-label">Stall ID</label>
           <input className="form-input" placeholder="e.g. M-101" list="stall-id-options" value={stallId} onChange={(e) => applyStall(e.target.value)} />
@@ -2470,6 +3279,7 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
         <div className="form-group"><label className="form-label">Monthly Rent (₱)</label><input className="form-input" type="number" min="0" step="500" value={rent} onChange={(e) => setRent(toAmount(e.target.value))} /></div>
       </div>
       <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select></div>
+      <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { setKeeperDrafts(next); setError(''); }} />
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
       <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}><button className="btn-outline" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={handleSubmit}>Add Tenant</button></div>
     </div>
@@ -2500,44 +3310,120 @@ function AddLogForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]
    Detail Views
    ============================================================ */
 
-function StallDetailView({ stall, occupant, bills, onSave, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onSave: (s: Stall) => void; onClose: () => void }) {
-  const [section, setSection] = useState(stall.section);
-  const [tenant, setTenant] = useState(stall.tenant === 'Vacant' ? '' : stall.tenant);
-  const [status, setStatus] = useState<StallStatus>(stall.status);
-  const [lastInspection, setLastInspection] = useState(stall.lastInspection);
-  const [error, setError] = useState('');
+function StallDetailView({ stall, occupant, bills, onEdit, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onEdit: () => void; onClose: () => void }) {
+  const billed = bills.reduce((sum, b) => sum + b.amount, 0);
+  const unpaid = bills.filter((b) => b.status === 'Unpaid').reduce((sum, b) => sum + b.amount, 0);
+
+  return (<>
+    <RecordSheet
+      title={`Stall ${stall.id}`}
+      subtitle={`${stall.section} \u00b7 Last inspected ${stall.lastInspection && stall.lastInspection !== '-' ? stall.lastInspection : 'not yet recorded'}`}
+      badge={<StatusBadge status={stall.status} />}
+    >
+      <RecordSection title="Stall Particulars" icon="storefront">
+        <div className="record-grid">
+          <RecordRow label="Stall Number" value={stall.id} />
+          <RecordRow label="Market Section" value={stall.section} />
+          <RecordRow label="Occupancy Status" node={<StatusBadge status={stall.status} />} />
+          <RecordRow label="Last Inspection" value={stall.lastInspection === '-' ? '' : stall.lastInspection} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Assigned Tenant" icon="person">
+        {occupant ? (
+          <div className="record-grid">
+            <RecordRow label="Tenant Name" value={occupant.name} />
+            <RecordRow label="Tenant Record" value={occupant.id} />
+            <RecordRow label="Contact Number" value={formatPhone(occupant.phone)} />
+            <RecordRow label="Monthly Rent" value={money(occupant.rent)} />
+          </div>
+        ) : <RecordNote>This stall has no tenant record assigned to it.</RecordNote>}
+      </RecordSection>
+
+      <RecordSection title={(occupant?.keepers.length ?? 0) > 1 ? `Stallkeepers (${occupant?.keepers.length})` : 'Stallkeeper Information'} icon="storefront">
+        <StallkeeperRecord
+          keepers={occupant?.keepers ?? []}
+          emptyText={occupant ? 'No stallkeeper has been registered for this tenant.' : 'No stallkeeper on record — the stall is unassigned.'}
+        />
+      </RecordSection>
+
+      <RecordSection title="Utility Summary" icon="bolt">
+        <div className="record-grid">
+          <RecordRow label="Total Billed" value={money(billed)} />
+          <RecordRow label="Bills Issued" value={String(bills.length)} />
+        </div>
+        <RecordTotal label="Outstanding Balance" value={money(unpaid)} />
+      </RecordSection>
+    </RecordSheet>
+
+    <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued for stall ${stall.id} yet.`} />
+    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+      <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Details</button>
+    </div>
+  </>);
+}
+
+function StallEditForm({ stall, occupant, bills, onSave, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onSave: (s: Stall, opts?: SaveOpts, previous?: Stall) => void; onClose: () => void }) {
+  // Blank draft — anything left blank keeps what the stall already has.
+  const [section, setSection] = useState('');
+  const [tenant, setTenant] = useState('');
+  const [status, setStatus] = useState<'' | StallStatus>('');
+  const [lastInspection, setLastInspection] = useState('');
 
   const locked = !!occupant;
+  const recordedTenant = stall.tenant === 'Vacant' ? '' : stall.tenant;
+  const dirty = !!(section || tenant.trim() || status || lastInspection.trim());
+  const effectiveStatus: StallStatus = locked ? 'Occupied' : (status || stall.status);
 
-  const handleSave = () => {
-    if (!locked && status === 'Occupied' && !tenant.trim()) {
-      setError('Enter the tenant occupying this stall, or set the status to Available.');
-      return;
-    }
-    onSave({
+  const merged = (): Stall => {
+    const nextTenant = locked
+      ? occupant.name
+      : effectiveStatus === 'Available' ? 'Vacant' : (keepText(tenant, recordedTenant) || 'Vacant');
+    return {
       ...stall,
-      section,
-      tenant: locked ? occupant.name : (status === 'Available' ? 'Vacant' : tenant.trim() || 'Vacant'),
-      status: locked ? 'Occupied' : status,
-      lastInspection: lastInspection.trim() || '-',
-    });
+      section: section || stall.section,
+      tenant: nextTenant,
+      status: effectiveStatus,
+      lastInspection: keepText(lastInspection, stall.lastInspection) || '-',
+    };
   };
+
+  const commit = () => {
+    const next = merged();
+    if (!locked && next.status === 'Occupied' && next.tenant === 'Vacant') {
+      return 'Enter the tenant occupying this stall, or set the status back to Available.';
+    }
+    onSave(next, {}, stall);
+    return '';
+  };
+
+  const form = useSaveChanges(dirty, commit);
+  const edit = <T,>(set: (v: T) => void) => (value: T) => { form.clearError(); set(value); };
 
   return (<>
     <div className="form-grid">
+      <SaveNote error={form.error} />
       <div className="form-row">
         <div className="form-group"><label className="form-label">Stall ID</label><input className="form-input" value={stall.id} disabled /></div>
-        <div className="form-group"><label className="form-label">Section</label><select className="form-select" value={section} onChange={(e) => setSection(e.target.value)}>{[...new Set([stall.section, ...SECTIONS])].map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+        <div className="form-group">
+          <label className="form-label">Section</label>
+          <select className="form-select" value={section} onChange={(e) => edit(setSection)(e.target.value)}>
+            <option value="">— Keep {stall.section}</option>
+            {[...new Set([stall.section, ...SECTIONS])].map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
       </div>
       <div className="form-row">
         <div className="form-group">
-          <label className="form-label">Tenant{!locked && status === 'Occupied' ? ' *' : ''}</label>
-          <input className="form-input" value={locked ? occupant.name : tenant} disabled={locked} placeholder={status === 'Occupied' ? 'Required for an occupied stall' : 'Leave blank if vacant'} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
+          <label className="form-label">Tenant</label>
+          <input className="form-input" value={locked ? occupant.name : tenant} disabled={locked} placeholder={locked ? '' : keepHint(recordedTenant || 'Vacant')} onChange={(e) => edit(setTenant)(e.target.value)} />
           {locked && <span className="form-hint">Held by tenant record {occupant.id}. Rename or reassign from Tenant Records.</span>}
         </div>
         <div className="form-group">
           <label className="form-label">Status</label>
-          <select className="form-select" value={locked ? 'Occupied' : status} disabled={locked} onChange={(e) => { setStatus(e.target.value as StallStatus); setError(''); }}>
+          <select className="form-select" value={locked ? 'Occupied' : status} disabled={locked} onChange={(e) => edit(setStatus)(e.target.value as StallStatus)}>
+            {!locked && <option value="">— Keep {stall.status}</option>}
             <option value="Available">Available</option><option value="Occupied">Occupied</option><option value="Maintenance">Maintenance</option>
           </select>
           {locked && <span className="form-hint">Occupied while a tenant record is assigned to it.</span>}
@@ -2546,55 +3432,149 @@ function StallDetailView({ stall, occupant, bills, onSave, onClose }: { stall: S
       <div className="form-group">
         <label className="form-label">Last Inspection</label>
         <div className="form-row" style={{ gap: '10px' }}>
-          <input className="form-input" value={lastInspection} placeholder="-" onChange={(e) => setLastInspection(e.target.value)} />
-          <button className="btn-outline" type="button" onClick={() => setLastInspection(todayStr())}>Inspected Today</button>
+          <input className="form-input" value={lastInspection} placeholder={keepHint(stall.lastInspection)} onChange={(e) => edit(setLastInspection)(e.target.value)} />
+          <button className="btn-outline" type="button" onClick={() => edit(setLastInspection)(todayStr())}>Inspected Today</button>
         </div>
       </div>
-      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+      {occupant && (
+        <div className="detail-grid">
+          <div className="detail-field">
+            <span className="detail-label">Stallkeeper{occupant.keepers.length > 1 ? 's' : ''}</span>
+            <span className={`detail-value${occupant.keepers.length ? '' : ' muted'}`}>{keeperSummary(occupant.keepers) || 'None registered'}</span>
+          </div>
+          <div className="detail-field">
+            <span className="detail-label">Contact Number{occupant.keepers.length > 1 ? 's' : ''}</span>
+            <span className={`detail-value${occupant.keepers.some((k) => k.phone) ? '' : ' muted'}`}>
+              {occupant.keepers.filter((k) => k.phone).map((k) => formatPhone(k.phone)).join(', ') || '—'}
+            </span>
+          </div>
+          <div className="detail-field">
+            <span className="detail-label">Managed From</span>
+            <span className={`detail-value${occupant.keepers.some((k) => k.barangay) ? '' : ' muted'}`}>
+              {[...new Set(occupant.keepers.map((k) => k.barangay).filter(Boolean))].join(', ') || '—'}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
     <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued for stall ${stall.id} yet.`} />
+    <EditActions dirty={dirty} onSave={form.save} onCancel={onClose} />
+  </>);
+}
+
+function ApplicantDetailView({ applicant, onReview, onClose }: { applicant: Applicant; onReview: () => void; onClose: () => void }) {
+  const missing = REQUIREMENTS.filter((r) => !applicant.requirements.includes(r));
+
+  return (<>
+    <RecordSheet
+      title={applicant.name}
+      subtitle={`Application ${applicant.id} \u00b7 Filed ${applicant.dateApplied || 'date not recorded'}`}
+      badge={<StatusBadge status={applicant.status} />}
+    >
+      <RecordSection title="Applicant Particulars" icon="badge">
+        <div className="record-grid">
+          <RecordRow label="Full Name" value={applicant.name} />
+          <RecordRow label="Contact Number" value={formatPhone(applicant.phone)} />
+          <RecordRow label="Stall Type Applied For" value={applicant.stallType} />
+          <RecordRow label="Date Applied" value={applicant.dateApplied} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Documentary Requirements" icon="fact_check">
+        <div className="record-checklist">
+          {REQUIREMENTS.map((r) => {
+            const submitted = applicant.requirements.includes(r);
+            return (
+              <div className={`record-check${submitted ? ' done' : ''}`} key={r}>
+                <span className="material-symbols-outlined">{submitted ? 'check_circle' : 'radio_button_unchecked'}</span>
+                <span className="record-check-label">{r}</span>
+                <span className="record-check-state">{submitted ? 'Submitted' : 'Not submitted'}</span>
+              </div>
+            );
+          })}
+        </div>
+        <RecordTotal label="Requirements Complete" value={`${applicant.requirements.length} of ${REQUIREMENTS.length}`} />
+        {missing.length > 0 && <RecordNote>Still outstanding: {missing.join(', ')}.</RecordNote>}
+      </RecordSection>
+    </RecordSheet>
+
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
-      <button className="btn-outline" onClick={onClose}>Cancel</button>
-      <button className="btn-primary" onClick={handleSave}>Save Changes</button>
+      <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-primary" onClick={onReview}><span className="material-symbols-outlined">fact_check</span>Review Application</button>
     </div>
   </>);
 }
 
-function ApplicantDetailView({ applicant, onSave, onClose }: { applicant: Applicant; onSave: (a: Applicant) => void; onClose: () => void }) {
-  const [name, setName] = useState(applicant.name);
-  const [phone, setPhone] = useState(applicant.phone);
-  const [stallType, setStallType] = useState(applicant.stallType);
-  const [requirements, setRequirements] = useState<string[]>(applicant.requirements);
-  const [status, setStatus] = useState<ApplicantStatus>(applicant.status);
-  const [error, setError] = useState('');
+function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applicant: Applicant; current: Applicant; onSave: (a: Applicant, opts?: SaveOpts, previous?: Applicant, promptAssign?: boolean) => void; onClose: () => void }) {
+  // Blank draft — anything left blank keeps what the application already has.
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [stallType, setStallType] = useState('');
+  const [status, setStatus] = useState<'' | ApplicantStatus>('');
 
+  /* The checklist is ticked in the draft like every other field, so a document
+     can be ticked and un-ticked freely before any of it is committed. */
+  const [requirements, setRequirements] = useState<string[]>(() => [...current.requirements]);
   const complete = REQUIREMENTS.every((r) => requirements.includes(r));
+  const missing = REQUIREMENTS.length - requirements.length;
+  const reqsChanged = REQUIREMENTS.some((r) => requirements.includes(r) !== current.requirements.includes(r));
+  const dirty = !!(name.trim() || phone.trim() || stallType || status || reqsChanged);
 
-  const updateRequirements = (next: string[]) => {
-    setRequirements(next);
-    setStatus((prev) => deriveStatus(prev, next));
+  const merged = (overrideStatus?: ApplicantStatus): Applicant => {
+    const base = status || current.status;
+    return {
+      ...current,
+      name: keepText(name, current.name),
+      phone: keepText(phone, current.phone) || '—',
+      stallType: stallType || current.stallType,
+      requirements,
+      /* A tick that completes or breaks the checklist moves the standing with
+         it, unless the officer chose a status explicitly. */
+      status: overrideStatus ?? (reqsChanged && !status ? deriveStatus(base, requirements) : base),
+    };
   };
 
-  const commit = (nextStatus: ApplicantStatus) => {
-    if (!name.trim()) { setError('Applicant name cannot be empty.'); return; }
-    onSave({ ...applicant, name: name.trim(), phone: phone.trim() || '—', stallType, requirements, status: nextStatus });
+  const commit = () => {
+    const badPhone = phoneProblem(phone);
+    if (badPhone) return badPhone;
+    onSave(merged(), {}, applicant);
+    return '';
+  };
+
+  const form = useSaveChanges(dirty, commit);
+  const edit = <T,>(set: (v: T) => void) => (value: T) => { form.clearError(); set(value); };
+
+  /* Approving or rejecting is a decision in its own right: it saves the draft
+     along with it, so there is no separate Save Changes step to remember. */
+  const decide = (nextStatus: ApplicantStatus) => {
+    const badPhone = phoneProblem(phone);
+    if (badPhone) { form.showError(badPhone); return; }
+    onSave(merged(nextStatus), { close: true }, applicant, nextStatus === 'Approved' && applicant.status !== 'Approved');
   };
 
   return (<>
     <div className="form-grid">
+      <SaveNote error={form.error} />
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Applicant ID</label><input className="form-input" value={applicant.id} disabled /></div>
-        <div className="form-group"><label className="form-label">Date Applied</label><input className="form-input" value={applicant.dateApplied} disabled /></div>
+        <div className="form-group"><label className="form-label">Applicant ID</label><input className="form-input" value={current.id} disabled /></div>
+        <div className="form-group"><label className="form-label">Date Applied</label><input className="form-input" value={current.dateApplied} disabled /></div>
       </div>
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Full Name *</label><input className="form-input" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
-        <div className="form-group"><label className="form-label">Phone Number</label><input className="form-input" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Full Name</label><input className="form-input" value={name} placeholder={keepHint(current.name)} onChange={(e) => edit(setName)(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Mobile Number</label><PhoneInput value={phone} placeholder={keepHint(formatPhone(current.phone))} onChange={edit(setPhone)} /></div>
       </div>
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Stall Type</label><select className="form-select" value={stallType} onChange={(e) => setStallType(e.target.value)}>{STALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+        <div className="form-group">
+          <label className="form-label">Stall Type</label>
+          <select className="form-select" value={stallType} onChange={(e) => edit(setStallType)(e.target.value)}>
+            <option value="">— Keep {current.stallType}</option>
+            {STALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
         <div className="form-group">
           <label className="form-label">Status</label>
-          <select className="form-select" value={status} onChange={(e) => setStatus(e.target.value as ApplicantStatus)}>
+          <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value as ApplicantStatus)}>
+            <option value="">— Keep {current.status}</option>
             <option value="Pending Review">Pending Review</option>
             <option value="Incomplete">Incomplete</option>
             <option value="Approved">Approved</option>
@@ -2603,92 +3583,224 @@ function ApplicantDetailView({ applicant, onSave, onClose }: { applicant: Applic
         </div>
       </div>
 
-      <RequirementsChecklist selected={requirements} onChange={updateRequirements} />
-      {!complete && status !== 'Rejected' && (
-        <span className="form-hint">{REQUIREMENTS.length - requirements.length} requirement(s) still missing — you can still approve, but the checklist will show it as incomplete.</span>
+      <RequirementsChecklist selected={requirements} onChange={edit(setRequirements)} />
+      {!complete && current.status !== 'Rejected' && (
+        <span className="form-hint">{missing} requirement(s) still missing — you can still approve, but the checklist will show it as incomplete.</span>
       )}
-      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
 
       <div className="applicant-decision">
-        <button className="btn-outline" onClick={onClose}>Cancel</button>
+        <div className="applicant-decision-left">
+          <button className="btn-outline" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" onClick={form.save} disabled={!dirty} title={dirty ? undefined : 'Change a field first'}>
+            <span className="material-symbols-outlined">save</span>Save Changes
+          </button>
+        </div>
         <div className="applicant-decision-right">
-          {applicant.status !== 'Rejected' && <button className="btn-outline-danger" onClick={() => commit('Rejected')}>Reject</button>}
-          {applicant.status !== 'Approved' && <button className="btn-outline-success" onClick={() => commit('Approved')}>Approve</button>}
-          <button className="btn-primary" onClick={() => commit(status)}>Save Changes</button>
+          {current.status !== 'Rejected' && <button className="btn-outline-danger" onClick={() => decide('Rejected')}>Reject</button>}
+          {current.status !== 'Approved' && <button className="btn-outline-success" onClick={() => decide('Approved')}>Approve</button>}
         </div>
       </div>
     </div>
   </>);
 }
 
-function TenantDetailView({ tenant, tenants, stalls, bills, onSave, onClose }: { tenant: Tenant; tenants: Tenant[]; stalls: Stall[]; bills: UtilityBill[]; onSave: (t: Tenant) => void; onClose: () => void }) {
-  const [name, setName] = useState(tenant.name);
-  const [phone, setPhone] = useState(tenant.phone === '—' ? '' : tenant.phone);
-  const [stallId, setStallId] = useState(tenant.stallId);
-  const [section, setSection] = useState(tenant.section);
-  const [rent, setRent] = useState(tenant.rent);
-  const [status, setStatus] = useState(tenant.status);
-  const [error, setError] = useState('');
+/* ============================================================
+   Record Sheet — shared formal read-only detail presentation
+   ============================================================ */
 
-  const utilitiesBilled = bills.reduce((s, b) => s + b.amount, 0);
+function RecordSheet({ title, subtitle, badge, children }: { title: string; subtitle: string; badge?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="record-sheet">
+      <header className="record-header">
+        <div>
+          <h3 className="record-title">{title}</h3>
+          <p className="record-subtitle">{subtitle}</p>
+        </div>
+        {badge}
+      </header>
+      {children}
+    </div>
+  );
+}
+
+function RecordSection({ title, icon, children }: { title: string; icon?: string; children: ReactNode }) {
+  return (
+    <section className="record-section">
+      <h4 className="record-section-title">
+        {icon && <span className="material-symbols-outlined">{icon}</span>}
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
+function RecordRow({ label, value, node }: { label: string; value?: string; node?: ReactNode }) {
+  const text = value && value.trim() && value.trim() !== '\u2014' ? value.trim() : '';
+  return (
+    <div className="record-row">
+      <span className="record-label">{label}</span>
+      {node ? <span className="record-value">{node}</span>
+            : <span className={`record-value${text ? '' : ' empty'}`}>{text || 'Not on record'}</span>}
+    </div>
+  );
+}
+
+function RecordTotal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="record-total">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function RecordNote({ children }: { children: ReactNode }) {
+  return <p className="record-note">{children}</p>;
+}
+
+function TenantDetailView({ tenant, bills, onEdit, onClose }: { tenant: Tenant; bills: UtilityBill[]; onEdit: () => void; onClose: () => void }) {
+  const utilitiesBilled = bills.reduce((sum, b) => sum + b.amount, 0);
+
+  return (<>
+    <RecordSheet
+      title={tenant.name}
+      subtitle={`Tenant Record ${tenant.id}${tenant.applicantId ? ` \u00b7 From Application ${tenant.applicantId}` : ''}`}
+      badge={<TenantStatusBadge status={tenant.status} />}
+    >
+      <RecordSection title="Tenant Particulars" icon="badge">
+        <div className="record-grid">
+          <RecordRow label="Full Name" value={tenant.name} />
+          <RecordRow label="Contact Number" value={formatPhone(tenant.phone)} />
+          <RecordRow label="Barangay" value={tenant.barangay} />
+          <RecordRow label="Stall Assignment" value={tenant.stallId} />
+          <RecordRow label="Market Section" value={tenant.section} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title={tenant.keepers.length > 1 ? `Stallkeepers (${tenant.keepers.length})` : 'Stallkeeper Information'} icon="storefront">
+        <StallkeeperRecord keepers={tenant.keepers} emptyText="No stallkeeper has been registered for this tenant." />
+      </RecordSection>
+
+      <RecordSection title="Account Summary" icon="payments">
+        <div className="record-grid">
+          <RecordRow label="Monthly Rent" value={money(tenant.rent)} />
+          <RecordRow label="Utilities Billed" value={money(utilitiesBilled)} />
+        </div>
+        <RecordTotal label="Rent + Utilities (to date)" value={money(tenant.rent + utilitiesBilled)} />
+      </RecordSection>
+    </RecordSheet>
+
+    <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued to ${tenant.name} yet.`} />
+    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+      <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Details</button>
+    </div>
+  </>);
+}
+
+function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: { tenant: Tenant; current: Tenant; tenants: Tenant[]; stalls: Stall[]; onSave: (t: Tenant, opts?: SaveOpts, previous?: Tenant) => void; onClose: () => void }) {
+  // Blank draft — anything left blank keeps what the tenant record already has.
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [stallId, setStallId] = useState('');
+  const [section, setSection] = useState('');
+  const [rent, setRent] = useState('');
+  const [status, setStatus] = useState('');
+  const [barangay, setBarangay] = useState('');
+
+  /* One row per stallkeeper on record, each opening blank like every other
+     field. Adding a row registers someone new; removing one takes them off the
+     record — both only once the form is saved. */
+  const [keeperDrafts, setKeeperDrafts] = useState<KeeperDraft[]>(() => keeperDraftsFrom(current.keepers));
+
+  const recordedPhone = current.phone === '—' ? '' : current.phone;
+  const keepersChanged = JSON.stringify(resolveKeepers(keeperDrafts)) !== JSON.stringify(current.keepers)
+    || keeperDraftsTouched(keeperDrafts);
+  const dirty = !!(name.trim() || phone.trim() || stallId || section || rent.trim() || status || barangay.trim() || keepersChanged);
+
+  const merged = (): Tenant => ({
+    ...current,
+    name: keepText(name, current.name),
+    phone: keepText(phone, recordedPhone) || '—',
+    barangay: keepText(barangay, current.barangay),
+    stallId: stallId || current.stallId,
+    section: section || current.section,
+    rent: rent.trim() ? toAmount(rent) : current.rent,
+    status: status || current.status,
+    keepers: resolveKeepers(keeperDrafts),
+  });
+
+  const commit = () => {
+    const next = merged();
+    const clash = tenants.find((t) => t.id !== current.id && t.stallId === next.stallId && next.stallId !== '—');
+    if (clash) return `Stall ${next.stallId} is already assigned to ${clash.name}.`;
+    const problem = phoneProblem(phone) || keeperDraftsProblem(keeperDrafts);
+    if (problem) return problem;
+    onSave(next, {}, tenant);
+    return '';
+  };
+
+  const form = useSaveChanges(dirty, commit);
+  const edit = <T,>(set: (v: T) => void) => (value: T) => { form.clearError(); set(value); };
 
   const stallOptions = useMemo(() => {
-    const taken = new Set(tenants.filter((t) => t.id !== tenant.id).map((t) => t.stallId));
-    const ids = stalls.filter((s) => !taken.has(s.id) && (s.id === tenant.stallId || s.status === 'Available')).map((s) => s.id);
-    if (tenant.stallId && tenant.stallId !== '—' && !ids.includes(tenant.stallId)) ids.unshift(tenant.stallId);
+    const taken = new Set(tenants.filter((t) => t.id !== current.id).map((t) => t.stallId));
+    const ids = stalls.filter((s) => !taken.has(s.id) && (s.id === current.stallId || s.status === 'Available')).map((s) => s.id);
+    if (current.stallId && current.stallId !== '—' && !ids.includes(current.stallId)) ids.unshift(current.stallId);
     return ids;
-  }, [stalls, tenants, tenant]);
+  }, [stalls, tenants, current]);
 
+  /* Picking a stall pulls its section across with it. */
   const applyStall = (value: string) => {
+    form.clearError();
     setStallId(value);
-    setError('');
     const match = stalls.find((s) => s.id === value);
     if (match && SECTIONS.includes(match.section)) setSection(match.section);
   };
 
-  const handleSave = () => {
-    if (!name.trim()) { setError('Tenant name is required.'); return; }
-    const clash = tenants.find((t) => t.id !== tenant.id && t.stallId === stallId && stallId !== '—');
-    if (clash) { setError(`Stall ${stallId} is already assigned to ${clash.name}.`); return; }
-    onSave({ ...tenant, name: name.trim(), phone: phone.trim() || '—', stallId, section, rent, status });
-  };
-
   return (<>
     <div className="form-grid">
+      <SaveNote error={form.error} />
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Tenant ID</label><input className="form-input" value={tenant.id} disabled /></div>
-        <div className="form-group"><label className="form-label">From Application</label><input className="form-input" value={tenant.applicantId || '—'} disabled /></div>
+        <div className="form-group"><label className="form-label">Tenant ID</label><input className="form-input" value={current.id} disabled /></div>
+        <div className="form-group"><label className="form-label">Barangay</label><input className="form-input" value={barangay} placeholder={keepHint(current.barangay)} onChange={(e) => edit(setBarangay)(e.target.value)} /></div>
       </div>
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
-        <div className="form-group"><label className="form-label">Phone Number</label><input className="form-input" placeholder="e.g. 0917-123-4567" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} placeholder={keepHint(current.name)} onChange={(e) => edit(setName)(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Mobile Number</label><PhoneInput value={phone} placeholder={keepHint(formatPhone(recordedPhone))} onChange={edit(setPhone)} /></div>
       </div>
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Stall ID</label>
           <select className="form-select" value={stallId} onChange={(e) => applyStall(e.target.value)}>
-            <option value="—">— No stall assigned</option>
+            <option value="">— Keep {current.stallId && current.stallId !== '—' ? current.stallId : 'no stall'}</option>
+            <option value="—">Release the stall — no stall assigned</option>
             {stallOptions.map((id) => <option key={id} value={id}>{id}</option>)}
           </select>
           <span className="form-hint">Reassigning releases the old stall and marks the new one Occupied.</span>
         </div>
-        <div className="form-group"><label className="form-label">Section</label><select className="form-select" value={section} onChange={(e) => setSection(e.target.value)}>{[...new Set([tenant.section, ...SECTIONS])].map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+        <div className="form-group">
+          <label className="form-label">Section</label>
+          <select className="form-select" value={section} onChange={(e) => edit(setSection)(e.target.value)}>
+            <option value="">— Keep {current.section}</option>
+            {[...new Set([current.section, ...SECTIONS])].map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
       </div>
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Monthly Rent (₱)</label><input className="form-input" type="number" min="0" step="500" value={rent} onChange={(e) => setRent(toAmount(e.target.value))} /></div>
-        <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select></div>
+        <div className="form-group"><label className="form-label">Monthly Rent (₱)</label><input className="form-input" type="number" min="0" step="500" placeholder={keepHint(money(current.rent))} value={rent} onChange={(e) => edit(setRent)(e.target.value)} /></div>
+        <div className="form-group">
+          <label className="form-label">Status</label>
+          <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value)}>
+            <option value="">— Keep {current.status}</option>
+            <option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option>
+          </select>
+        </div>
       </div>
-      <div className="detail-grid">
-        <div className="detail-field"><span className="detail-label">Utilities Billed</span><span className="detail-value">{money(utilitiesBilled)}</span></div>
-        <div className="detail-field"><span className="detail-label">Rent + Utilities (to date)</span><span className="detail-value strong">{money(rent + utilitiesBilled)}</span></div>
-      </div>
-      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+      <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { form.clearError(); setKeeperDrafts(next); }} />
     </div>
-    <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued to ${tenant.name} yet.`} />
-    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
-      <button className="btn-outline" onClick={onClose}>Cancel</button>
-      <button className="btn-primary" onClick={handleSave}>Save Changes</button>
-    </div>
+    <EditActions dirty={dirty} onSave={form.save} onCancel={onClose} />
   </>);
 }
 
@@ -2696,17 +3808,360 @@ function TenantDetailView({ tenant, tenants, stalls, bills, onSave, onClose }: {
    Shared Components
    ============================================================ */
 
-function PaginationBar({ info, page, totalPages, onPage }: { info: string; page: number; totalPages: number; onPage: (p: number) => void }) {
+/* Contact number field. Non-digits never reach state: they are blocked at the
+   keystroke and stripped again on change, which also covers pasting. A blocked
+   character is not silently swallowed — it says why nothing appeared. */
+function PhoneInput({ value, onChange, placeholder = 'e.g. 09171234567', disabled }: {
+  value: string; onChange: (next: string) => void; placeholder?: string; disabled?: boolean;
+}) {
+  const [notice, setNotice] = useState('');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const say = (message: string) => {
+    setNotice(message);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setNotice(''), 4000);
+  };
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  return (
+    <>
+      <input
+        className={`form-input${notice ? ' invalid' : ''}`}
+        type="tel"
+        inputMode="numeric"
+        autoComplete="tel"
+        maxLength={PHONE_LENGTH}
+        disabled={disabled}
+        placeholder={placeholder}
+        value={value}
+        aria-describedby={notice ? 'phone-notice' : undefined}
+        onKeyDown={(e) => {
+          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !/[0-9]/.test(e.key)) {
+            e.preventDefault();
+            say(e.key === ' '
+              ? 'Please put a number here — spaces are not allowed in a mobile number.'
+              : `"${e.key}" is not a number. Please put a number here — digits 0 to 9 only.`);
+          }
+        }}
+        onChange={(e) => {
+          const typed = e.target.value;
+          const digits = typed.replace(/\D/g, '');
+          if (digits !== typed) say('Please put a number here — letters and symbols are not allowed in a mobile number.');
+          else if (digits.length > PHONE_LENGTH) say(`A mobile number is ${PHONE_LENGTH} digits long.`);
+          else if (notice) { clearTimeout(timer.current); setNotice(''); }
+          onChange(digits.slice(0, PHONE_LENGTH));
+        }}
+      />
+      {notice && <span className="form-hint error" id="phone-notice" role="alert">{notice}</span>}
+    </>
+  );
+}
+
+/* The roster of people tending a stall. The list itself stays a compact table
+   in the tenant form; entering or amending someone happens in a dialog over it,
+   so the form underneath keeps its height no matter how many are registered.
+   The dialog only stages into the draft — nothing reaches the record until the
+   tenant form's own Save Changes is pressed. */
+function StallkeeperEditor({ drafts, onChange }: { drafts: KeeperDraft[]; onChange: (next: KeeperDraft[]) => void }) {
+  /* `row` is the roster line being worked on, or null for someone new. */
+  const [dialog, setDialog] = useState<{ row: number | null } | null>(null);
+
+  const roster = drafts.map(resolveKeeperDraft);
+  const subject = dialog && dialog.row !== null ? roster[dialog.row] : undefined;
+
+  const stage = (row: number | null, typed: { name: string; phone: string; relation: string; barangay: string }) => {
+    onChange(row === null
+      ? [...drafts, { ...blankKeeperDraft(), ...typed }]
+      : drafts.map((d, i) => (i === row
+          ? { ...d, name: typed.name || d.name, phone: typed.phone || d.phone, relation: typed.relation || d.relation, barangay: typed.barangay || d.barangay }
+          : d)));
+    setDialog(null);
+  };
+
+  /* Checks the staged roster before the dialog closes, so a clash is reported
+     while the officer is still looking at the entry that caused it. */
+  const validate = (row: number | null, typed: { name: string; phone: string; relation: string; barangay: string }) => {
+    const next = row === null
+      ? [...drafts, { ...blankKeeperDraft(), ...typed }]
+      : drafts.map((d, i) => (i === row
+          ? { ...d, name: typed.name || d.name, phone: typed.phone || d.phone, relation: typed.relation || d.relation, barangay: typed.barangay || d.barangay }
+          : d));
+    return keeperDraftsProblem(next);
+  };
+
+  return (
+    <section className="form-section keeper-section">
+      <header className="form-section-head">
+        <div className="form-section-title">
+          <h4>Stallkeeper Information</h4>
+          <span className="form-section-note">
+            The people actually tending the stall day to day.
+            {roster.length > 0 ? ` ${roster.length} registered.` : ' None registered.'}
+          </span>
+        </div>
+        <button type="button" className="btn-outline-sm" onClick={() => setDialog({ row: null })}>
+          <span className="material-symbols-outlined">add</span>Add Stallkeeper
+        </button>
+      </header>
+
+      {roster.length === 0 ? (
+        <p className="keeper-empty">No stallkeeper is registered for this tenant.</p>
+      ) : (
+        <div className="keeper-table-wrap">
+          <table className="keeper-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Relationship</th>
+                <th>Contact Number</th>
+                <th>Barangay</th>
+                <th className="keeper-table-actions"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.map((k, i) => (
+                <tr key={drafts[i].key}>
+                  <td><strong>{k.name}</strong></td>
+                  <td>{k.relation || <span className="muted-cell">Not specified</span>}</td>
+                  <td>{formatPhone(k.phone) || <span className="muted-cell">—</span>}</td>
+                  <td>{k.barangay || <span className="muted-cell">—</span>}</td>
+                  <td className="keeper-table-actions">
+                    <div className="row-actions">
+                      <button type="button" className="row-icon-btn edit" title={`Amend ${k.name}`} aria-label={`Amend ${k.name}`} onClick={() => setDialog({ row: i })}>
+                        <span className="material-symbols-outlined">edit</span>
+                      </button>
+                      <button type="button" className="row-icon-btn danger" title={`Remove ${k.name}`} aria-label={`Remove ${k.name}`} onClick={() => onChange(drafts.filter((_, x) => x !== i))}>
+                        <span className="material-symbols-outlined">delete</span>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {dialog && (
+        <Modal
+          stacked
+          narrow
+          title={subject ? 'Amend Stallkeeper' : 'Add Stallkeeper'}
+          subtitle={subject
+            ? `${subject.name} — complete only the particulars being changed.`
+            : 'The name is required; the rest may be filed later.'}
+          onClose={() => setDialog(null)}
+        >
+          <StallkeeperDialogForm
+            subject={subject}
+            onValidate={(typed) => validate(dialog.row, typed)}
+            onConfirm={(typed) => stage(dialog.row, typed)}
+            onCancel={() => setDialog(null)}
+          />
+        </Modal>
+      )}
+    </section>
+  );
+}
+
+/* The dialog's own fields. Kept separate so it remounts blank each time it is
+   opened, and so its draft never touches the roster until Confirm is pressed. */
+function StallkeeperDialogForm({ subject, onValidate, onConfirm, onCancel }: {
+  subject?: Stallkeeper;
+  onValidate: (typed: { name: string; phone: string; relation: string; barangay: string }) => string;
+  onConfirm: (typed: { name: string; phone: string; relation: string; barangay: string }) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [relation, setRelation] = useState('');
+  const [barangay, setBarangay] = useState('');
+  const [error, setError] = useState('');
+
+  const typed = () => ({ name: name.trim(), phone: phone.trim(), relation, barangay: barangay.trim() });
+  const touched = !!(name.trim() || phone.trim() || relation || barangay.trim());
+
+  const confirm = () => {
+    const entry = typed();
+    if (!subject && !entry.name) { setError('Enter the stallkeeper’s name.'); return; }
+    const problem = onValidate(entry);
+    if (problem) { setError(problem); return; }
+    onConfirm(entry);
+  };
+
+  const edit = <T,>(set: (v: T) => void) => (value: T) => { setError(''); set(value); };
+
+  return (
+    <div className="form-grid">
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Name{subject ? '' : ' *'}</label>
+          <input
+            className="form-input"
+            autoFocus
+            placeholder={subject ? keepHint(subject.name) : 'e.g. Juan dela Cruz'}
+            value={name}
+            onChange={(e) => edit(setName)(e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Contact Number</label>
+          <PhoneInput
+            value={phone}
+            placeholder={subject ? keepHint(formatPhone(subject.phone)) : 'e.g. 09171234567'}
+            onChange={edit(setPhone)}
+          />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Relationship to Tenant</label>
+          <select className="form-select" value={relation} onChange={(e) => edit(setRelation)(e.target.value)}>
+            <option value="">{subject ? `— Keep ${subject.relation || 'not specified'}` : '— Not specified'}</option>
+            {[...new Set([...(subject?.relation ? [subject.relation] : []), ...KEEPER_RELATIONS])].map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Barangay</label>
+          <input
+            className="form-input"
+            placeholder={subject ? keepHint(subject.barangay) : 'e.g. Barangay Poblacion'}
+            value={barangay}
+            onChange={(e) => edit(setBarangay)(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+
+      <p className="dialog-note">
+        <span className="material-symbols-outlined">info</span>
+        This only adds the entry to the roster. The tenant record is written when you press <strong>Save Changes</strong> on the form.
+      </p>
+
+      <div className="modal-footer" style={{ padding: '4px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+        <button type="button" className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn-primary" onClick={confirm} disabled={!!subject && !touched} title={subject && !touched ? 'Change a particular first' : undefined}>
+          {subject ? 'Apply Amendment' : 'Add to List'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* Read-only list of a tenant's stallkeepers, used by the detail sheets. Each
+   person is set off by a rule rather than a number, matching the editor. */
+function StallkeeperRecord({ keepers, emptyText }: { keepers: Stallkeeper[]; emptyText: string }) {
+  if (keepers.length === 0) return <RecordNote>{emptyText}</RecordNote>;
+  return (<>
+    {keepers.map((k, i) => (
+      <div className={`record-grid${i > 0 ? ' record-grid-next' : ''}`} key={k.id}>
+        <RecordRow label="Stallkeeper Name" value={k.name} />
+        <RecordRow label="Relationship to Tenant" value={k.relation} />
+        <RecordRow label="Contact Number" value={formatPhone(k.phone)} />
+        <RecordRow label="Barangay" value={k.barangay} />
+      </div>
+    ))}
+  </>);
+}
+
+/* ------------------------------------------------------------------
+   Stacked bar graph — shared by the dashboard overview and the analytics
+   report. Laid out with flexbox rather than SVG so a column stretches to
+   whatever height the panel gives it, and the axis stays legible at any size.
+   ------------------------------------------------------------------ */
+
+type GraphSeries = { key: string; label: string; tone: string };
+type GraphColumn = { label: string; caption?: string; values: Record<string, number> };
+
+/* A round tick interval — 1, 2, 5 or 10 times a power of ten — so the scale
+   reads in whole stalls or whole pesos rather than arbitrary fractions. */
+function niceStep(peak: number, targetTicks = 4) {
+  const rough = Math.max(peak, 1) / targetTicks;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+  const normalized = rough / magnitude;
+  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return step * magnitude;
+}
+
+function StackedBarGraph({ columns, series, format = (n: number) => String(Math.round(n)), emptyText }: {
+  columns: GraphColumn[]; series: GraphSeries[]; format?: (n: number) => string; emptyText: string;
+}) {
+  const totals = columns.map((c) => series.reduce((sum, s) => sum + Math.max(0, c.values[s.key] || 0), 0));
+  const peak = Math.max(0, ...totals);
+
+  if (columns.length === 0 || peak <= 0) {
+    return <div className="graph-empty"><span className="material-symbols-outlined">bar_chart</span>{emptyText}</div>;
+  }
+
+  const step = niceStep(peak);
+  const ceiling = Math.max(step, Math.ceil(peak / step) * step);
+  const ticks: number[] = [];
+  for (let v = ceiling; v > -step / 2; v -= step) ticks.push(Math.max(0, v));
+
+  return (
+    <div className="graph">
+      <div className="graph-body">
+        <div className="graph-scale">
+          {ticks.map((t, i) => <span key={i} style={{ top: `${(i / (ticks.length - 1)) * 100}%` }}>{format(t)}</span>)}
+        </div>
+        <div className="graph-plot">
+          {ticks.map((_, i) => <div className="graph-gridline" key={i} style={{ top: `${(i / (ticks.length - 1)) * 100}%` }} />)}
+          <div className="graph-columns">
+            {columns.map((col, i) => (
+              <div className="graph-column" key={i} title={`${col.label}\n${series.map((s) => `${s.label}: ${format(col.values[s.key] || 0)}`).join('\n')}`}>
+                <div className="graph-bar" style={{ height: `${(totals[i] / ceiling) * 100}%` }}>
+                  <span className="graph-total">{format(totals[i])}</span>
+                  <div className="graph-stack">
+                    {series.map((s) => {
+                      const value = Math.max(0, col.values[s.key] || 0);
+                      if (value <= 0) return null;
+                      return <div className={`graph-segment ${s.tone}`} key={s.key} style={{ height: `${(value / totals[i]) * 100}%` }} />;
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="graph-footer">
+        <div className="graph-axis">
+          {columns.map((col, i) => (
+            <div className="graph-axis-label" key={i}>
+              <span>{col.label}</span>
+              {col.caption && <small>{col.caption}</small>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="graph-legend">
+        {series.map((s) => <span className="graph-key" key={s.key}><i className={s.tone} />{s.label}</span>)}
+      </div>
+    </div>
+  );
+}
+
+/* `compact` drops the numbered buttons for a plain "Page 3 of 40" between
+   Previous and Next — a register that grows without limit, like the logbook,
+   would otherwise put a growing row of page numbers under every screen. */
+function PaginationBar({ info, page, totalPages, onPage, compact }: { info: string; page: number; totalPages: number; onPage: (p: number) => void; compact?: boolean }) {
   const pages: (number | 'dots')[] = [];
-  for (let i = 1; i <= totalPages; i++) {
-    if (i <= 3 || i > totalPages - 1 || Math.abs(i - page) <= 1) pages.push(i);
-    else if (pages[pages.length - 1] !== 'dots') pages.push('dots');
+  if (!compact) {
+    for (let i = 1; i <= totalPages; i++) {
+      if (i <= 3 || i > totalPages - 1 || Math.abs(i - page) <= 1) pages.push(i);
+      else if (pages[pages.length - 1] !== 'dots') pages.push('dots');
+    }
   }
   return (
     <div className="pagination">
       <span className="pagination-info">{info}</span>
       <button className="page-btn page-btn-nav" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
-      {pages.map((p, i) => p === 'dots' ? <span className="page-dots" key={`d${i}`}>…</span> : <button key={p} className={`page-btn${p === page ? ' active' : ''}`} onClick={() => onPage(p)}>{p}</button>)}
+      {compact
+        ? <span className="page-position">Page {page} of {totalPages}</span>
+        : pages.map((p, i) => p === 'dots' ? <span className="page-dots" key={`d${i}`}>…</span> : <button key={p} className={`page-btn${p === page ? ' active' : ''}`} onClick={() => onPage(p)}>{p}</button>)}
       <button className="page-btn page-btn-nav" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>Next</button>
     </div>
   );
@@ -2744,7 +4199,7 @@ function BillHistory({ bills, emptyText }: { bills: UtilityBill[]; emptyText: st
               <tr key={b.id}>
                 <td>{b.id}</td>
                 <td><span className={`utility-tag ${b.type.toLowerCase()}`}><span className="material-symbols-outlined">{UTILITY_PRESETS[b.type].icon}</span>{b.type}</span></td>
-                <td>{formatPeriod(b.period)}</td>
+                <td>{billPeriodText(b)}</td>
                 <td>{b.consumption.toLocaleString()} {UTILITY_PRESETS[b.type].unit}</td>
                 <td><strong>{money(b.amount)}</strong></td>
                 <td><BillStatusBadge bill={b} /></td>
@@ -2757,34 +4212,81 @@ function BillHistory({ bills, emptyText }: { bills: UtilityBill[]; emptyText: st
   );
 }
 
+function ViolationDetailView({ violation, onEdit, onClose }: { violation: Violation; onEdit: () => void; onClose: () => void }) {
+  return (<>
+    <RecordSheet
+      title={violation.issue}
+      subtitle={`Citation ${violation.id} \u00b7 Issued to ${violation.tenant || 'unnamed party'}`}
+      badge={<StatusBadge status={violation.status} />}
+    >
+      <RecordSection title="Citation Particulars" icon="gavel">
+        <div className="record-grid">
+          <RecordRow label="Party Cited" value={violation.tenant} />
+          <RecordRow label="Offence" value={violation.issue} />
+          <RecordRow label="Date Recorded" value={violation.dateRecorded ? formatIsoDate(violation.dateRecorded) : ''} />
+          <RecordRow label="Date Resolved" value={violation.dateResolved ? formatIsoDate(violation.dateResolved) : ''} />
+        </div>
+        <RecordTotal label="Demerit Points" value={String(violation.points)} />
+      </RecordSection>
+
+      <RecordSection title="Officer's Notes" icon="sticky_note_2">
+        {violation.notes ? <RecordNote>{violation.notes}</RecordNote> : <RecordNote>No notes were recorded for this citation.</RecordNote>}
+      </RecordSection>
+    </RecordSheet>
+
+    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+      <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Citation</button>
+    </div>
+  </>);
+}
+
 function BillDetailView({ bill, onToggleStatus, onClose }: { bill: UtilityBill; onToggleStatus: (id: string) => void; onClose: () => void }) {
   const preset = UTILITY_PRESETS[bill.type];
   return (<>
-    <div className="detail-grid">
-      <div className="detail-field"><span className="detail-label">Bill ID</span><span className="detail-value">{bill.id}</span></div>
-      <div className="detail-field"><span className="detail-label">Utility</span><div className="detail-value"><span className={`utility-tag ${bill.type.toLowerCase()}`}><span className="material-symbols-outlined">{preset.icon}</span>{bill.type}</span></div></div>
-      <div className="detail-field"><span className="detail-label">Stall Number</span><span className="detail-value">{bill.stallId}</span></div>
-      <div className="detail-field"><span className="detail-label">Tenant</span><span className="detail-value">{bill.tenantName || 'Unassigned (charged to stall)'}</span></div>
-      <div className="detail-field"><span className="detail-label">Section</span><span className="detail-value">{bill.section || '—'}</span></div>
-      <div className="detail-field"><span className="detail-label">Billing Period</span><span className="detail-value">{formatPeriod(bill.period)}</span></div>
-      <div className="detail-field"><span className="detail-label">Previous Reading</span><span className="detail-value">{bill.previousReading.toLocaleString()} {preset.unit}</span></div>
-      <div className="detail-field"><span className="detail-label">Current Reading</span><span className="detail-value">{bill.currentReading.toLocaleString()} {preset.unit}</span></div>
-      <div className="detail-field"><span className="detail-label">Consumption</span><span className="detail-value">{bill.consumption.toLocaleString()} {preset.unit}</span></div>
-      <div className="detail-field"><span className="detail-label">Rate</span><span className="detail-value">{money(bill.rate)} / {preset.unit}</span></div>
-      <div className="detail-field"><span className="detail-label">Usage Charge</span><span className="detail-value">{money(bill.consumption * bill.rate)}</span></div>
-      <div className="detail-field"><span className="detail-label">Fixed / Service Charge</span><span className="detail-value">{money(bill.fixedCharge)}</span></div>
-      <div className="detail-field"><span className="detail-label">Date Issued</span><span className="detail-value">{formatIsoDate(bill.dateIssued)}</span></div>
-      <div className="detail-field"><span className="detail-label">Due Date</span><span className="detail-value">{formatIsoDate(bill.dueDate)}</span></div>
-      <div className="detail-field"><span className="detail-label">Status</span><div className="detail-value"><BillStatusBadge bill={bill} /></div></div>
-      <div className="detail-field"><span className="detail-label">Total Amount Due</span><span className="detail-value strong">{money(bill.amount)}</span></div>
-      {bill.notes && <div className="detail-field full"><span className="detail-label">Notes</span><span className="detail-value">{bill.notes}</span></div>}
-    </div>
-    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none' }}>
+    <RecordSheet
+      title={`${bill.type} Bill \u2014 Stall ${bill.stallId}`}
+      subtitle={`Bill ${bill.id} \u00b7 ${billPeriodText(bill)}`}
+      badge={<BillStatusBadge bill={bill} />}
+    >
+      <RecordSection title="Billing Particulars" icon="receipt_long">
+        <div className="record-grid">
+          <RecordRow label="Stall Number" value={bill.stallId} />
+          <RecordRow label="Tenant" value={bill.tenantName || 'Unassigned (charged to stall)'} />
+          <RecordRow label="Market Section" value={bill.section} />
+          <RecordRow label="Period Covered" value={`${billPeriodText(bill)} (${periodDays(bill.periodStart, bill.periodEnd)} days)`} />
+          <RecordRow label="Date Issued" value={formatIsoDate(bill.dateIssued)} />
+          <RecordRow label="Due Date" value={formatIsoDate(bill.dueDate)} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Meter Readings" icon="speed">
+        <div className="record-grid">
+          <RecordRow label="Previous Reading" value={`${bill.previousReading.toLocaleString()} ${preset.unit}`} />
+          <RecordRow label="Current Reading" value={`${bill.currentReading.toLocaleString()} ${preset.unit}`} />
+          <RecordRow label="Consumption" value={`${bill.consumption.toLocaleString()} ${preset.unit}`} />
+          <RecordRow label="Rate" value={`${money(bill.rate)} / ${preset.unit}`} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Charges" icon="payments">
+        <div className="record-grid">
+          <RecordRow label="Usage Charge" value={money(bill.consumption * bill.rate)} />
+          <RecordRow label="Fixed / Service Charge" value={money(bill.fixedCharge)} />
+        </div>
+        <RecordTotal label="Total Amount Due" value={money(bill.amount)} />
+      </RecordSection>
+
+      {bill.notes && <RecordSection title="Notes" icon="sticky_note_2"><RecordNote>{bill.notes}</RecordNote></RecordSection>}
+    </RecordSheet>
+
+    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
       <button className="btn-primary" onClick={() => { onToggleStatus(bill.id); onClose(); }}>{bill.status === 'Paid' ? 'Mark as Unpaid' : 'Mark as Paid'}</button>
     </div>
   </>);
 }
+
 
 function TenantStatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {

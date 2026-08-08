@@ -797,59 +797,290 @@ ul, ol {
   padding: 20px;
 }
 
+.panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.panel-caption {
+  padding-left: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+/* ============================================================
+   Stacked Bar Graph
+   ============================================================ */
+
+/* --graph-scale-width keeps the axis labels under the plot lined up with the
+   columns above them: the footer reserves exactly the same gutter. */
+.graph {
+  --graph-scale-width: 54px;
+  --graph-column-gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px 20px 18px;
+  min-height: 240px;
+}
+
+.graph-body {
+  display: flex;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 140px;
+}
+
+/* Each tick is placed on its gridline rather than spaced evenly, so the label
+   and the rule it names stay together whatever height the panel gives us. */
+.graph-scale {
+  position: relative;
+  flex: 0 0 var(--graph-scale-width);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-tertiary);
+}
+
+.graph-scale span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.graph-plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.graph-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.graph-gridline:last-of-type {
+  border-top-color: var(--color-border);
+}
+
+.graph-columns {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--graph-column-gap);
+}
+
+.graph-column {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+
+/* The bar owns the column's height outright; the figure above it is taken out
+   of flow so a full-height stack still reaches the top gridline. */
+.graph-bar {
+  position: relative;
+  width: 100%;
+  max-width: 54px;
+  min-height: 2px;
+  transition: height 0.4s ease;
+}
+
+.graph-total {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.graph-stack {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+
+.graph-segment {
+  width: 100%;
+  transition: height 0.4s ease;
+}
+
+.graph-segment.occupied,
+.graph-segment.electricity { background: var(--color-primary); }
+.graph-segment.available,
+.graph-segment.collected { background: var(--color-success); }
+.graph-segment.maintenance,
+.graph-segment.outstanding { background: var(--color-danger); }
+.graph-segment.water { background: #0ea5e9; }
+
+.graph-footer {
+  display: flex;
+  gap: 10px;
+}
+
+.graph-footer::before {
+  content: '';
+  flex: 0 0 var(--graph-scale-width);
+}
+
+.graph-axis {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--graph-column-gap);
+  min-width: 0;
+}
+
+.graph-axis-label {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.graph-axis-label span,
+.graph-axis-label small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-axis-label small {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.graph-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.graph-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-border);
+}
+
+.graph-key i.occupied,
+.graph-key i.electricity { background: var(--color-primary); }
+.graph-key i.available,
+.graph-key i.collected { background: var(--color-success); }
+.graph-key i.maintenance,
+.graph-key i.outstanding { background: var(--color-danger); }
+.graph-key i.water { background: #0ea5e9; }
+
+.graph-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.graph-empty .material-symbols-outlined {
+  font-size: 30px;
+  color: var(--color-border);
+}
+
 /* ============================================================
    Dashboard Layout
    ============================================================ */
 
+/* Both panels are held to one height so the graph never ends up shorter than
+   the activity feed as entries accumulate — the feed scrolls inside instead. */
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
   gap: 16px;
+  align-items: stretch;
 }
 
-.chart-container {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  padding: 24px 20px 20px;
-  min-height: 260px;
-}
-
-.chart-bar-group {
+.dashboard-grid > .panel {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
+  height: 440px;
 }
 
-.chart-bar {
-  width: 100%;
-  max-width: 48px;
-  border-radius: var(--radius-md) var(--radius-md) 3px 3px;
-  background: linear-gradient(180deg, var(--color-primary-light) 0%, var(--color-primary) 100%);
-  box-shadow: 0 0 0 rgba(37, 99, 235, 0);
-  opacity: 0.82;
-  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+.dashboard-grid > .panel > .panel-header {
+  flex: 0 0 auto;
 }
 
-.chart-bar:hover {
-  opacity: 1;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-  transform: scaleY(1.03);
-  transform-origin: bottom;
+.dashboard-grid .graph {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
-.chart-bar-label {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  text-align: center;
+.dashboard-grid .activity-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Activity Feed */
 
 .activity-list {
   padding: 4px 0;
+}
+
+.activity-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 24px 20px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.activity-empty .material-symbols-outlined {
+  font-size: 30px;
+  color: var(--color-border);
 }
 
 .activity-item {
@@ -1075,7 +1306,7 @@ ul, ol {
 .badge-occupied {
   background: #f1f3f7;
   border-color: #dfe3ea;
-  color: #475569;
+  color: #0939bd;
 }
 
 /* Positive — ready to let, approved, settled. */
@@ -1086,7 +1317,7 @@ ul, ol {
 .badge-paid {
   background: #f0fdf4;
   border-color: #bbf7d0;
-  color: #15803d;
+  color: #3fdf5f;
 }
 
 /* Needs attention, but nothing has gone wrong yet. */
@@ -1097,7 +1328,7 @@ ul, ol {
 .badge-unpaid {
   background: #fffbeb;
   border-color: #fde68a;
-  color: #b45309;
+  color: #744d06;
 }
 
 /* Genuine problems — reserved so red keeps its meaning. */
@@ -1106,7 +1337,7 @@ ul, ol {
 .badge-overdue {
   background: #fef2f2;
   border-color: #fecaca;
-  color: #b91c1c;
+  color: #520505;
 }
 
 /* Informational, in progress. */
@@ -1248,6 +1479,16 @@ ul, ol {
   color: var(--color-text-tertiary);
 }
 
+/* Stands in for the numbered buttons on a compact pagination bar. */
+.page-position {
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
 
 /* ============================================================
    Search Row (in-page)
@@ -1291,14 +1532,8 @@ ul, ol {
 }
 
 /* ============================================================
-   Analytics
+   Stat Pills — the "Open Points by Tenant" list on Violations
    ============================================================ */
-
-.analytics-grid {
-  display: grid;
-  grid-template-columns: 1fr 1.5fr;
-  gap: 16px;
-}
 
 .analytics-stats {
   display: grid;
@@ -1333,170 +1568,380 @@ ul, ol {
   color: var(--color-text);
 }
 
-/* Analytics Distribution */
-.analytics-full {
-  grid-column: 1 / -1;
-}
+/* ============================================================
+   Analytics — presented as a formal operations report
+   ============================================================ */
 
-.distribution-row {
+.report {
   display: flex;
-  gap: 12px;
-  padding: 20px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1180px;
 }
 
-.distribution-item {
-  flex: 1;
-  min-width: 120px;
-  padding: 16px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg);
-  text-align: center;
-  transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
-}
-
-.distribution-item:hover {
-  box-shadow: var(--shadow-md);
+/* Masthead — the letterhead of the report. */
+.report-masthead {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 26px;
   background: var(--color-surface);
-  border-color: rgba(37, 99, 235, 0.2);
-  transform: translateY(-2px);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
 }
 
-.distribution-item .dist-count {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--color-text);
-  line-height: 1.2;
+.report-seal {
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
-.distribution-item .dist-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  margin-top: 4px;
+.report-seal img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.report-identity {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.report-office {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
 }
 
-.distribution-item .dist-bar {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--color-border-light);
-  margin-top: 10px;
+.report-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.report-meta {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.report-actions {
+  flex: 0 0 auto;
+}
+
+/* Numbered sections */
+.report-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
 }
 
-.distribution-item .dist-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.6s ease;
-}
-
-.distribution-item .dist-bar-fill.occupied { background: var(--color-primary); }
-.distribution-item .dist-bar-fill.available { background: var(--color-success); }
-.distribution-item .dist-bar-fill.maintenance { background: var(--color-danger); }
-.distribution-item .dist-bar-fill.pending { background: var(--color-warning); }
-.distribution-item .dist-bar-fill.incomplete { background: var(--color-danger); }
-.distribution-item .dist-bar-fill.approved { background: var(--color-success); }
-.distribution-item .dist-bar-fill.rejected { background: var(--color-text-tertiary); }
-
-.pipeline-row {
+.report-section-head {
   display: flex;
   align-items: center;
-  gap: 0;
-  padding: 20px;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(180deg, #fbfcfe 0%, var(--color-surface) 100%);
 }
 
-.pipeline-step {
-  flex: 1;
-  text-align: center;
-  padding: 16px 12px;
-  position: relative;
-}
-
-.pipeline-step:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 40px;
-  background: var(--color-border-light);
-}
-
-.pipeline-step .pipe-count {
-  font-size: 24px;
-  font-weight: 700;
-}
-
-.pipeline-step .pipe-count.pending { color: var(--color-warning); }
-.pipeline-step .pipe-count.incomplete { color: var(--color-danger); }
-.pipeline-step .pipe-count.approved { color: var(--color-success); }
-.pipeline-step .pipe-count.rejected { color: var(--color-text-tertiary); }
-
-.pipeline-step .pipe-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  margin-top: 4px;
-}
-
-.violation-list {
-  display: flex;
-  flex-direction: column;
-  padding: 0 20px 20px;
-}
-
-.violation-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-border-light);
+.report-index {
+  display: grid;
+  flex: 0 0 34px;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
   font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
-.violation-item:last-child {
+.report-section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.report-section-title h3 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+}
+
+.report-section-title p {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  margin-top: 1px;
+}
+
+.report-section-action {
+  flex: 0 0 auto;
+}
+
+/* Figures */
+.report-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  background: var(--color-border-light);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.report-figures:last-child {
   border-bottom: none;
 }
 
-.violation-tenant {
+.report-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 18px 20px;
+  background: var(--color-surface);
+}
+
+.report-figure-label {
+  font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.report-figure-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
   color: var(--color-text);
 }
 
-.violation-issue {
+.report-figure-value.success { color: var(--color-success); }
+.report-figure-value.warning { color: var(--color-warning); }
+.report-figure-value.danger { color: var(--color-danger); }
+
+.report-figure-basis {
+  font-size: 12px;
   color: var(--color-text-secondary);
-  flex: 1;
-  margin: 0 16px;
 }
 
-.log-summary-row {
-  display: flex;
-  gap: 10px;
-  padding: 20px;
-  flex-wrap: wrap;
+.report-meter {
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--color-border-light);
+  overflow: hidden;
 }
 
-.log-summary-item {
+.report-meter-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.5s ease;
+}
+
+.report-meter-fill.success { background: var(--color-success); }
+.report-meter-fill.warning { background: var(--color-warning); }
+.report-meter-fill.danger { background: var(--color-danger); }
+
+/* Two-column section body: a graph beside its table. */
+.report-split {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 1px;
+  background: var(--color-border-light);
+}
+
+.report-panel {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border-light);
+  flex-direction: column;
+  background: var(--color-surface);
+  min-width: 0;
+}
+
+.report-panel-head {
+  padding: 12px 20px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+/* When the table beside the graph carries more columns than the graph needs
+   room for, it takes the larger half. */
+.report-split.table-wide {
+  grid-template-columns: 0.9fr 1.4fr;
+}
+
+.report-panel .graph {
+  flex: 1 1 auto;
+}
+
+.report-panel .report-table th,
+.report-panel .report-table td {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* Report tables — ruled, restrained, figures right-aligned and tabular. A
+   wide table scrolls inside its own wrapper rather than stretching the page. */
+.report-table-wrap {
+  overflow-x: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
 }
 
-.log-summary-item strong {
-  font-size: 16px;
+.report-table th {
+  padding: 11px 20px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.report-table td {
+  padding: 12px 20px;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border-light);
+  vertical-align: middle;
+}
+
+.report-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.report-table td small {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 1px;
+}
+
+.report-table th.num,
+.report-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.report-table td.num {
+  font-weight: 600;
+}
+
+.report-table td.num.danger {
+  color: var(--color-danger);
+}
+
+.report-table th.share,
+.report-table td.share {
+  width: 200px;
+}
+
+.report-table tfoot td {
+  padding: 12px 20px;
+  border-bottom: none;
   font-weight: 700;
   color: var(--color-text);
+  background: var(--color-bg);
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table tfoot td.share {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.report-table tbody tr:hover td {
+  background: var(--color-surface-hover);
+}
+
+.report-empty {
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.report-share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-share-track {
+  flex: 1 1 auto;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--color-border-light);
+  overflow: hidden;
+}
+
+.report-share-fill {
+  height: 100%;
+  background: var(--color-text-tertiary);
+  transition: width 0.5s ease;
+}
+
+.report-share-fill.occupied { background: var(--color-primary); }
+.report-share-fill.available { background: var(--color-success); }
+.report-share-fill.maintenance { background: var(--color-danger); }
+
+.report-share span {
+  flex: 0 0 52px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
+.report-note {
+  padding: 12px 20px 16px;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.report-footer {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 20px;
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.report-footer .material-symbols-outlined {
+  font-size: 20px;
+  color: var(--color-text-tertiary);
 }
 
 /* ============================================================
@@ -1682,19 +2127,20 @@ ul, ol {
 
 .form-grid {
   display: grid;
-  gap: 18px;
+  gap: 22px;
 }
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
+  min-width: 0;
 }
 
 .form-label {
@@ -1888,6 +2334,35 @@ ul, ol {
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 8px;
+}
+
+.settings-lead {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+}
+
+/* The standing caution under the data-management actions. */
+.settings-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.settings-note .material-symbols-outlined {
+  font-size: 18px;
+  flex-shrink: 0;
+  color: var(--color-warning);
 }
 
 .btn-danger {
@@ -2183,52 +2658,6 @@ ul, ol {
    Confirm Dialog
    ============================================================ */
 
-.confirm-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-full);
-  margin: 0 auto 16px;
-}
-
-.confirm-icon.warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
-
-.confirm-icon.danger {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-.confirm-icon .material-symbols-outlined {
-  font-size: 28px;
-}
-
-.confirm-text {
-  text-align: center;
-  margin-bottom: 8px;
-}
-
-.confirm-text h4 {
-  font-size: 17px;
-  font-weight: 700;
-  margin: 0 0 6px;
-}
-
-.confirm-text p {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-.confirm-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 20px;
-}
 
 /* ============================================================
    Topbar Search Clear + Notifications
@@ -2606,6 +3035,23 @@ ul, ol {
   background: var(--color-danger-bg);
   color: var(--color-danger);
 }
+.row-icon-btn.edit:hover {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+/* Pressed row buttons change colour only — no fill, no movement. */
+.row-icon-btn.edit:active {
+  background: transparent;
+  color: var(--btn-primary-bg);
+}
+.row-icon-btn.danger:active {
+  background: transparent;
+  color: var(--btn-danger-bg);
+}
+.row-icon-btn:not(.edit):not(.danger):active {
+  background: transparent;
+  color: var(--color-text);
+}
 
 .row-icon-btn:focus-visible {
   outline: 2px solid var(--color-primary);
@@ -2619,9 +3065,6 @@ ul, ol {
 .action-link.danger {
   color: var(--color-danger);
 }
-
-.dist-bar-fill.electricity { background: var(--color-warning); }
-.dist-bar-fill.water { background: var(--color-info); }
 
 /* Bill history inside stall / tenant detail modals */
 .bill-history {
@@ -2697,70 +3140,111 @@ ul, ol {
    Applicant Requirements Checklist
    ============================================================ */
 
-.req-counter {
-  margin-left: 8px;
-  padding: 1px 8px;
+/* ---------- Documentary requirements — a ruled register, one line per document ---------- */
+
+.req-section {
+  gap: 12px;
+}
+
+.req-tally {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: var(--color-primary-bg);
-  color: var(--color-primary);
+  background: var(--color-bg);
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
-.req-checklist {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.req-tally.complete {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 
-.req-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+.req-register {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.req-register li + li .req-row {
+  border-top: 1px solid var(--color-border-light);
+}
+
+.req-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
   background: var(--color-surface);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
   cursor: pointer;
   user-select: none;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  transition: background 0.15s ease;
 }
 
-.req-check:hover {
-  border-color: var(--color-primary-light);
-}
-
-.req-check.checked {
-  border-color: var(--color-success);
-  background: rgba(22, 163, 74, 0.06);
-  color: var(--color-text);
+.req-row:hover {
+  background: var(--color-surface-hover);
 }
 
 /* The Material glyph is the visible control; the real input stays accessible. */
-.req-check input {
+.req-row input {
   position: absolute;
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-.req-check .material-symbols-outlined {
+.req-row .req-mark {
   font-size: 20px;
   flex-shrink: 0;
   color: var(--color-text-tertiary);
+  transition: color 0.15s ease;
 }
 
-.req-check.checked .material-symbols-outlined {
+.req-row.done .req-mark {
   color: var(--color-success);
 }
 
-.req-check input:focus-visible + .material-symbols-outlined {
-  outline: 2px solid var(--color-primary-light);
+.req-row input:focus-visible + .req-mark {
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
-  border-radius: var(--radius-xs);
+  border-radius: 2px;
+}
+
+.req-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.req-row.done .req-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.req-state {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-text-tertiary);
+}
+
+.req-row.done .req-state {
+  color: var(--color-success);
 }
 
 /* Compact per-row marks in the applicants table */
@@ -2804,6 +3288,7 @@ ul, ol {
   border-top: 1px solid var(--color-border-light);
 }
 
+.applicant-decision-left,
 .applicant-decision-right {
   display: flex;
   gap: 8px;
@@ -2964,12 +3449,22 @@ ul, ol {
     grid-template-columns: 1fr;
   }
 
-  .analytics-grid {
+  /* Stacked one above the other, each panel keeps its own height rather than
+     matching a neighbour that is no longer beside it. */
+  .dashboard-grid > .panel {
+    height: auto;
+    min-height: 360px;
+    max-height: 440px;
+  }
+
+  .report-split {
     grid-template-columns: 1fr;
   }
-  
-  .distribution-row { flex-direction: column; }
-  .pipeline-row { flex-direction: column; }
+
+  .report-table th.share,
+  .report-table td.share {
+    width: 150px;
+  }
 }
 
 @media (max-width: 1024px) {
@@ -3076,8 +3571,23 @@ ul, ol {
     gap: 4px;
   }
 
-  .req-checklist {
-    grid-template-columns: 1fr;
+  /* The state column has no room to sit beside the name on a phone. */
+  .req-row {
+    flex-wrap: wrap;
+  }
+
+  .req-state {
+    width: 100%;
+    padding-left: 32px;
+  }
+
+  .keeper-panel-actions {
+    flex-direction: column-reverse;
+  }
+
+  .keeper-panel-actions button {
+    width: 100%;
+    justify-content: center;
   }
 
   .applicant-decision,
@@ -3169,4 +3679,1031 @@ ul, ol {
   .stat-card:focus-visible {
     transform: none;
   }
+}
+
+/* ---------- Form section (stallkeeper block in tenant modals) ---------- */
+.form-section {
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.form-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.form-section-head h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.form-section > .form-hint {
+  margin-top: -6px;
+}
+
+/* ---------- Stallkeeper roster — a ruled register, plus one entry panel ---------- */
+
+.keeper-section {
+  gap: 14px;
+}
+
+.form-section-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.form-section-note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.keeper-empty {
+  padding: 18px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.keeper-table-wrap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+.keeper-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.keeper-table th {
+  padding: 9px 14px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.keeper-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* The name carries the row; the particulars beside it stay subordinate. */
+.keeper-table td strong {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.keeper-table td:nth-child(3) {
+  font-variant-numeric: tabular-nums;
+}
+
+.keeper-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.keeper-table tbody tr.editing td {
+  background: var(--color-primary-bg);
+}
+
+.keeper-table .keeper-table-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* The one entry form. Only ever one is on screen, whatever the roster holds. */
+.keeper-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.keeper-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.keeper-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
+.keeper-panel-note {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.keeper-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.keeper-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-bg);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Separates one person from the next in the read-only record sheets. */
+.record-grid-next {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+
+.link-btn .material-symbols-outlined {
+  font-size: 16px;
+  vertical-align: -3px;
+  margin-right: 2px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  transition: color 0.15s, opacity 0.15s;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-family: inherit;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================
+   Auto-save banner — every edit form saves as you type
+   ============================================================ */
+/* The standing note at the top of every edit form. */
+.save-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.save-note .material-symbols-outlined {
+  font-size: 18px;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.save-note strong {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+/* An input that just rejected what was typed into it. */
+.form-input.invalid {
+  border-color: var(--color-danger);
+  background: #fffafa;
+}
+
+.form-input.invalid:focus {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px var(--color-danger-bg);
+}
+
+/* ---------- Muted placeholders for unset stallkeeper values ---------- */
+.detail-value.muted {
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+.muted-cell {
+  color: var(--color-text-tertiary);
+}
+
+/* ============================================================
+   Record Sheet — formal read-only detail views
+   Used by Tenant, Stall, Applicant, Violation and Bill details.
+   ============================================================ */
+.record-sheet {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+/* ---- Header band ---- */
+.record-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 30px;
+  background: var(--color-bg);
+  border-bottom: 2px solid var(--color-primary);
+}
+.record-title {
+  font-family: Georgia, 'Times New Roman', 'Nimbus Roman', serif;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+  line-height: 1.3;
+}
+.record-subtitle {
+  margin-top: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Sections ---- */
+.record-section {
+  padding: 26px 30px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.record-section:last-child {
+  border-bottom: none;
+}
+.record-section-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+  padding-bottom: 13px;
+  border-bottom: 2px solid var(--color-border);
+}
+.record-section-title::after {
+  content: '';
+  flex: 1;
+}
+.record-section-title .material-symbols-outlined {
+  font-size: 18px !important;
+  color: var(--color-primary);
+  letter-spacing: normal;
+}
+
+/* ---- Field rows: label stacked above value, never side by side ---- */
+.record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 48px;
+  row-gap: 4px;
+  margin-top: 8px;
+}
+.record-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border-light);
+  min-width: 0;
+}
+.record-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+.record-value {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.record-value.empty {
+  font-weight: 500;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+}
+
+/* ---- Notes ---- */
+.record-note {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+}
+
+/* ---- Emphasised total ---- */
+.record-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 2px solid var(--color-border);
+}
+.record-total span {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--color-text-secondary);
+}
+.record-total strong {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Requirements checklist ---- */
+.record-checklist {
+  display: grid;
+  margin-top: 8px;
+}
+.record-check {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.record-check:last-child {
+  border-bottom: none;
+}
+.record-check .material-symbols-outlined {
+  font-size: 20px !important;
+  color: var(--color-text-tertiary);
+}
+.record-check.done .material-symbols-outlined {
+  color: var(--color-success);
+}
+.record-check-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.record-check-state {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--color-text-tertiary);
+}
+.record-check.done .record-check-state {
+  color: var(--color-success);
+}
+
+/* ---- Spacing against neighbouring blocks ---- */
+.record-sheet + .bill-history {
+  margin-top: 26px;
+  padding-top: 22px;
+}
+
+@media (max-width: 760px) {
+  .record-header { padding: 20px 20px; }
+  .record-section { padding: 20px; }
+  .record-grid { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
+}
+
+/* ---------- Consistent breathing room inside modals ---------- */
+.form-section {
+  margin-top: 8px;
+  padding-top: 22px;
+  gap: 16px;
+}
+.modal-footer {
+  gap: 12px;
+}
+
+/* ============================================================
+   Pressed states — every button gives visible feedback on click
+   ============================================================ */
+
+/* Text links and panel rows */
+.link-btn:active {
+  color: var(--color-primary-hover);
+  opacity: 0.7;
+}
+.notif-row:active {
+  background: var(--color-primary-bg);
+}
+
+/* Tabs, chips and any other clickable control that isn't covered above */
+.filter-btn:active,
+.tab-btn:active,
+.chip:active,
+.quick-action:active,
+.stat-card.clickable:active {
+  transform: scale(0.97);
+  filter: brightness(0.96);
+}
+
+/* Save Changes stays visibly out of reach until something has been changed. */
+.btn-primary:disabled,
+.btn-outline:disabled,
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Disabled controls never react */
+.btn-primary:disabled:active,
+.btn-outline:disabled:active,
+.btn-danger:disabled:active,
+.page-btn:disabled:active {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+/* ============================================================
+   Button palette — deeper, less saturated tones suited to an
+   official municipal system. Brand blue is kept for badges,
+   icons and the sidebar; buttons use their own darker scale
+   so filled controls read as authoritative rather than bright.
+   ============================================================ */
+:root {
+  --btn-primary-bg: #1e40af;
+  --btn-primary-bg-hover: #1a3691;
+  --btn-primary-bg-active: #172e7a;
+
+  --btn-neutral-text: #475569;
+  --btn-neutral-border: #cbd5e1;
+  --btn-neutral-bg-hover: #f1f5f9;
+  --btn-neutral-bg-active: #475569;
+
+  --btn-danger-bg: #b91c1c;
+  --btn-danger-bg-hover: #991b1b;
+
+  --btn-success-bg: #15803d;
+  --btn-success-bg-hover: #126631;
+}
+
+/* ---- Primary: deep navy, the single filled action per view ---- */
+.btn-primary {
+  background: var(--btn-primary-bg);
+  box-shadow: 0 1px 2px rgba(23, 46, 122, 0.24);
+}
+.btn-primary:hover {
+  background: var(--btn-primary-bg-hover);
+  box-shadow: 0 2px 6px rgba(23, 46, 122, 0.28);
+}
+.btn-primary:active {
+  background: var(--btn-primary-bg-active);
+  transform: scale(0.97);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+/* ---- Close / Cancel and other neutral actions: slate, never blue ----
+   These dismiss rather than commit, so they must not compete with the
+   primary action or imply a confirming click. */
+.btn-outline,
+.btn-outline-sm {
+  color: var(--btn-neutral-text);
+  border-color: var(--btn-neutral-border);
+}
+.btn-outline:hover,
+.btn-outline-sm:hover {
+  background: var(--btn-neutral-bg-hover);
+  border-color: #94a3b8;
+  color: #334155;
+}
+.btn-outline:active,
+.btn-outline-sm:active {
+  background: var(--btn-neutral-bg-active);
+  border-color: var(--btn-neutral-bg-active);
+  color: #ffffff;
+  transform: scale(0.97);
+}
+.btn-outline:active .material-symbols-outlined,
+.btn-outline-sm:active .material-symbols-outlined {
+  color: #ffffff;
+}
+
+/* ---- Destructive ---- */
+.btn-danger {
+  background: var(--btn-danger-bg);
+  box-shadow: 0 1px 2px rgba(153, 27, 27, 0.24);
+}
+.btn-danger:hover {
+  background: var(--btn-danger-bg-hover);
+}
+.btn-danger:active {
+  background: #7f1d1d;
+  transform: scale(0.97);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+/* ---- Affirmative ---- */
+.btn-success {
+  background: var(--btn-success-bg);
+  box-shadow: 0 1px 2px rgba(18, 102, 49, 0.24);
+}
+.btn-success:hover {
+  background: var(--btn-success-bg-hover);
+}
+.btn-success:active {
+  background: #0f5228;
+  transform: scale(0.97);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+/* ---- Semantic outlines (Reject / Approve) keep their meaning ---- */
+.btn-outline-danger {
+  color: var(--btn-danger-bg);
+  border-color: #e5b4b4;
+}
+.btn-outline-danger:hover {
+  background: var(--color-danger-bg);
+  border-color: var(--btn-danger-bg);
+  color: #7f1d1d;
+}
+.btn-outline-danger:active {
+  background: var(--btn-danger-bg);
+  border-color: var(--btn-danger-bg);
+  color: #ffffff;
+}
+.btn-outline-success {
+  color: var(--btn-success-bg);
+  border-color: #b5d8c1;
+}
+.btn-outline-success:hover {
+  background: var(--color-success-bg);
+  border-color: var(--btn-success-bg);
+  color: #0f5228;
+}
+.btn-outline-success:active {
+  background: var(--btn-success-bg);
+  border-color: var(--btn-success-bg);
+  color: #ffffff;
+}
+
+/* ---- Pagination follows the same navy ---- */
+.page-btn.active {
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
+}
+.page-btn:active:not(:disabled) {
+  background: var(--btn-primary-bg-active);
+  border-color: var(--btn-primary-bg-active);
+  color: #ffffff;
+  transform: scale(0.94);
+}
+
+/* ============================================================
+   Confirmation dialog — header rule, body copy, footer actions.
+   Standard web dialog structure rather than a centred alert.
+   ============================================================ */
+.confirm-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.24);
+  overflow: hidden;
+}
+
+/* Coloured rule across the top signals severity without shouting */
+.confirm-card.danger { border-top: 3px solid var(--btn-danger-bg); }
+.confirm-card.warning { border-top: 3px solid var(--color-warning); }
+
+.confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 26px 18px;
+}
+.confirm-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+}
+.confirm-icon.danger {
+  background: var(--color-danger-bg);
+  color: var(--btn-danger-bg);
+}
+.confirm-icon.warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.confirm-icon .material-symbols-outlined {
+  font-size: 23px !important;
+}
+.confirm-title {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.confirm-body {
+  padding: 0 26px 22px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.confirm-body p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 26px;
+  background: var(--color-bg);
+}
+
+@media (max-width: 520px) {
+  .confirm-head { padding: 18px 20px 14px; }
+  .confirm-body { padding: 0 20px 18px; }
+  .confirm-actions { padding: 14px 20px; }
+  .confirm-actions button { flex: 1; justify-content: center; }
+}
+
+/* ============================================================
+   Status labels — text only.
+   The pill background reads as a UI chip; a plain coloured label
+   reads as a record field, which suits a formal document.
+   ============================================================ */
+.badge {
+  background: none !important;
+  border: none;
+  border-radius: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  /* Text only — no rule, dot, or chip. The colour is the highlight. */
+  padding: 0;
+}
+
+/* Deeper tones than the old pills used. Colour on a white page needs to be
+   darker than colour on a tinted chip to stay comfortable to read. */
+/* Occupied is the resting state of most stalls, so it stays neutral —
+   but a clear grey-blue, not a near-black that reads as ordinary text.
+   It is also kept lighter than every coloured state, so the eye passes
+   over it and stops on the exceptions. */
+.badge-occupied { color: #64748b; font-weight: 500; }
+
+.badge-available,
+.badge-approved,
+.badge-active,
+.badge-resolved,
+.badge-paid { color: #0b5030; }
+
+/* Warm and clearly orange, so it never reads as a darker grey. */
+.badge-maintenance,
+.badge-pending,
+.badge-incomplete,
+.badge-expiring,
+.badge-unpaid { color: #8a4a04; }
+
+.badge-rejected,
+.badge-open,
+.badge-overdue { color: #8f1613; }
+
+.badge-renewal { color: #16307e; }
+
+/* In the record sheets the status sits alone in the header. */
+.record-header .badge {
+  font-size: 14px;
+  padding-top: 4px;
+}
+
+/* Keeps the topbar actions right-aligned on pages with no search
+   (Dashboard, Analytics, Settings, Support). */
+.topbar-spacer {
+  flex: 0 1 420px;
+}
+
+/* ============================================================
+   Global search results (Dashboard)
+   ============================================================ */
+.search-results {
+  display: flex;
+  flex-direction: column;
+}
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 15px 18px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background 0.15s;
+}
+.search-result:last-child {
+  border-bottom: none;
+}
+.search-result:hover {
+  background: var(--color-surface-hover);
+}
+.search-result:active {
+  background: var(--color-primary-bg);
+}
+.search-result > .material-symbols-outlined {
+  font-size: 21px !important;
+  color: var(--btn-primary-bg);
+  flex-shrink: 0;
+}
+.search-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.search-result-label {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.search-result-detail {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.search-result-kind {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+.search-result-go {
+  font-size: 20px !important;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Formal control shapes
+   ------------------------------------------------------------
+   Pill buttons and glowing fills read as consumer software. An
+   office system wants squared, evenly weighted controls that sit
+   still: a small radius, a hairline edge, denser type, and a press
+   that darkens rather than bounces.
+   ============================================================ */
+
+:root {
+  --radius-btn: 5px;
+}
+
+.btn-primary,
+.btn-outline,
+.btn-danger,
+.btn-success,
+.btn-outline-success,
+.btn-outline-danger,
+.btn-outline-sm,
+.upload-btn {
+  border-radius: var(--radius-btn);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.012em;
+}
+
+.btn-primary,
+.btn-outline,
+.btn-danger,
+.btn-success,
+.btn-outline-success,
+.btn-outline-danger {
+  padding: 9px 16px;
+  min-height: 38px;
+  justify-content: center;
+}
+
+.btn-outline-sm {
+  padding: 7px 13px;
+  min-height: 32px;
+}
+
+/* Filled controls carry a hairline edge a shade darker than their fill, so
+   they read as printed blocks rather than floating chips. */
+.btn-primary {
+  border: 1px solid #17307e;
+  box-shadow: none;
+}
+
+.btn-primary:hover {
+  box-shadow: none;
+}
+
+.btn-danger {
+  border: 1px solid #8f1616;
+  box-shadow: none;
+}
+
+.btn-success {
+  border: 1px solid #10592b;
+  box-shadow: none;
+}
+
+/* No bouncing. A pressed control darkens and settles a hair inward. */
+.btn-primary:active,
+.btn-outline:active,
+.btn-outline-sm:active,
+.btn-danger:active,
+.btn-success:active,
+.btn-outline-success:active,
+.btn-outline-danger:active {
+  transform: none;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary .material-symbols-outlined,
+.btn-outline .material-symbols-outlined,
+.btn-danger .material-symbols-outlined,
+.btn-success .material-symbols-outlined,
+.btn-outline-success .material-symbols-outlined,
+.btn-outline-danger .material-symbols-outlined {
+  font-size: 17px;
+}
+
+/* Search fields match the other inputs instead of floating as capsules. */
+.search-input,
+.search-field input {
+  border-radius: var(--radius-md);
+}
+
+/* ---- Errors: a ruled marginal note, not a coloured alert block ---- */
+.form-error {
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.form-error .material-symbols-outlined {
+  color: var(--color-danger);
+}
+
+.form-hint.error {
+  color: var(--color-danger);
+}
+
+/* ---- Data-management actions: one committing action, the rest held back ---- */
+.settings-actions {
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.settings-actions .btn-outline-danger {
+  margin-left: auto;
+}
+
+/* ============================================================
+   Rounded control shapes â€” one radius for every control
+   ------------------------------------------------------------
+   Squared edges read as severe and pill edges read as consumer
+   software. A single moderate radius across every button, icon
+   button and page control keeps the system rounded without
+   looking playful, and consistent wherever a control appears.
+   ============================================================ */
+
+:root {
+  --radius-btn: 8px;      /* text buttons */
+  --radius-btn-sm: 7px;   /* icon and page buttons, visually equal at 30px */
+}
+
+.btn-primary,
+.btn-outline,
+.btn-danger,
+.btn-success,
+.btn-outline-success,
+.btn-outline-danger,
+.btn-outline-sm,
+.upload-btn {
+  border-radius: var(--radius-btn);
+}
+
+.row-icon-btn,
+.page-btn,
+.modal-close,
+.keeper-remove,
+.search-clear,
+.utility-toggle-btn {
+  border-radius: var(--radius-btn-sm);
+}
+
+/* The topbar bell and avatar stay circular â€” they are a matched pair of
+   round marks, not controls in a row of buttons. */
+
+/* ---- Stacked dialog: a sub-form opened from inside another form ---- */
+.modal-overlay.stacked {
+  z-index: 140;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.modal-card.narrow {
+  max-width: 560px;
+}
+
+.modal-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.modal-subtitle {
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+/* The standing reminder inside a staging dialog: nothing here is filed yet. */
+.dialog-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 11px 14px;
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.dialog-note .material-symbols-outlined {
+  font-size: 17px;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.dialog-note strong {
+  font-weight: 700;
+  color: var(--color-text);
 }
