@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Public Market Rental Monitoring System — Tanauan Public Market, Market Office",
+  "description": "Public Market Rental Monitoring System \u2014 Tanauan Public Market, Market Office",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -16,17 +16,18 @@
     "dist:installer": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/node": "^22.10.7",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@types/node": "^22.10.7",
     "@vitejs/plugin-react": "^4.3.1",
     "cross-env": "^7.0.3",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^38.8.6",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
   },
@@ -46,8 +47,18 @@
     "win": {
       "icon": "build/icon.png",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "portable": {
@@ -62,6 +73,10 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Tanauan Public Market System",
       "uninstallDisplayName": "Tanauan Public Market System"
-    }
+    },
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "npmRebuild": false
   }
 }

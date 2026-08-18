@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
+import {
+  loadStored, persist, clearStored,
+  usingDatabase, backendName, databaseStats, backupDatabase, checkIntegrity,
+  revealDataFolder, formatBytes,
+} from './db';
+import type { DatabaseStats, IdCounters } from './db';
 
 /* ============================================================
    Types
@@ -148,9 +154,8 @@ const VIOLATION_ISSUES = [
   'Fire safety non-compliance',
   'Obstruction of walkway',
 ];
-const storageKey = 'pmrms-state-v3';
-const savedAtKey = 'pmrms-saved-at';
-const idCounterKey = 'pmrms-id-counters';
+/* Records are read and written through ./db — a SQLite database in the desktop
+   application, localStorage in a plain browser. */
 
 const REQUIREMENTS = [
   'Barangay Clearance',
@@ -340,10 +345,11 @@ function mergeState(input: unknown): AppState {
   };
 }
 
-function readState(): AppState {
-  const raw = localStorage.getItem(storageKey);
+/* Turns whatever storage handed back into a usable set of records. Nothing
+   filed yet — a brand new installation — starts from the sample records. */
+function stateFrom(raw: unknown | null): AppState {
   if (!raw) return initialState;
-  try { return mergeState(JSON.parse(raw)); } catch { return initialState; }
+  try { return mergeState(raw); } catch { return initialState; }
 }
 
 function money(value: number) {
@@ -501,25 +507,31 @@ function phoneProblem(typed: string, label = 'Mobile number') {
   return '';
 }
 
-function readIdCounters(): Record<string, number> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(idCounterKey) ?? '{}');
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
-  } catch { return {}; }
+/* The highest number handed out per record prefix (TEN, APP, UTL...). Held here
+   so an ID can still be produced the instant a form needs one, and written to
+   storage with the records it belongs to. A deleted record's number is never
+   reissued, which keeps every reference in the paper files pointing at one
+   record for good. */
+let idCounters: IdCounters = {};
+
+function seedIdCounters(values: IdCounters) {
+  idCounters = { ...values };
+}
+
+function currentIdCounters(): IdCounters {
+  return idCounters;
 }
 
 function resetIdCounters() {
-  try { localStorage.removeItem(idCounterKey); } catch { /* storage unavailable — max(existing) still applies */ }
+  idCounters = {};
 }
 
 function nextId(prefix: string, existingIds: string[]) {
   const nums = existingIds.map((id) => parseInt(id.replace(/\D/g, ''), 10)).filter((n) => !isNaN(n));
   const maxExisting = nums.length > 0 ? Math.max(...nums) : 0;
-  const counters = readIdCounters();
-  const previous = typeof counters[prefix] === 'number' ? counters[prefix] : 0;
+  const previous = typeof idCounters[prefix] === 'number' ? idCounters[prefix] : 0;
   const next = Math.max(maxExisting, previous) + 1;
-  counters[prefix] = next;
-  try { localStorage.setItem(idCounterKey, JSON.stringify(counters)); } catch { /* falls back to max(existing) next time */ }
+  idCounters[prefix] = next;
   return `${prefix}-${String(next).padStart(3, '0')}`;
 }
 
@@ -706,16 +718,29 @@ function downloadCSV(headers: string[], rows: string[][], filename: string) {
    Main App Component
    ============================================================ */
 
-function App() {
+/* What start-up read out of storage, handed to the app once it is ready. */
+type BootData = {
+  state: AppState;
+  savedAt: string;
+  /* Set when the stored records could not be read. Saving is held back for the
+     rest of the session so a screen full of defaults is never written over
+     records that are still on disk. */
+  problem: string;
+  /* Set when records were carried over from a version that stored them in the
+     browser, so the operator can be told it happened. */
+  imported: boolean;
+};
+
+function App({ boot }: { boot: BootData }) {
   const [active, setActive] = useState<ModuleKey>('dashboard');
-  const [state, setState] = useState<AppState>(() => readState());
+  const [state, setState] = useState<AppState>(boot.state);
   const [searchTerm, setSearchTerm] = useState('');
   const [modal, setModal] = useState<{ type: ModalType; data?: unknown }>({ type: null });
   const [toasts, setToasts] = useState<Array<{ id: number; message: string }>>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const toastSeq = useRef(0);
 
-  const [lastSaved, setLastSaved] = useState<string>(() => localStorage.getItem(savedAtKey) ?? '');
+  const [lastSaved, setLastSaved] = useState<string>(boot.savedAt);
   const storageWarned = useRef(false);
 
   const showToast = useCallback((message: string) => {
@@ -724,20 +749,40 @@ function App() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
 
+  /* Every change to the records is written straight back to storage. The short
+     delay collapses a burst of edits into one write; the guard makes sure a
+     failed read earlier never turns into a destructive write now. */
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(state));
-      const stamp = new Date().toISOString();
-      localStorage.setItem(savedAtKey, stamp);
-      setLastSaved(stamp);
-      storageWarned.current = false;
-    } catch {
-      if (!storageWarned.current) {
-        storageWarned.current = true;
-        showToast('Could not save to browser storage — export a backup from Support.');
-      }
+    if (boot.problem) return;
+    let dropped = false;
+    const timer = setTimeout(() => {
+      persist(state, currentIdCounters())
+        .then((stamp) => {
+          if (dropped) return;
+          setLastSaved(stamp);
+          storageWarned.current = false;
+        })
+        .catch(() => {
+          if (dropped || storageWarned.current) return;
+          storageWarned.current = true;
+          showToast(
+            usingDatabase()
+              ? 'Could not save to the records database — export a backup from Support.'
+              : 'Could not save to browser storage — export a backup from Support.',
+          );
+        });
+    }, 150);
+    return () => { dropped = true; clearTimeout(timer); };
+  }, [state, showToast, boot.problem]);
+
+  /* Said once, at start-up: records were brought over, or cannot be read. */
+  useEffect(() => {
+    if (boot.problem) {
+      showToast('The records database could not be opened — changes will not be saved.');
+    } else if (boot.imported) {
+      showToast('Existing records moved into the database.');
     }
-  }, [state, showToast]);
+  }, [boot.problem, boot.imported, showToast]);
 
   const closeModal = useCallback(() => setModal({ type: null }), []);
 
@@ -976,7 +1021,18 @@ function App() {
     closeModal();
   };
 
-  const resetData = () => { localStorage.removeItem(storageKey); resetIdCounters(); setState(initialState); showToast('Data reset to defaults'); closeModal(); };
+  /* Clears the stored records before the defaults are put back, so nothing from
+     the old set can survive in a table the defaults do not mention. */
+  const resetData = () => {
+    closeModal();
+    clearStored()
+      .then(() => {
+        resetIdCounters();
+        setState(initialState);
+        showToast('Data reset to defaults');
+      })
+      .catch(() => showToast('Could not reset the records — please try again.'));
+  };
 
   const handleNewEntry = () => setModal({ type: 'add-log' });
 
@@ -2691,6 +2747,26 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
   const countOf = (data: AppState) =>
     data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length;
 
+  /* Read straight from the database rather than counted off the screen, so the
+     figures shown are the ones actually on disk. Re-read after every save. */
+  const [dbInfo, setDbInfo] = useState<DatabaseStats | null>(null);
+  const [dbCheck, setDbCheck] = useState('');
+  useEffect(() => { databaseStats().then(setDbInfo); }, [lastSaved]);
+
+  const runIntegrityCheck = () => {
+    setDbCheck('Checking…');
+    checkIntegrity()
+      .then((result) => setDbCheck(result?.ok ? 'No problems found — the records file is intact.' : `Reported: ${result?.result ?? 'unknown'}`))
+      .catch((error: unknown) => setDbCheck(error instanceof Error ? error.message : 'The check could not be run.'));
+  };
+
+  const saveDatabaseCopy = () => {
+    setDbCheck('');
+    backupDatabase()
+      .then((result) => { if (result && !result.canceled) setDbCheck(`Copy saved to ${result.filePath}`); })
+      .catch((error: unknown) => setDbCheck(error instanceof Error ? error.message : 'The copy could not be saved.'));
+  };
+
   return (
     <>
       <div className="page-header"><div><h2 className="page-title">Settings</h2><p className="page-subtitle">System configuration and data management.</p></div></div>
@@ -2699,7 +2775,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
           <div className="settings-section-header">System Information</div>
           <div className="settings-section-body">
             <div className="settings-item"><span className="settings-item-label">Application</span><span className="settings-item-value">Tanauan Public Market v1.0</span></div>
-            <div className="settings-item"><span className="settings-item-label">Storage</span><span className="settings-item-value">Local Browser Storage</span></div>
+            <div className="settings-item"><span className="settings-item-label">Storage</span><span className="settings-item-value">{backendName()}</span></div>
             <div className="settings-item"><span className="settings-item-label">Total Records</span><span className="settings-item-value">{state.stalls.length + state.tenants.length + state.applicants.length + state.logs.length + state.violations.length + state.utilities.length}</span></div>
             <div className="settings-item"><span className="settings-item-label">Last Saved</span><span className="settings-item-value">{lastSaved ? new Date(lastSaved).toLocaleString() : 'Not yet saved'}</span></div>
           </div>
@@ -2715,10 +2791,39 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
             <div className="settings-item"><span className="settings-item-label">Unpaid Utilities</span><span className="settings-item-value">{money(state.utilities.filter(b => b.status === 'Unpaid').reduce((s, b) => s + b.amount, 0))}</span></div>
           </div>
         </div>
+        {/* Only shown in the installed application — a browser has no file to
+            report on, and none of these actions would do anything there. */}
+        {dbInfo && (
+          <div className="settings-section full">
+            <div className="settings-section-header">Records Database</div>
+            <div className="settings-section-body">
+              <p className="settings-lead">
+                Every record is kept in one SQLite database file on this computer. The system never connects to the internet, and copying this file copies the whole system.
+              </p>
+              <div className="settings-item"><span className="settings-item-label">Database file</span><span className="settings-item-value" style={{ wordBreak: 'break-all' }}>{dbInfo.file}</span></div>
+              <div className="settings-item"><span className="settings-item-label">File size</span><span className="settings-item-value">{formatBytes(dbInfo.bytes)}</span></div>
+              <div className="settings-item"><span className="settings-item-label">Schema version</span><span className="settings-item-value">{dbInfo.schemaVersion}</span></div>
+              <div className="settings-item"><span className="settings-item-label">Rows stored</span><span className="settings-item-value">
+                {`${Object.values(dbInfo.counts).reduce((sum, n) => sum + n, 0)} — ${dbInfo.counts.tenants ?? 0} tenants, ${dbInfo.counts.stalls ?? 0} stalls, ${dbInfo.counts.applicants ?? 0} applicants, ${dbInfo.counts.utilities ?? 0} bills`}
+              </span></div>
+              <div className="settings-actions">
+                <button className="btn-primary" onClick={saveDatabaseCopy}><span className="material-symbols-outlined">save</span>Save a Copy of the Database</button>
+                <button className="btn-outline" onClick={() => { void revealDataFolder(); }}><span className="material-symbols-outlined">folder_open</span>Open Data Folder</button>
+                <button className="btn-outline" onClick={runIntegrityCheck}><span className="material-symbols-outlined">health_and_safety</span>Check for Damage</button>
+              </div>
+              {dbCheck && (
+                <p className="settings-note">
+                  <span className="material-symbols-outlined">info</span>
+                  {dbCheck}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
         <div className="settings-section full">
           <div className="settings-section-header">Data Management</div>
           <div className="settings-section-body">
-            <p className="settings-lead">Export the records held on this workstation, import them onto another, or reset the system to factory defaults. All data is stored locally in this browser.</p>
+            <p className="settings-lead">Export the records held on this workstation, import them onto another, or reset the system to factory defaults. Everything stays on this computer.</p>
             <div className="settings-actions">
               <button className="btn-primary" onClick={onExport}><span className="material-symbols-outlined">download</span>Export All Data</button>
               <button className="btn-outline" onClick={backup.choose}><span className="material-symbols-outlined">upload</span>Import Data</button>
@@ -2762,7 +2867,7 @@ const faqs = [
   { q: 'Where do saved utility bills appear?', a: 'Every saved bill is listed under Utility Billing → Billing Records, attached to the stall and tenant you selected. It also shows up in that tenant\'s and stall\'s detail modal, in the Analytics utility panel, in the Logbook as a Collection entry, and in exports and backups.' },
   { q: 'How do I record and resolve a violation?', a: 'Open the Violations page and click "Record Violation". Enter the tenant (pick one on record or type any other party), the offence, and how many demerit points it carries. Every citation starts Open. When it has been settled, click "Resolve" on its row — the resolution date is stamped automatically, and "Reopen" clears it again if the matter is not closed after all. Open points are totalled per tenant at the top of the page so repeat offenders are easy to spot.' },
   { q: 'Where can I view analytics?', a: 'The Analytics page provides a comprehensive view of stall occupancy, applicant pipeline, tenant distribution, violations summary, utility consumption and billing, and logbook activity.' },
-  { q: 'Where is my data stored?', a: 'All data is stored locally in your browser\'s localStorage. It persists across sessions but is not synced to a server.' },
+  { q: 'Where is my data stored?', a: 'In a SQLite database file on this computer, kept in the application data folder — open it from Settings → Records Database, or Help → Open Data Folder. Nothing is sent anywhere: the system works with no internet connection at all. Copying that one file copies every record.' },
   { q: 'How do I export reports?', a: 'You can export data from the Analytics page or Settings. Reports are available as JSON files. The Logbook page also offers CSV export.' },
   { q: 'How do I move records to another computer?', a: 'On the computer holding the records, open Settings → Data Management and click "Export All Data" to download a JSON file. Carry that file to the other computer, open Settings there, and click "Import Data". You will be shown what the file holds and what it will replace before anything is overwritten — nothing changes until you confirm. Importing replaces every record on that workstation, so export its current data first if it has not been filed elsewhere.' },
   { q: 'How do I backup and restore data?', a: 'Use the "Download Full Backup" button on this Support page to download all system data as a JSON file. To restore on another computer, click "Upload Backup" and select the previously downloaded file. The system will load all data from the backup.' },
@@ -4295,4 +4400,55 @@ function TenantStatusBadge({ status }: { status: string }) {
   return <span className={map[status] || 'badge'}>{status}</span>;
 }
 
-export default App;
+/* ============================================================
+   Start-up
+   ============================================================ */
+
+/* Reading the records is a round trip to the database, so the app cannot be
+   built until they arrive. This holds a plain panel on screen for the moment
+   that takes, then hands the records over and steps out of the way. */
+function Boot() {
+  const [boot, setBoot] = useState<BootData | null>(null);
+
+  useEffect(() => {
+    let dropped = false;
+    loadStored()
+      .then((loaded) => {
+        if (dropped) return;
+        seedIdCounters(loaded.idCounters);
+        setBoot({
+          state: stateFrom(loaded.raw),
+          savedAt: loaded.savedAt,
+          problem: loaded.problem,
+          imported: loaded.imported,
+        });
+      })
+      .catch((error: unknown) => {
+        if (dropped) return;
+        seedIdCounters({});
+        setBoot({
+          state: initialState,
+          savedAt: '',
+          problem: error instanceof Error ? error.message : 'The records could not be read.',
+          imported: false,
+        });
+      });
+    return () => { dropped = true; };
+  }, []);
+
+  if (!boot) {
+    return (
+      <div className="boot-screen">
+        <div className="boot-card">
+          <img className="boot-logo" src="./logo.jpg" alt="Municipality of Tanauan official seal" />
+          <p className="boot-title">Tanauan Public Market</p>
+          <p className="boot-note">Opening records&hellip;</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <App boot={boot} />;
+}
+
+export default Boot;

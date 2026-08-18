@@ -35,11 +35,23 @@ Build one target at a time with `npm run dist:installer` or `npm run dist:portab
 To run the desktop shell against the live dev server while developing, start
 `npm run dev` in one terminal and `npm run electron:dev` in another.
 
-**Data location.** Records live in the app's own storage at
-`%APPDATA%\Tanauan Public Market System`. The data is per-Windows-user and
-survives app updates, but it is *not* copied by reinstalling — use
-**Support → Backup & Restore** to move data between computers or to keep
-recovery copies. `Help → Open Data Folder` in the app menu opens that folder.
+**Data location.** Records live in a SQLite database at
+`%APPDATA%\public-market-rental-monitoring-system\market-records.db` (the
+folder is named after the `name` field in `package.json`, not the display name).
+The data is
+per-Windows-user and survives app updates, but it is *not* copied by
+reinstalling — use `Help → Back Up Records Database…` (or
+**Settings → Records Database → Save a Copy**) to keep recovery copies, and
+**Support → Backup & Restore** to move records between computers as a `.json`
+file. `Help → Open Data Folder` opens the folder holding the database.
+
+Copying `market-records.db` copies the whole system. The file is ordinary
+SQLite, so it can be opened with any SQLite tool (DB Browser for SQLite, the
+`sqlite3` CLI) for ad-hoc reporting — but close the app first, and treat direct
+edits as a last resort. Two sidecar files, `market-records.db-wal` and
+`-shm`, appear while the app is running; they are folded back into the database
+when it closes, so copy the folder rather than the single file if the app is
+open.
 
 **Offline.** The app makes zero network requests. Fonts and icons are vendored
 in `public/fonts/`; regenerate them with `scripts/fetch-fonts.mjs` if the
@@ -51,10 +63,55 @@ literal name.
 "Windows protected your PC" warning on first launch; the client clicks
 *More info → Run anyway*. Signing needs a purchased certificate.
 
+## Database
+
+Records are held in SQLite. The Electron main process owns the file; the React
+app never touches it directly, reaching it only through the calls exposed in
+`electron/preload.cjs`, so the renderer keeps no Node or filesystem access.
+
+| File | Role |
+| --- | --- |
+| `electron/db.cjs` | Schema, migrations, reads and writes. The only code that opens the database. |
+| `electron/preload.cjs` | The calls the interface is allowed to make, over IPC. |
+| `src/db.ts` | Renderer side. Uses the bridge when present, `localStorage` when not. |
+
+Tables: `stalls`, `tenants`, `stallkeepers`, `applicants`,
+`applicant_requirements`, `utility_bills`, `violations`, `logs`, `activities`,
+plus `id_counters` and a `meta` key/value table holding the schema version and
+last save time. Stallkeepers and applicant requirements are child rows keyed to
+their parent and removed with it, rather than JSON packed into a column, so they
+can be queried and counted like anything else.
+
+The interface still works with one object holding a list per record type. Saving
+walks that object and writes only what changed — rows that are new or edited are
+upserted, rows the operator deleted are removed — all inside one transaction, so
+an interrupted save leaves the previous records intact rather than half of each.
+The database runs in WAL mode, which keeps reads working while a save is in
+flight and survives a power cut mid-write.
+
+**Changing the schema.** Add the column to the `SCHEMA` statements and the field
+to the matching entry in `TABLES` in `electron/db.cjs`, then raise
+`SCHEMA_VERSION`. The read, write and delete statements are generated from
+`TABLES`, so nothing else needs editing. `src/db.ts` passes records through
+untouched and never needs a change when a field is added.
+
+**Upgrading from a pre-database installation.** The first launch finds an empty
+database, reads the records the old version left in `localStorage`, and files
+them into the tables. Nothing is lost and the import happens once.
+
+**Native module.** `better-sqlite3` ships a Node-API binary that Electron loads
+as-is, so no compiler and no `electron-rebuild` step is involved. The build sets
+`npmRebuild: false` to keep electron-builder from trying to compile it from
+source, and `asarUnpack` to place the binary beside the archive, since a `.node`
+file cannot be loaded from inside `app.asar`.
+
 ## Current scope
 
 - Fully offline browser app, also packaged as a Windows desktop application
-- Mock seed data stored in local state and persisted to `localStorage`
+- Records held in a local SQLite database (`market-records.db`), written by the
+  Electron main process; a new installation starts from sample seed data
+- In a plain browser (`npm run dev`) there is no database, so the same records
+  fall back to `localStorage` — the interface behaves identically
 - Dashboard, stall management, tenant records, applicants, utility billing, violations, analytics, logbook, settings, and support modules
 
 ## Applicants
@@ -156,7 +213,7 @@ Two invariants are enforced when saving:
 - On a stall held by a tenant record, the tenant name and Occupied status are locked — Tenant Records owns that change. Changing the stall's section moves its tenant with it.
 
 Record IDs are never reused. The highest number issued per prefix is persisted
-in `localStorage` (`pmrms-id-counters`), so deleting the newest record does not
+in the database (`id_counters`), so deleting the newest record does not
 hand its ID to the next one created — which would otherwise let an old utility
 bill attach itself to an unrelated new tenant. **Settings → Reset to Defaults**
 clears the counters along with the data.

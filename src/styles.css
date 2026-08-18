@@ -4707,3 +4707,45 @@ ul, ol {
   font-weight: 700;
   color: var(--color-text);
 }
+
+/* ============================================================
+   Start-up screen
+   ============================================================
+   Shown for the moment it takes to read the records out of the database. */
+
+.boot-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--surface-muted, #f5f7fb);
+}
+
+.boot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.boot-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.boot-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-strong, #16233c);
+}
+
+.boot-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted, #64748b);
+}

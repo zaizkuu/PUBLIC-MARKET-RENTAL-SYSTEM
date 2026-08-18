@@ -20,7 +20,7 @@ The `Violation` type gained `dateRecorded`, `dateResolved`, and `notes` — a ci
 ## Previously fixed
 
 ### 1. ID reuse can misattribute historical records — fixed
-`nextId()` derived the next ID from `max(existing IDs) + 1`, so deleting the newest record handed the same ID back to the next one created, and back-links kept for history (`UtilityBill.tenantId`, `Tenant.applicantId`) could then point at an unrelated record. The highest number issued is now persisted per prefix in `localStorage` (`pmrms-id-counters`) and only ever moves forward; `max(existing)` stays the floor so a restored backup with higher IDs still numbers correctly. A factory reset clears the counters. Callers generate the ID after validation so a rejected submit does not burn a number.
+`nextId()` derived the next ID from `max(existing IDs) + 1`, so deleting the newest record handed the same ID back to the next one created, and back-links kept for history (`UtilityBill.tenantId`, `Tenant.applicantId`) could then point at an unrelated record. The highest number issued is now persisted per prefix in the database (`id_counters`) and only ever moves forward; `max(existing)` stays the floor so a restored backup with higher IDs still numbers correctly. A factory reset clears the counters. Callers generate the ID after validation so a rejected submit does not burn a number.
 - `src/App.tsx` — `nextId()`, `readIdCounters()`, `resetIdCounters()`, `resetData()`, `AddStallForm.handleSubmit`
 
 ### 2. Negative numbers accepted in money and meter fields — fixed
