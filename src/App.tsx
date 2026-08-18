@@ -29,6 +29,15 @@ type BillStatus = 'Unpaid' | 'Paid';
    what 'Unpaid' becomes once the due date has passed. */
 type RentStatus = 'Paid' | 'Unpaid' | 'Overdue';
 
+/* One receipt on a sheet. `label` names which copy it is when the same bill is
+   printed more than once (tenant's, office's); it is blank when a sheet is
+   carrying four different bills. */
+type PrintReceipt = { bill: UtilityBill; label: string };
+
+/* `single` distinguishes one bill printed in several copies from a batch of
+   different bills tiled onto the same sheets. */
+type PrintRequest = { bills: UtilityBill[]; single: boolean };
+
 type ModalType =
   | null
   | 'add-stall' | 'add-applicant' | 'add-tenant' | 'add-log' | 'assign-stall' | 'add-violation'
@@ -179,6 +188,12 @@ const idCounterKey = 'pmrms-id-counters';
 /* Who last printed a receipt — offered back as the default the next time, so
    the officer on duty types their name once a shift rather than once a bill. */
 const printedByKey = 'pmrms-printed-by';
+
+/* Four receipts to an A4 sheet, in two columns of two, cut apart afterwards. */
+const RECEIPTS_PER_SHEET = 4;
+/* Which copy each of the four is, when one bill is issued in duplicate or more.
+   The office keeps its own copy of anything a tenant is handed. */
+const RECEIPT_COPY_LABELS = ["Tenant's Copy", 'Market Office Copy', "Treasurer's Copy", 'File Copy'];
 
 const DEFAULT_RENT_DUE_DAY = 5;
 /* Every month has a 28th, so a due day is never dragged forward in February. */
@@ -857,25 +872,33 @@ function App() {
   const [lastSaved, setLastSaved] = useState<string>(() => localStorage.getItem(savedAtKey) ?? '');
   const storageWarned = useRef(false);
 
-  /* Printing runs in two steps: `printRequest` is the bill waiting for the
-     name of whoever is printing it, `printJob` is the receipt already on the
-     page. The receipt is hidden on screen and is the only thing the print
-     stylesheet lets through. */
-  const [printRequest, setPrintRequest] = useState<UtilityBill | null>(null);
-  const [printJob, setPrintJob] = useState<{ bill: UtilityBill; printedBy: string; printedAt: string } | null>(null);
+  /* Printing runs in two steps: `printRequest` is what the preview dialog is
+     open on, `printJob` is the sheet already laid out on the page. The sheet is
+     hidden on screen and is the only thing the print stylesheet lets through. */
+  const [printRequest, setPrintRequest] = useState<PrintRequest | null>(null);
+  const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string } | null>(null);
 
-  /* One tick so the receipt is laid out before the print dialog snapshots it. */
+  const requestPrint = (bill: UtilityBill) => setPrintRequest({ bills: [bill], single: true });
+
+  /* One tick so the receipt is laid out before the print dialog snapshots it.
+     The body class is what narrows the print stylesheet down to the receipt —
+     without it, the desktop app's own File > Print would print a blank page. */
   useEffect(() => {
     if (!printJob) return;
+    document.body.classList.add('printing');
     const timer = window.setTimeout(() => window.print(), 80);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      document.body.classList.remove('printing');
+    };
   }, [printJob]);
 
-  const confirmPrint = (bill: UtilityBill, printedBy: string) => {
+  const confirmPrint = (receipts: PrintReceipt[], printedBy: string) => {
     try { localStorage.setItem(printedByKey, printedBy); } catch { /* full storage must not stop a receipt printing */ }
-    setPrintJob({ bill, printedBy, printedAt: new Date().toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' }) });
+    setPrintJob({ receipts, printedBy, printedAt: new Date().toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' }) });
     setPrintRequest(null);
-    showToast(`Receipt prepared for printing by ${printedBy}`);
+    const sheets = Math.ceil(receipts.length / RECEIPTS_PER_SHEET);
+    showToast(`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`);
   };
 
   const showToast = useCallback((message: string) => {
@@ -1261,7 +1284,7 @@ function App() {
 
         <div className="page-content">
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={setPrintRequest} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onPrintBatch={(bs) => setPrintRequest({ bills: bs, single: false })} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onEdit={(s) => setModal({ type: 'edit-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
           {active === 'tenants' && <TenantRecordsPage tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onEdit={(t) => setModal({ type: 'edit-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
@@ -1287,7 +1310,7 @@ function App() {
       {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
       {modal.type === 'view-tenant' && <Modal title="Tenant Details" wide onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-tenant' && <Modal title="Edit Tenant Details" wide onClose={closeModal}><TenantEditForm tenant={modal.data as Tenant} current={liveTenant(modal.data as Tenant)} tenants={state.tenants} stalls={state.stalls} onSave={updateTenant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" wide onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={setPrintRequest} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" wide onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
       {modal.type === 'confirm-logout' && <ConfirmDialog icon="logout" iconStyle="warning" title="Log Out?" description="Are you sure you want to log out? All data is saved locally." confirmLabel="Log Out" onConfirm={() => { showToast('Logged out successfully'); closeModal(); }} onCancel={closeModal} />}
       {modal.type === 'confirm-reset' && <ConfirmDialog icon="delete_forever" iconStyle="danger" title="Reset All Data?" description="This will permanently reset all data to factory defaults. This cannot be undone." confirmLabel="Reset Data" confirmDanger onConfirm={resetData} onCancel={closeModal} />}
       {modal.type === 'confirm-delete-stall' && (() => {
@@ -1330,8 +1353,8 @@ function App() {
           description={`The ${violation.status.toLowerCase()} citation against ${violation.tenant} for "${violation.issue}" will be permanently removed from the register.${violation.status === 'Open' ? ' Resolve it instead if it was served and settled — delete only if it was recorded in error.' : ' Delete only if it was recorded in error; resolved citations are the register’s history.'} This cannot be undone.`}
           confirmLabel="Delete Violation" confirmDanger onConfirm={() => deleteViolation(violation)} onCancel={closeModal} />;
       })()}
-      {printRequest && <PrintReceiptDialog bill={printRequest} onConfirm={(name) => confirmPrint(printRequest, name)} onCancel={() => setPrintRequest(null)} />}
-      {printJob && <div className="print-area"><BillReceipt bill={printJob.bill} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
+      {printRequest && <PrintPreviewDialog request={printRequest} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
+      {printJob && <div className="print-area"><ReceiptSheets receipts={printJob.receipts} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
 
       {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
 
@@ -1835,11 +1858,12 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
    Utility Billing Page — electricity & water calculator + records
    ============================================================ */
 
-function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onRecordMeter, onExport }: {
+function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; search: string;
   onAdd: (b: UtilityBill) => void; onView: (b: UtilityBill) => void;
   onToggleStatus: (id: string) => void; onDelete: (b: UtilityBill) => void;
-  onPrint: (b: UtilityBill) => void; onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
+  onPrint: (b: UtilityBill) => void; onPrintBatch: (bills: UtilityBill[]) => void;
+  onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
   onExport: () => void;
 }) {
   const [typeFilter, setTypeFilter] = useState('');
@@ -1883,6 +1907,11 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         <div><h2 className="page-title">Utility Billing</h2><p className="page-subtitle">Compute electricity and water charges and post them to a stall or tenant record.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setTypeFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          {/* Prints whatever the filters currently show, four bills to a sheet —
+              a section's or a month's receipts in one run. */}
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No bills match the current filters' : undefined} onClick={() => onPrintBatch(filtered)}>
+            <span className="material-symbols-outlined">print</span>Print {filtered.length} Receipt{filtered.length === 1 ? '' : 's'}
+          </button>
           <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
         </div>
       </div>
@@ -4803,27 +4832,65 @@ function RentLedger({ tenant }: { tenant: Tenant }) {
 }
 
 /* ============================================================
-   Printing — billing receipt
+   Printing — billing receipts, four to an A4 sheet
    ============================================================ */
 
+/* Four receipts fill a sheet. The last sheet is padded with blank quarters so
+   its rules still line up when it is cut. */
+function chunkIntoSheets(receipts: PrintReceipt[]): PrintReceipt[][] {
+  const sheets: PrintReceipt[][] = [];
+  for (let i = 0; i < receipts.length; i += RECEIPTS_PER_SHEET) {
+    sheets.push(receipts.slice(i, i + RECEIPTS_PER_SHEET));
+  }
+  return sheets.length > 0 ? sheets : [[]];
+}
+
+/* What goes on paper, and what the preview shows — the same component both
+   times, so the preview cannot drift from the print. */
+function ReceiptSheets({ receipts, printedBy, printedAt }: { receipts: PrintReceipt[]; printedBy: string; printedAt: string }) {
+  return (<>
+    {chunkIntoSheets(receipts).map((sheet, sheetIndex) => (
+      <div className="receipt-sheet" key={sheetIndex}>
+        {sheet.map((r, i) => (
+          <BillReceipt key={`${r.bill.id || 'draft'}-${sheetIndex}-${i}`} bill={r.bill} label={r.label} printedBy={printedBy} printedAt={printedAt} />
+        ))}
+        {Array.from({ length: RECEIPTS_PER_SHEET - sheet.length }, (_, i) => (
+          <div className="receipt receipt-blank" key={`blank-${i}`} />
+        ))}
+      </div>
+    ))}
+  </>);
+}
+
 /* A receipt has to say who issued it, and the app has no signed-in identity to
-   take that from, so the name is asked for and remembered for the next print. */
-function PrintReceiptDialog({ bill, onConfirm, onCancel }: { bill: UtilityBill; onConfirm: (printedBy: string) => void; onCancel: () => void }) {
+   take that from, so the name is asked for and remembered for the next print.
+   Nothing reaches the printer until the officer has seen the sheet. */
+function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRequest; onConfirm: (receipts: PrintReceipt[], printedBy: string) => void; onCancel: () => void }) {
   const [name, setName] = useState(() => { try { return localStorage.getItem(printedByKey) ?? ''; } catch { return ''; } });
+  const [copies, setCopies] = useState(2);
   const [error, setError] = useState('');
 
+  /* One bill goes out in labelled copies; a batch goes out one receipt each. */
+  const receipts: PrintReceipt[] = request.single
+    ? Array.from({ length: copies }, (_, i) => ({ bill: request.bills[0], label: RECEIPT_COPY_LABELS[i] ?? '' }))
+    : request.bills.map((bill) => ({ bill, label: '' }));
+
+  const sheets = Math.ceil(Math.max(receipts.length, 1) / RECEIPTS_PER_SHEET);
+  const unsaved = receipts.filter((r) => !r.bill.id).length;
+
   const submit = () => {
-    if (!name.trim()) { setError('Enter the name of the person printing this receipt.'); return; }
-    onConfirm(name.trim());
+    if (!name.trim()) { setError('Enter the name of the person printing these receipts.'); return; }
+    if (receipts.length === 0) { setError('There is nothing to print.'); return; }
+    onConfirm(receipts, name.trim());
   };
 
   return (
     <Modal
-      title="Print Billing Receipt"
-      subtitle={`${bill.type} bill for stall ${bill.stallId}${bill.tenantName ? ` — ${bill.tenantName}` : ''} · ${money(bill.amount)}`}
-      stacked narrow onClose={onCancel}
+      title="Print Preview — Billing Receipt"
+      subtitle={`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} · ${sheets} A4 sheet${sheets === 1 ? '' : 's'} · four to a sheet`}
+      stacked wide onClose={onCancel}
     >
-      <div className="form-grid">
+      <div className="print-setup">
         <div className="form-group">
           <label className="form-label">Printed By *</label>
           <input
@@ -4831,23 +4898,51 @@ function PrintReceiptDialog({ bill, onConfirm, onCancel }: { bill: UtilityBill; 
             onChange={(e) => { setName(e.target.value); setError(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           />
-          <span className="form-hint">Printed on the receipt as the market office personnel who issued it, and offered back the next time you print.</span>
+          <span className="form-hint">Printed on every receipt as the officer who issued it, and offered back next time.</span>
         </div>
-        {!bill.id && (
-          <div className="form-hint">This bill is not on record yet, so the receipt prints without a bill number. Save it to records first if the tenant needs one.</div>
+        {request.single && (
+          <div className="form-group">
+            <label className="form-label">Copies on the Sheet</label>
+            <select className="form-select" value={copies} onChange={(e) => setCopies(Number(e.target.value))}>
+              <option value={1}>1 — {RECEIPT_COPY_LABELS[0]}</option>
+              <option value={2}>2 — tenant and market office</option>
+              <option value={4}>4 — fill the sheet</option>
+            </select>
+            <span className="form-hint">Every copy prints on the one sheet, to be cut apart.</span>
+          </div>
         )}
-        {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
-        <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}>
-          <button className="btn-outline" onClick={onCancel}>Cancel</button>
-          <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">print</span>Print Receipt</button>
+      </div>
+
+      {unsaved > 0 && (
+        <div className="dialog-note">
+          <span className="material-symbols-outlined">info</span>
+          <span>{unsaved === receipts.length ? 'This bill is not on record yet' : `${unsaved} of these bills are not on record yet`}, so {unsaved === 1 ? 'it prints' : 'they print'} without a bill number. Save to records first if the tenant needs one.</span>
         </div>
+      )}
+      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+
+      <div className="print-preview" aria-label="Preview of the sheets that will print">
+        <div className="print-preview-scale">
+          <ReceiptSheets
+            receipts={receipts}
+            printedBy={name.trim() || '—'}
+            printedAt={new Date().toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' })}
+          />
+        </div>
+      </div>
+
+      <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+        <button className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">print</span>Print {sheets} Sheet{sheets === 1 ? '' : 's'}</button>
       </div>
     </Modal>
   );
 }
 
-/* Hidden on screen; the print stylesheet lets this and nothing else through. */
-function BillReceipt({ bill, printedBy, printedAt }: { bill: UtilityBill; printedBy: string; printedAt: string }) {
+/* One quarter of an A4 sheet. Everything that identifies the charge as this
+   tenant's — stall, name, section, meter — sits in its own block above the
+   figures, so a quarter cut out on its own still says who owes what. */
+function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill; label: string; printedBy: string; printedAt: string }) {
   const preset = UTILITY_PRESETS[bill.type];
   return (
     <div className="receipt">
@@ -4858,38 +4953,34 @@ function BillReceipt({ bill, printedBy, printedAt }: { bill: UtilityBill; printe
           <span>Municipality of Tanauan, Leyte</span>
           <strong>Public Market — Market Office</strong>
         </div>
+        {label && <span className="receipt-copy">{label}</span>}
       </header>
 
       <h1 className="receipt-title">{bill.type} Billing Receipt</h1>
 
       <div className="receipt-ref">
         <span>Bill No. <strong>{bill.id || 'Not yet on record'}</strong></span>
-        <span>Date Issued <strong>{formatIsoDate(bill.dateIssued)}</strong></span>
+        <span>Issued <strong>{formatIsoDate(bill.dateIssued)}</strong></span>
+      </div>
+
+      <div className="receipt-party">
+        <div className="receipt-party-row"><span>Stall No.</span><strong>{bill.stallId || '—'}</strong></div>
+        <div className="receipt-party-row"><span>Tenant</span><strong>{bill.tenantName || 'Unassigned — charged to the stall'}</strong></div>
+        <div className="receipt-party-row"><span>Section</span><strong>{bill.section || '—'}</strong></div>
+        <div className="receipt-party-row"><span>{bill.type} Meter No.</span><strong>{bill.meterNumber || 'Not on record'}</strong></div>
       </div>
 
       <section className="receipt-block">
-        <div className="receipt-line"><span>Stall Number</span><strong>{bill.stallId}</strong></div>
-        <div className="receipt-line"><span>Tenant</span><strong>{bill.tenantName || 'Unassigned — charged to the stall'}</strong></div>
-        <div className="receipt-line"><span>Market Section</span><strong>{bill.section || '—'}</strong></div>
-        <div className="receipt-line"><span>{bill.type} Meter No.</span><strong>{bill.meterNumber || 'Not on record'}</strong></div>
-        <div className="receipt-line"><span>Period Covered</span><strong>{billPeriodText(bill)} ({periodDays(bill.periodStart, bill.periodEnd)} days)</strong></div>
+        <div className="receipt-line"><span>Period Covered</span><strong>{billPeriodText(bill)}</strong></div>
         <div className="receipt-line"><span>Due Date</span><strong>{formatIsoDate(bill.dueDate)}</strong></div>
-      </section>
-
-      <h2 className="receipt-subtitle">Meter Readings</h2>
-      <section className="receipt-block">
         <div className="receipt-line"><span>Previous Reading</span><strong>{bill.previousReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Current Reading</span><strong>{bill.currentReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Consumption</span><strong>{bill.consumption.toLocaleString()} {preset.unit}</strong></div>
-      </section>
-
-      <h2 className="receipt-subtitle">Charges</h2>
-      <section className="receipt-block">
         <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.consumption * bill.rate)}</strong></div>
         <div className="receipt-line"><span>Fixed / Service Charge</span><strong>{money(bill.fixedCharge)}</strong></div>
       </section>
 
-      <div className="receipt-total"><span>Total Amount Due</span><strong>{money(bill.amount)}</strong></div>
+      <div className="receipt-total"><span>Total Due</span><strong>{money(bill.amount)}</strong></div>
       <div className="receipt-status">Status at printing: <strong>{(isOverdue(bill) ? 'Overdue' : bill.status).toUpperCase()}</strong></div>
 
       {bill.notes && <p className="receipt-notes"><span>Notes:</span> {bill.notes}</p>}
@@ -4898,7 +4989,7 @@ function BillReceipt({ bill, printedBy, printedAt }: { bill: UtilityBill; printe
         <div className="receipt-sign">
           <span className="receipt-sign-name">{printedBy}</span>
           <span className="receipt-sign-rule" />
-          <span className="receipt-sign-role">Market Office Personnel</span>
+          <span className="receipt-sign-role">Market Office</span>
         </div>
         <div className="receipt-sign">
           <span className="receipt-sign-name">&nbsp;</span>
@@ -4908,8 +4999,7 @@ function BillReceipt({ bill, printedBy, printedAt }: { bill: UtilityBill; printe
       </div>
 
       <footer className="receipt-foot">
-        <span>Printed by <strong>{printedBy}</strong> on {printedAt}</span>
-        <span>System-generated receipt · Public Market Rental Monitoring System</span>
+        <span>Printed by <strong>{printedBy}</strong> · {printedAt}</span>
       </footer>
     </div>
   );

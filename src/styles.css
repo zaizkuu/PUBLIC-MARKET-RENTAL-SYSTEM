@@ -4919,60 +4919,113 @@ ul, ol {
 }
 
 /* ============================================================
-   Billing Receipt & Printing
+   Billing Receipts — four to an A4 sheet
    ============================================================ */
 
-/* The receipt is mounted in the page but never shown on screen — it exists so
-   the print stylesheet has something to hand the printer. */
+/* A4 less the page margin. The sheet is laid out at real size in both the
+   preview and the print, and the preview only scales it down, so what is on
+   screen is the sheet that comes out of the printer. */
+:root {
+  --sheet-width: 194mm;
+  --sheet-height: 281mm;
+}
+
 .print-area {
   display: none;
 }
 
+.receipt-sheet {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: var(--sheet-width);
+  height: var(--sheet-height);
+  background: #fff;
+  box-sizing: border-box;
+}
+
+/* One quarter. The dashed rule is the cut line; only the inner edges carry one
+   so a cut sheet has no dashes left around its outside. */
 .receipt {
+  display: flex;
+  flex-direction: column;
+  padding: 5mm 5.5mm;
+  box-sizing: border-box;
+  overflow: hidden;
   font-family: 'Inter', system-ui, sans-serif;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 7.6px;
+  line-height: 1.38;
   color: #000;
   background: #fff;
 }
 
+.receipt-sheet > .receipt:nth-child(odd) {
+  border-right: 1px dashed #b0b0b0;
+}
+
+.receipt-sheet > .receipt:nth-child(-n + 2) {
+  border-bottom: 1px dashed #b0b0b0;
+}
+
+.receipt-blank {
+  background: #fff;
+}
+
 .receipt-masthead {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #000;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1.5px solid #000;
 }
 
 .receipt-seal {
-  width: 58px;
-  height: 58px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .receipt-identity {
   display: flex;
   flex-direction: column;
-  line-height: 1.35;
+  line-height: 1.25;
+  min-width: 0;
 }
 
 .receipt-identity span {
-  font-size: 11px;
-  letter-spacing: 0.02em;
+  font-size: 6.6px;
+  letter-spacing: 0.01em;
 }
 
 .receipt-identity strong {
-  font-size: 14px;
+  font-size: 8.2px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
-.receipt-title {
-  margin: 14px 0 10px;
-  font-size: 15px;
+/* Which of the copies this quarter is, so the office copy is not handed over. */
+.receipt-copy {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 1.5px 4px;
+  border: 1px solid #000;
+  border-radius: 2px;
+  font-size: 5.8px;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.receipt-title {
+  margin: 5px 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   text-align: center;
 }
@@ -4980,35 +5033,61 @@ ul, ol {
 .receipt-ref {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
-  padding: 7px 0;
+  gap: 6px;
+  padding: 3px 0;
   border-top: 1px solid #000;
   border-bottom: 1px solid #000;
-  font-size: 11.5px;
+  font-size: 7px;
 }
 
-.receipt-subtitle {
-  margin: 14px 0 5px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
+/* Stall and tenant, boxed away from the figures — this is the block that says
+   whose bill a cut-out quarter is. */
+.receipt-party {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 4px 0;
+  padding: 4px 5px;
+  border: 1px solid #444;
+  background: #f4f4f4;
+}
+
+.receipt-party-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.receipt-party-row span {
+  flex: 0 0 21mm;
+  font-size: 6.6px;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  border-bottom: 1px solid #999;
-  padding-bottom: 3px;
+  color: #333;
+}
+
+.receipt-party-row strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 8px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .receipt-block {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 8px 0;
+  gap: 1px;
+  padding: 2px 0;
 }
 
-/* Leader dots carry the eye across from the label to its figure. */
+/* Leader dots carry the eye from each label across to its figure. */
 .receipt-line {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px;
 }
 
 .receipt-line span {
@@ -5020,7 +5099,7 @@ ul, ol {
   order: 1;
   flex: 1 1 auto;
   height: 0;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   border-bottom: 1px dotted #aaa;
 }
 
@@ -5035,42 +5114,48 @@ ul, ol {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 8px;
-  padding: 9px 0;
-  border-top: 2px solid #000;
-  border-bottom: 2px solid #000;
-  font-size: 13px;
+  gap: 8px;
+  margin-top: 3px;
+  padding: 3px 0;
+  border-top: 1.5px solid #000;
+  border-bottom: 1.5px solid #000;
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
 .receipt-total strong {
-  font-size: 17px;
+  font-size: 11px;
 }
 
 .receipt-status {
-  margin-top: 8px;
-  font-size: 11.5px;
-  letter-spacing: 0.03em;
+  margin-top: 3px;
+  font-size: 7px;
+  letter-spacing: 0.02em;
 }
 
 .receipt-notes {
-  margin-top: 10px;
-  padding: 8px 10px;
+  margin-top: 3px;
+  padding: 3px 4px;
   border: 1px solid #ccc;
-  font-size: 11.5px;
+  font-size: 6.8px;
+  line-height: 1.35;
+  max-height: 8mm;
+  overflow: hidden;
 }
 
 .receipt-notes span {
   font-weight: 700;
 }
 
+/* Pushed to the foot of the quarter so every receipt signs off in the same
+   place, however much sits above it. */
 .receipt-signatures {
   display: flex;
-  gap: 40px;
-  margin-top: 40px;
+  gap: 6mm;
+  margin-top: auto;
+  padding-top: 6mm;
 }
 
 .receipt-sign {
@@ -5079,25 +5164,28 @@ ul, ol {
   flex-direction: column;
   align-items: center;
   text-align: center;
+  min-width: 0;
 }
 
-/* The name sits above its own rule, so a printed receipt already carries the
-   officer who issued it and only needs their signature over the top. */
 .receipt-sign-name {
-  font-size: 12px;
+  font-size: 7px;
   font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .receipt-sign-rule {
   width: 100%;
-  margin-top: 2px;
+  margin-top: 1px;
   border-bottom: 1px solid #000;
 }
 
 .receipt-sign-role {
-  margin-top: 4px;
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
+  margin-top: 2px;
+  font-size: 6.2px;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   color: #333;
 }
@@ -5105,19 +5193,64 @@ ul, ol {
 .receipt-foot {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 28px;
-  padding-top: 8px;
+  gap: 1px;
+  margin-top: 3px;
+  padding-top: 3px;
   border-top: 1px solid #999;
-  font-size: 10.5px;
+  font-size: 6.2px;
   color: #333;
 }
 
-/* Visibility, not display: the receipt keeps its place in the layout while
-   every ancestor it sits inside is hidden around it. */
+/* ---------- Print preview ---------- */
+
+.print-setup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+/* The sheet is rendered at its true size and scaled down to fit the dialog, so
+   nothing about the layout differs between the preview and the paper. */
+.print-preview {
+  margin-top: 14px;
+  padding: 20px;
+  max-height: 46vh;
+  overflow: auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.print-preview-scale {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  transform: scale(0.62);
+  transform-origin: top center;
+  /* Claws back the empty space the transform leaves behind. */
+  margin-bottom: calc(-38% - 20px);
+}
+
+.print-preview-scale .receipt-sheet {
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .print-setup {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- On paper ---------- */
+
 @media print {
   @page {
-    margin: 14mm;
+    size: A4 portrait;
+    margin: 8mm;
   }
 
   html,
@@ -5125,16 +5258,18 @@ ul, ol {
     background: #fff;
   }
 
-  body * {
+  /* Scoped to a receipt actually being printed. A plain Ctrl+P with no receipt
+     open still prints the page it is looking at, as it always did. */
+  body.printing * {
     visibility: hidden !important;
   }
 
-  .print-area,
-  .print-area * {
+  body.printing .print-area,
+  body.printing .print-area * {
     visibility: visible !important;
   }
 
-  .print-area {
+  body.printing .print-area {
     display: block !important;
     position: absolute;
     left: 0;
@@ -5142,13 +5277,25 @@ ul, ol {
     width: 100%;
   }
 
-  .receipt-total,
-  .receipt-ref,
-  .receipt-masthead {
-    break-inside: avoid;
+  /* One sheet per page, and never a receipt split across two. */
+  .receipt-sheet {
+    break-after: page;
+    page-break-after: always;
   }
 
-  .receipt-signatures {
+  .receipt-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .receipt {
     break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Printers drop backgrounds by default; the tenant block needs its tint. */
+  .receipt-party {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
