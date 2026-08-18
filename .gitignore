@@ -16,3 +16,7 @@ graphify-out/
 # Environment
 .env
 .env.local
+
+# Language model files for the assistant. Large binaries, fetched or copied in
+# per machine; build/models/README.txt explains where they go.
+*.gguf

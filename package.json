@@ -42,7 +42,11 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "build/icon.png"
+      "build/icon.png",
+      "!node_modules/@node-llama-cpp/win-x64-cuda/**",
+      "!node_modules/@node-llama-cpp/win-x64-cuda-ext/**",
+      "!node_modules/@node-llama-cpp/win-x64-vulkan/**",
+      "!node_modules/@node-llama-cpp/win-arm64/**"
     ],
     "win": {
       "icon": "build/icon.png",
@@ -75,8 +79,22 @@
       "uninstallDisplayName": "Tanauan Public Market System"
     },
     "asarUnpack": [
-      "**/node_modules/better-sqlite3/**"
+      "**/node_modules/better-sqlite3/**",
+      "**/*.node",
+      "resources/models/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/models",
+        "to": "models",
+        "filter": [
+          "**/*.gguf"
+        ]
+      }
     ],
     "npmRebuild": false
+  },
+  "optionalDependencies": {
+    "node-llama-cpp": "^3.20.0"
   }
 }
