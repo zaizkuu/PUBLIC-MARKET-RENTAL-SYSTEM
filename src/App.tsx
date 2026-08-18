@@ -195,6 +195,51 @@ const RECEIPTS_PER_SHEET = 4;
    The office keeps its own copy of anything a tenant is handed. */
 const RECEIPT_COPY_LABELS = ["Tenant's Copy", 'Market Office Copy', "Treasurer's Copy", 'File Copy'];
 
+/* ---------- Philippine time ----------
+
+   Every date the system reasons about is Philippine Standard Time, whatever
+   the computer itself is set to. A market office in Tanauan should not get a
+   different answer about whose rent is overdue because a machine came back
+   from repair on the wrong timezone. PST has no daylight saving, so the offset
+   never moves; reading it through Intl rather than a fixed +08:00 keeps it
+   correct regardless. */
+const MARKET_TIME_ZONE = 'Asia/Manila';
+
+const manilaPartsFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: MARKET_TIME_ZONE,
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+});
+
+/* The wall-clock reading in Tanauan right now, broken into parts. */
+function manilaParts(when: Date = new Date()): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of manilaPartsFmt.formatToParts(when)) out[part.type] = part.value;
+  // hour12:false reports midnight as 24 in some engines; the day has rolled by then.
+  if (out.hour === '24') out.hour = '00';
+  return out;
+}
+
+const manilaDateFmt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TIME_ZONE, month: 'short', day: 'numeric', year: 'numeric' });
+const manilaTimeFmt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: true });
+const manilaLongFmt = new Intl.DateTimeFormat('en-PH', { timeZone: MARKET_TIME_ZONE, dateStyle: 'long', timeStyle: 'short' });
+/* The clock face in the topbar. */
+const clockDateFmt = new Intl.DateTimeFormat('en-PH', { timeZone: MARKET_TIME_ZONE, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const clockTimeFmt = new Intl.DateTimeFormat('en-PH', { timeZone: MARKET_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+function todayStr() {
+  return manilaDateFmt.format(new Date());
+}
+
+function nowTimeStr() {
+  return manilaTimeFmt.format(new Date());
+}
+
+/* A full date and time stamp, for receipts and reports. */
+function manilaStamp(when: Date = new Date()) {
+  return `${manilaLongFmt.format(when)} PHT`;
+}
+
 const DEFAULT_RENT_DUE_DAY = 5;
 /* Every month has a 28th, so a due day is never dragged forward in February. */
 const MAX_RENT_DUE_DAY = 28;
@@ -657,22 +702,17 @@ function paginate<T>(items: T[], page: number, perPage = ITEMS_PER_PAGE) {
   };
 }
 
-function todayStr() {
-  return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function nowTimeStr() {
-  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-}
-
 /* ---------- Utility billing helpers ---------- */
 
 function isoDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/* Today in Tanauan, as YYYY-MM-DD. Every overdue test is a string comparison
+   against this, so the whole system turns over at midnight Philippine time. */
 function todayIso() {
-  return isoDate(new Date());
+  const p = manilaParts();
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 function isoPlusDays(iso: string, days: number) {
@@ -690,8 +730,8 @@ function formatIsoDate(iso: string) {
 }
 
 function currentPeriod() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const p = manilaParts();
+  return `${p.year}-${p.month}`;
 }
 
 function formatPeriod(period: string) {
@@ -909,7 +949,7 @@ function App() {
 
   const confirmPrint = (receipts: PrintReceipt[], printedBy: string) => {
     try { localStorage.setItem(printedByKey, printedBy); } catch { /* full storage must not stop a receipt printing */ }
-    setPrintJob({ receipts, printedBy, printedAt: new Date().toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' }) });
+    setPrintJob({ receipts, printedBy, printedAt: manilaStamp() });
     setPrintRequest(null);
     const sheets = Math.ceil(receipts.length / RECEIPTS_PER_SHEET);
     showToast(`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`);
@@ -1270,6 +1310,7 @@ function App() {
             </div>
           ) : <div className="topbar-spacer" />}
           <div className="topbar-actions">
+            <MarketClock />
             <div className="notif-wrapper">
               <button className="icon-btn" title="Notifications" onClick={() => setNotifOpen((v) => !v)}>
                 <span className="material-symbols-outlined">notifications</span>
@@ -2790,7 +2831,7 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
   ];
 
   const reference = `PMRMS-AR-${isoDate(generatedAt).replace(/-/g, '')}`;
-  const stamp = generatedAt.toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' });
+  const stamp = manilaStamp(generatedAt);
 
   return (
     <div className="report">
@@ -4799,6 +4840,29 @@ function TenantStatusBadge({ status }: { status: string }) {
   return <span className={map[status] || 'badge'}>{status}</span>;
 }
 
+/* The market office clock. It ticks every second, which is also what keeps the
+   register honest: rent falling due is a string comparison against today's
+   date, and re-rendering each second means a row turns red the moment midnight
+   passes in Tanauan, on a machine nobody has touched since yesterday. */
+function MarketClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  return (
+    <div className="market-clock" title={`Philippine Standard Time (${MARKET_TIME_ZONE})`}>
+      <span className="material-symbols-outlined" aria-hidden="true">schedule</span>
+      <span className="market-clock-text">
+        <span className="market-clock-time">{clockTimeFmt.format(now)}<abbr>PHT</abbr></span>
+        <span className="market-clock-date">{clockDateFmt.format(now)}</span>
+      </span>
+    </div>
+  );
+}
+
 function RentStatusBadge({ status }: { status: RentStatus }) {
   const cls = status === 'Paid' ? 'badge-paid' : status === 'Overdue' ? 'badge-overdue' : 'badge-unpaid';
   return <span className={`badge ${cls}`}>{status}</span>;
@@ -4942,7 +5006,7 @@ function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRe
           <ReceiptSheets
             receipts={receipts}
             printedBy={name.trim() || '—'}
-            printedAt={new Date().toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' })}
+            printedAt={manilaStamp()}
           />
         </div>
       </div>
