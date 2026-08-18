@@ -46,8 +46,18 @@
     "win": {
       "icon": "build/icon.png",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "portable": {
@@ -62,6 +72,22 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Tanauan Public Market System",
       "uninstallDisplayName": "Tanauan Public Market System"
-    }
+    },
+    "asarUnpack": [
+      "**/*.node",
+      "resources/models/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/models",
+        "to": "models",
+        "filter": [
+          "**/*.gguf"
+        ]
+      }
+    ]
+  },
+  "optionalDependencies": {
+    "node-llama-cpp": "^3.20.0"
   }
 }

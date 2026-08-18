@@ -14,6 +14,7 @@ type ModuleKey =
   | 'violations'
   | 'analytics'
   | 'logbook'
+  | 'assistant'
   | 'settings'
   | 'support';
 
@@ -344,6 +345,7 @@ const navigation: Array<{ key: ModuleKey; label: string; icon: string }> = [
   { key: 'violations', label: 'Violations', icon: 'gavel' },
   { key: 'analytics', label: 'Analytics', icon: 'analytics' },
   { key: 'logbook', label: 'Logbook', icon: 'menu_book' },
+  { key: 'assistant', label: 'Assistant', icon: 'forum' },
 ];
 
 const searchPlaceholders: Record<ModuleKey, string> = {
@@ -355,6 +357,7 @@ const searchPlaceholders: Record<ModuleKey, string> = {
   violations: 'Search violation ID, tenant, or issue...',
   analytics: 'Search is not used on Analytics',
   logbook: 'Search log details or type...',
+  assistant: 'Search is not used on the Assistant',
   settings: 'Search is not used on Settings',
   support: 'Search is not used on Support',
 };
@@ -1346,6 +1349,7 @@ function App() {
           {active === 'violations' && <ViolationsPage violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
+          {active === 'assistant' && <AssistantPage state={state} onNavigate={setActive} />}
           {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
@@ -5082,6 +5086,587 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
         <span>Printed by <strong>{printedBy}</strong> · {printedAt}</span>
       </footer>
     </div>
+  );
+}
+
+/* ============================================================
+   Market Assistant — answers read off the records, never guessed
+   ============================================================ */
+
+/* The rule this whole section exists to enforce: a figure the office acts on
+   must be computed, not predicted. Every answer below is worked out here, by
+   the same functions the screens use, so the assistant and the register can
+   never disagree.
+
+   A language model, where one is installed, does two jobs and neither of them
+   is arithmetic: it decides which question was asked, and it puts the computed
+   answer into a sentence. Anything it writes is then checked digit by digit
+   against the figures that were actually computed — see `guardPhrasing`. A
+   sentence carrying a number nobody calculated is thrown away and the plain
+   answer shown instead, so a hallucinated peso can never reach the screen. */
+
+type FactAnswer = {
+  intent: string;
+  headline: string;
+  lines: string[];
+  navigate?: ModuleKey;
+};
+
+type AssistantMessage = {
+  id: string;
+  role: 'officer' | 'assistant';
+  text: string;
+  lines?: string[];
+  navigate?: ModuleKey;
+  /* How the wording was produced, so the officer can tell a computed sentence
+     from a model-written one. */
+  source?: 'records' | 'model' | 'model-rejected';
+};
+
+/* The bridge the desktop shell installs when a model file is present. In the
+   browser, or with no model on disk, this is simply absent and the assistant
+   runs on its own. */
+type AssistantBridge = {
+  ready: () => Promise<boolean>;
+  classify: (question: string, intents: Array<{ key: string; question: string }>) => Promise<string | null>;
+  phrase: (question: string, headline: string, lines: string[]) => Promise<string | null>;
+  modelName: () => Promise<string | null>;
+};
+
+declare global {
+  interface Window { marketAssistant?: AssistantBridge }
+}
+
+/* ---------- The figure guardrail ---------- */
+
+/* Every number in a piece of text, however it was punctuated. */
+function numericTokens(text: string): string[] {
+  return text.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
+}
+
+/* ₱3,500.00, ₱3500 and 3500 are the same figure written three ways; comparing
+   them loosely keeps the guardrail from rejecting a correct sentence merely
+   for reformatting what it was given. */
+function normalizeFigure(token: string): string {
+  const bare = token.replace(/,/g, '');
+  return bare.includes('.') ? bare.replace(/0+$/, '').replace(/\.$/, '') : bare;
+}
+
+/* True when every number in `phrasing` was one of the computed figures. */
+function guardPhrasing(phrasing: string, fact: FactAnswer): boolean {
+  const allowed = new Set(
+    numericTokens([fact.headline, ...fact.lines].join(' ')).map(normalizeFigure),
+  );
+  return numericTokens(phrasing).every((t) => allowed.has(normalizeFigure(t)));
+}
+
+/* ---------- The facts ---------- */
+
+type AssistantIntent = {
+  key: string;
+  /* The canonical phrasing, offered as a suggestion and given to the model as
+     the menu it is choosing from. */
+  question: string;
+  /* Terms that decide the question on their own — "overdue", "violation". */
+  strong: string[];
+  /* Terms that merely lean, and must never outvote a decisive one. "Who is
+     overdue on rent" is a rent question, not a request to look up a tenant. */
+  weak: string[];
+  /* For questions whose giveaway is split around a name: "has <someone> paid". */
+  patterns?: RegExp[];
+  answer: (state: AppState, asked: string) => FactAnswer;
+};
+
+/* Finds the tenant a question is about, by name or by record number. */
+function tenantFromQuestion(state: AppState, asked: string): Tenant | undefined {
+  const q = asked.toLowerCase();
+  const byId = state.tenants.find((t) => q.includes(t.id.toLowerCase()));
+  if (byId) return byId;
+  const named = state.tenants
+    .filter((t) => t.name && q.includes(t.name.toLowerCase()))
+    .sort((a, b) => b.name.length - a.name.length);
+  if (named.length > 0) return named[0];
+  /* A surname on its own is how anyone actually asks. */
+  return state.tenants.find((t) => t.name.toLowerCase().split(/\s+/).some((word) => word.length > 3 && q.includes(word)));
+}
+
+/* The month a question is about — "July", "last month", otherwise this one. */
+function periodFromQuestion(asked: string): string {
+  const q = asked.toLowerCase();
+  const now = currentPeriod();
+  if (/last month|previous month/.test(q)) {
+    const [y, m] = now.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const found = months.findIndex((name) => q.includes(name));
+  if (found >= 0) {
+    const year = /\b(20\d{2})\b/.exec(q)?.[1] ?? now.slice(0, 4);
+    return `${year}-${String(found + 1).padStart(2, '0')}`;
+  }
+  return now;
+}
+
+const ASSISTANT_INTENTS: AssistantIntent[] = [
+  {
+    key: 'rent.overdue',
+    question: 'Which tenants are overdue on rent?',
+    strong: ['overdue', 'past due', 'delinquent', 'behind on rent'],
+    weak: ['late', 'rent', 'not paid', 'hindi nagbayad'],
+    answer: (state, asked) => {
+      const period = periodFromQuestion(asked);
+      const late = state.tenants.filter((t) => rentStatusOf(t, period) === 'Overdue');
+      const owed = late.reduce((s, t) => s + t.rent, 0);
+      return {
+        intent: 'rent.overdue',
+        headline: late.length === 0
+          ? `No tenant is overdue on rent for ${formatPeriod(period)}.`
+          : `${late.length} tenant${late.length === 1 ? ' is' : 's are'} overdue on rent for ${formatPeriod(period)}, owing ${money(owed)} in total.`,
+        lines: late.map((t) => `${t.name} (${t.id}, stall ${t.stallId}) — ${money(t.rent)}, due ${formatIsoDate(rentDueIso(t, period))}, ${rentDaysLate(t, period)} day${rentDaysLate(t, period) === 1 ? '' : 's'} late`),
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'rent.unpaid',
+    question: 'Who has not paid rent this month?',
+    strong: ['has not paid', 'not yet paid', 'unpaid rent', 'wala pang bayad', 'still owe', 'who has not paid'],
+    weak: ['unpaid', 'rent', 'outstanding'],
+    answer: (state, asked) => {
+      const period = periodFromQuestion(asked);
+      const unpaid = state.tenants.filter((t) => rentStatusOf(t, period) !== 'Paid');
+      const roll = rentRollFor(state.tenants, period);
+      return {
+        intent: 'rent.unpaid',
+        headline: unpaid.length === 0
+          ? `Every tenant has paid rent for ${formatPeriod(period)}.`
+          : `${unpaid.length} of ${state.tenants.length} tenants have not paid rent for ${formatPeriod(period)}. ${money(roll.outstanding)} is still outstanding.`,
+        lines: unpaid.map((t) => `${t.name} (stall ${t.stallId}) — ${money(t.rent)}, ${rentStatusOf(t, period)}`),
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'rent.collected',
+    question: 'How much rent have we collected this month?',
+    strong: ['collected', 'collection', 'nakolekta', 'rent income'],
+    weak: ['rent', 'how much', 'total'],
+    answer: (state, asked) => {
+      const period = periodFromQuestion(asked);
+      const roll = rentRollFor(state.tenants, period);
+      return {
+        intent: 'rent.collected',
+        headline: `${money(roll.collected)} of ${money(roll.due)} rent has been collected for ${formatPeriod(period)}.`,
+        lines: [
+          `${roll.paidCount} of ${state.tenants.length} tenants have paid`,
+          `${money(roll.outstanding)} still outstanding across ${roll.unpaidCount} tenant${roll.unpaidCount === 1 ? '' : 's'}`,
+          `${roll.overdueCount} tenant${roll.overdueCount === 1 ? ' is' : 's are'} past the due date`,
+        ],
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'rent.tenant',
+    question: 'Has a particular tenant paid their rent?',
+    strong: ['paid na ba', 'already paid'],
+    weak: ['paid', 'rent', 'status of', 'account of'],
+    patterns: [/\b(has|did)\s+[\w'\s.-]{2,40}\s+(paid|pay)\b/i],
+    answer: (state, asked) => {
+      const tenant = tenantFromQuestion(state, asked);
+      const period = periodFromQuestion(asked);
+      if (!tenant) {
+        return {
+          intent: 'rent.tenant',
+          headline: 'I could not tell which tenant you meant. Name them as they appear on the record, or give the tenant number.',
+          lines: state.tenants.slice(0, 6).map((t) => `${t.name} (${t.id})`),
+          navigate: 'tenants',
+        };
+      }
+      const status = rentStatusOf(tenant, period);
+      const payment = rentPaymentFor(tenant, period);
+      return {
+        intent: 'rent.tenant',
+        headline: status === 'Paid'
+          ? `${tenant.name} has paid rent for ${formatPeriod(period)}.`
+          : `${tenant.name} has not paid rent for ${formatPeriod(period)} — ${status}.`,
+        lines: [
+          `Stall ${tenant.stallId}, ${tenant.section}`,
+          `Monthly rent ${money(tenant.rent)}, falls due day ${clampDueDay(tenant.rentDueDay)}`,
+          status === 'Paid' && payment?.paidOn
+            ? `Paid ${formatIsoDate(payment.paidOn)}, ${money(payment.amount)}`
+            : `Due ${formatIsoDate(rentDueIso(tenant, period))}${status === 'Overdue' ? `, ${rentDaysLate(tenant, period)} days late` : ''}`,
+          `Rent collected from this tenant to date: ${money(rentTotalPaid(tenant))}`,
+        ],
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'earnings.total',
+    question: 'What are the market earnings?',
+    strong: ['earnings', 'revenue', 'income', 'kita', 'rent roll'],
+    weak: ['total', 'how much', 'money', 'earning'],
+    answer: (state) => {
+      const period = currentPeriod();
+      const roll = rentRollFor(state.tenants, period);
+      const rentToDate = rentCollectedToDate(state.tenants);
+      const utilitiesPaid = state.utilities.filter((b) => b.status === 'Paid').reduce((s, b) => s + b.amount, 0);
+      return {
+        intent: 'earnings.total',
+        headline: `Total market earnings to date are ${money(rentToDate + utilitiesPaid)}.`,
+        lines: [
+          `Rent collected to date: ${money(rentToDate)}`,
+          `Utilities collected to date: ${money(utilitiesPaid)}`,
+          `Monthly rent roll: ${money(roll.due)} contracted from ${state.tenants.length} tenancies`,
+          `Collected for ${formatPeriod(period)}: ${money(roll.collected)}`,
+        ],
+        navigate: 'dashboard',
+      };
+    },
+  },
+  {
+    key: 'stalls.vacant',
+    question: 'Which stalls are vacant?',
+    strong: ['vacant', 'available stall', 'empty stall', 'bakante', 'free stall', 'open stall'],
+    weak: ['stall', 'available', 'empty'],
+    answer: (state) => {
+      const vacant = state.stalls.filter((s) => s.status === 'Available');
+      return {
+        intent: 'stalls.vacant',
+        headline: vacant.length === 0
+          ? 'No stalls are available — every stall is occupied or under maintenance.'
+          : `${vacant.length} of ${state.stalls.length} stalls are available to let.`,
+        lines: vacant.map((s) => `Stall ${s.id} — ${s.section}`),
+        navigate: 'stalls',
+      };
+    },
+  },
+  {
+    key: 'stalls.status',
+    question: 'What is the stall occupancy?',
+    strong: ['occupancy', 'occupied', 'stall status', 'under maintenance'],
+    weak: ['stall', 'how many', 'maintenance'],
+    answer: (state) => {
+      const occupied = state.stalls.filter((s) => s.status === 'Occupied').length;
+      const available = state.stalls.filter((s) => s.status === 'Available').length;
+      const maintenance = state.stalls.filter((s) => s.status === 'Maintenance').length;
+      return {
+        intent: 'stalls.status',
+        headline: `${occupied} of ${state.stalls.length} stalls are occupied — ${percent(ratio(occupied, state.stalls.length))} occupancy.`,
+        lines: [
+          `Occupied: ${occupied}`,
+          `Available: ${available}`,
+          `Under maintenance: ${maintenance}`,
+        ],
+        navigate: 'stalls',
+      };
+    },
+  },
+  {
+    key: 'utilities.unpaid',
+    question: 'Which utility bills are unpaid or overdue?',
+    strong: ['utility', 'utilities', 'bill', 'bills', 'electricity', 'electric', 'water', 'kuryente', 'tubig'],
+    weak: ['unpaid', 'overdue', 'due'],
+    answer: (state) => {
+      const unpaid = state.utilities.filter((b) => b.status === 'Unpaid');
+      const overdue = state.utilities.filter(isOverdue);
+      const owed = unpaid.reduce((s, b) => s + b.amount, 0);
+      return {
+        intent: 'utilities.unpaid',
+        headline: unpaid.length === 0
+          ? 'Every utility bill on record has been paid.'
+          : `${unpaid.length} utility bill${unpaid.length === 1 ? ' is' : 's are'} unpaid, totalling ${money(owed)}. ${overdue.length} of them ${overdue.length === 1 ? 'is' : 'are'} past the due date.`,
+        lines: unpaid.map((b) => `${b.id} — ${b.type} for stall ${b.stallId}${b.tenantName ? ` (${b.tenantName})` : ''}, ${money(b.amount)}, due ${formatIsoDate(b.dueDate)}${isOverdue(b) ? ' — overdue' : ''}`),
+        navigate: 'utilities',
+      };
+    },
+  },
+  {
+    key: 'meter.lookup',
+    question: 'What is a tenant or stall meter number?',
+    strong: ['meter'],
+    weak: ['number', 'reading', 'metro'],
+    answer: (state, asked) => {
+      const tenant = tenantFromQuestion(state, asked);
+      if (tenant) {
+        return {
+          intent: 'meter.lookup',
+          headline: `${tenant.name} at stall ${tenant.stallId}:`,
+          lines: [
+            `Electricity meter — ${tenant.meters.Electricity || 'not on record'}`,
+            `Water meter — ${tenant.meters.Water || 'not on record'}`,
+          ],
+          navigate: 'tenants',
+        };
+      }
+      const onFile = state.tenants.filter((t) => t.meters.Electricity || t.meters.Water);
+      return {
+        intent: 'meter.lookup',
+        headline: `${onFile.length} of ${state.tenants.length} tenants have a meter number on record.`,
+        lines: onFile.map((t) => `${t.name} (stall ${t.stallId}) — electricity ${t.meters.Electricity || '—'}, water ${t.meters.Water || '—'}`),
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'tenant.lookup',
+    question: 'Tell me about a tenant.',
+    strong: [],
+    weak: ['who is', 'tenant', 'details of', 'record of', 'contact', 'sino', 'tell me about'],
+    answer: (state, asked) => {
+      const tenant = tenantFromQuestion(state, asked);
+      if (!tenant) {
+        return {
+          intent: 'tenant.lookup',
+          headline: `${state.tenants.length} tenants are on record.`,
+          lines: state.tenants.map((t) => `${t.name} (${t.id}) — stall ${t.stallId}, ${t.section}, ${money(t.rent)}`),
+          navigate: 'tenants',
+        };
+      }
+      return {
+        intent: 'tenant.lookup',
+        headline: `${tenant.name} — tenant record ${tenant.id}.`,
+        lines: [
+          `Stall ${tenant.stallId}, ${tenant.section}`,
+          `Contact ${formatPhone(tenant.phone) || 'not on record'}`,
+          `Monthly rent ${money(tenant.rent)}, status ${tenant.status}`,
+          `Rent for ${formatPeriod(currentPeriod())}: ${rentStatusOf(tenant, currentPeriod())}`,
+          `Stallkeepers on record: ${tenant.keepers.length}`,
+        ],
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'applicants.pending',
+    question: 'How many applicants are waiting for review?',
+    strong: ['applicant', 'application', 'aplikante'],
+    weak: ['pending', 'waiting', 'review'],
+    answer: (state) => {
+      const pending = state.applicants.filter((a) => a.status === 'Pending Review');
+      const incomplete = state.applicants.filter((a) => a.status === 'Incomplete');
+      return {
+        intent: 'applicants.pending',
+        headline: `${pending.length} applicant${pending.length === 1 ? ' is' : 's are'} awaiting review, out of ${state.applicants.length} on file.`,
+        lines: [
+          ...pending.map((a) => `${a.name} (${a.id}) — ${a.stallType}, applied ${a.dateApplied}`),
+          `${incomplete.length} application${incomplete.length === 1 ? ' is' : 's are'} incomplete`,
+        ],
+        navigate: 'applicants',
+      };
+    },
+  },
+  {
+    key: 'violations.open',
+    question: 'Are there any open violations?',
+    strong: ['violation', 'citation', 'offence', 'offense', 'paglabag'],
+    weak: ['open'],
+    answer: (state) => {
+      const open = state.violations.filter((v) => v.status === 'Open');
+      const points = open.reduce((s, v) => s + v.points, 0);
+      return {
+        intent: 'violations.open',
+        headline: open.length === 0
+          ? 'There are no open violations on the register.'
+          : `${open.length} violation${open.length === 1 ? ' is' : 's are'} open, carrying ${points} demerit point${points === 1 ? '' : 's'}.`,
+        lines: open.map((v) => `${v.id} — ${v.tenant}: ${v.issue}, recorded ${v.dateRecorded ? formatIsoDate(v.dateRecorded) : 'undated'}`),
+        navigate: 'violations',
+      };
+    },
+  },
+];
+
+/* Scores the question against each intent. Deterministic and first — the model
+   is only consulted when the wording gives nothing away. */
+function matchIntent(asked: string): { intent: AssistantIntent; score: number } | null {
+  const q = asked.toLowerCase();
+  let best: { intent: AssistantIntent; score: number } | null = null;
+  for (const intent of ASSISTANT_INTENTS) {
+    let score = 0;
+    for (const term of intent.strong) if (q.includes(term)) score += 5;
+    for (const term of intent.weak) if (q.includes(term)) score += 1;
+    for (const pattern of intent.patterns ?? []) if (pattern.test(q)) score += 5;
+    if (score > 0 && (!best || score > best.score)) best = { intent, score };
+  }
+  return best;
+}
+
+function answerFor(key: string, state: AppState, asked: string): FactAnswer | null {
+  const intent = ASSISTANT_INTENTS.find((i) => i.key === key);
+  return intent ? intent.answer(state, asked) : null;
+}
+
+/* ---------- The panel ---------- */
+
+function AssistantPage({ state, onNavigate }: { state: AppState; onNavigate: (k: ModuleKey) => void }) {
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const [model, setModel] = useState<string | null>(null);
+  const seq = useRef(0);
+  const logEnd = useRef<HTMLDivElement | null>(null);
+
+  /* The shell only installs the bridge when a model file is actually on disk. */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!window.marketAssistant) return;
+        if (!(await window.marketAssistant.ready())) return;
+        const name = await window.marketAssistant.modelName();
+        if (!cancelled) setModel(name);
+      } catch { /* no model, no bridge — the assistant still answers */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => { logEnd.current?.scrollIntoView({ block: 'end' }); }, [messages, thinking]);
+
+  const push = (m: Omit<AssistantMessage, 'id'>) => {
+    seq.current += 1;
+    setMessages((prev) => [...prev, { ...m, id: `M${seq.current}` }]);
+  };
+
+  const ask = async (question: string) => {
+    const asked = question.trim();
+    if (!asked || thinking) return;
+    push({ role: 'officer', text: asked });
+    setDraft('');
+    setThinking(true);
+
+    try {
+      /* 1. Which question is this? Keywords first; the model only breaks a tie
+            it alone can break, and it may only pick from this list. */
+      let key = matchIntent(asked)?.intent.key ?? null;
+      if (!key && window.marketAssistant) {
+        try {
+          const picked = await window.marketAssistant.classify(
+            asked,
+            ASSISTANT_INTENTS.map((i) => ({ key: i.key, question: i.question })),
+          );
+          if (picked && ASSISTANT_INTENTS.some((i) => i.key === picked)) key = picked;
+        } catch { /* fall through to the plain reply below */ }
+      }
+
+      if (!key) {
+        push({
+          role: 'assistant',
+          source: 'records',
+          text: 'I can only answer from what is on record. Try one of these:',
+          lines: ASSISTANT_INTENTS.map((i) => i.question),
+        });
+        return;
+      }
+
+      /* 2. The answer itself, computed. */
+      const fact = answerFor(key, state, asked);
+      if (!fact) return;
+
+      /* 3. The model may rewrite it, but only within the figures it was given. */
+      let text = fact.headline;
+      let source: AssistantMessage['source'] = 'records';
+      if (window.marketAssistant && model) {
+        try {
+          const phrased = await window.marketAssistant.phrase(asked, fact.headline, fact.lines);
+          if (phrased && phrased.trim()) {
+            if (guardPhrasing(phrased, fact)) { text = phrased.trim(); source = 'model'; }
+            else source = 'model-rejected';
+          }
+        } catch { /* the computed sentence stands */ }
+      }
+
+      push({ role: 'assistant', text, lines: fact.lines, navigate: fact.navigate, source });
+    } finally {
+      setThinking(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Market Assistant</h2>
+          <p className="page-subtitle">Ask about tenants, rent, stalls, bills and violations. Every figure is read off the records.</p>
+        </div>
+        <div className="page-actions">
+          <span className={`assistant-model${model ? ' on' : ''}`} title={model ? `Language model in use: ${model}` : 'No language model installed — answers are computed and worded from the records'}>
+            <span className="material-symbols-outlined">{model ? 'neurology' : 'database'}</span>
+            {model ? model : 'Records only'}
+          </span>
+          {messages.length > 0 && <button className="btn-outline" onClick={() => setMessages([])}><span className="material-symbols-outlined">delete_sweep</span>Clear</button>}
+        </div>
+      </div>
+
+      <div className="panel assistant-panel">
+        <div className="assistant-log">
+          {messages.length === 0 && (
+            <div className="assistant-intro">
+              <span className="material-symbols-outlined">forum</span>
+              <h3>What would you like to know?</h3>
+              <p>Answers are computed from the records in this system. Nothing is sent anywhere — the assistant works offline.</p>
+              <div className="assistant-suggestions">
+                {ASSISTANT_INTENTS.slice(0, 6).map((i) => (
+                  <button key={i.key} className="assistant-chip" onClick={() => ask(i.question)}>{i.question}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((m) => (
+            <div className={`assistant-turn ${m.role}`} key={m.id}>
+              <div className="assistant-bubble">
+                <p className="assistant-text">{m.text}</p>
+                {m.lines && m.lines.length > 0 && (
+                  <ul className="assistant-lines">
+                    {m.lines.map((l, i) => <li key={i}>{l}</li>)}
+                  </ul>
+                )}
+                {m.role === 'assistant' && (
+                  <div className="assistant-meta">
+                    <span className="assistant-source" title={
+                      m.source === 'model' ? 'Worded by the local language model; every figure was checked against the records'
+                      : m.source === 'model-rejected' ? 'The model’s wording quoted a figure that was not in the records, so it was discarded and the computed answer shown'
+                      : 'Computed and worded directly from the records'
+                    }>
+                      <span className="material-symbols-outlined">{m.source === 'model' ? 'neurology' : m.source === 'model-rejected' ? 'shield' : 'database'}</span>
+                      {m.source === 'model' ? 'Worded by model · figures verified' : m.source === 'model-rejected' ? 'Model wording discarded — figures did not match' : 'From the records'}
+                    </span>
+                    {m.navigate && <button className="assistant-jump" onClick={() => onNavigate(m.navigate!)}>Open {navigation.find((n) => n.key === m.navigate)?.label ?? m.navigate}</button>}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {thinking && (
+            <div className="assistant-turn assistant">
+              <div className="assistant-bubble">
+                <p className="assistant-text assistant-working">Reading the records…</p>
+              </div>
+            </div>
+          )}
+          <div ref={logEnd} />
+        </div>
+
+        <form
+          className="assistant-composer"
+          onSubmit={(e) => { e.preventDefault(); ask(draft); }}
+        >
+          <input
+            className="assistant-input"
+            value={draft}
+            placeholder="e.g. Who is overdue on rent this month?"
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={thinking}
+          />
+          <button className="btn-primary" type="submit" disabled={thinking || !draft.trim()}>
+            <span className="material-symbols-outlined">send</span>Ask
+          </button>
+        </form>
+      </div>
+    </>
   );
 }
 
