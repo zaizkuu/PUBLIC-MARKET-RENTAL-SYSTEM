@@ -19,7 +19,10 @@ const path = require('node:path');
 function modelSearchPaths(app) {
   const packaged = path.join(process.resourcesPath || '', 'models');
   const userDir = path.join(app.getPath('userData'), 'models');
-  return [packaged, userDir];
+  // Running from source, resourcesPath belongs to Electron itself, so the
+  // model in the repo would be invisible. Look there too when unpackaged.
+  const dev = app.isPackaged ? null : path.join(app.getAppPath(), 'build', 'models');
+  return dev ? [packaged, userDir, dev] : [packaged, userDir];
 }
 
 function findModelFile(app) {
