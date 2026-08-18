@@ -5152,12 +5152,42 @@ function normalizeFigure(token: string): string {
   return bare.includes('.') ? bare.replace(/0+$/, '').replace(/\.$/, '') : bare;
 }
 
-/* True when every number in `phrasing` was one of the computed figures. */
+/* Words the model may use freely: ordinary English, and the vocabulary the
+   answers themselves are built from. Anything else capitalised mid-sentence is
+   treated as a name it has introduced. */
+const PHRASING_ALLOWED_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'at', 'is', 'are', 'was', 'were',
+  'has', 'have', 'had', 'no', 'not', 'none', 'this', 'that', 'there', 'their', 'they', 'it',
+  'stall', 'stalls', 'tenant', 'tenants', 'rent', 'bill', 'bills', 'month', 'total', 'due',
+  'paid', 'unpaid', 'overdue', 'available', 'occupied', 'maintenance', 'market', 'office',
+  'collected', 'outstanding', 'violation', 'violations', 'applicant', 'applicants', 'meter',
+  'electricity', 'water', 'record', 'records', 'day', 'days', 'still', 'so', 'far', 'date',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july',
+  'august', 'september', 'october', 'november', 'december',
+]);
+
+/* Proper nouns the model used — names of people, stalls, sections. A reworded
+   answer must not introduce one that was not in the computed facts. */
+function properNouns(text: string): string[] {
+  // Skip the first word of each sentence: its capital says nothing.
+  const withoutSentenceStarts = text.replace(/(^|[.!?]\s+)([A-Z])/g, (_m, lead, letter) => `${lead}${letter.toLowerCase()}`);
+  return (withoutSentenceStarts.match(/\b[A-Z][\w'-]*\b/g) ?? [])
+    .map((w) => w.toLowerCase())
+    .filter((w) => !PHRASING_ALLOWED_WORDS.has(w));
+}
+
+/* True when the model's wording introduced neither a figure nor a name that
+   the computed answer did not already contain. Numbers were always the danger;
+   a name swapped onto the wrong tenant is the quieter one, and just as wrong
+   in a register the office acts on. */
 function guardPhrasing(phrasing: string, fact: FactAnswer): boolean {
-  const allowed = new Set(
-    numericTokens([fact.headline, ...fact.lines].join(' ')).map(normalizeFigure),
-  );
-  return numericTokens(phrasing).every((t) => allowed.has(normalizeFigure(t)));
+  const facts = [fact.headline, ...fact.lines].join(' ');
+
+  const allowedFigures = new Set(numericTokens(facts).map(normalizeFigure));
+  if (!numericTokens(phrasing).every((t) => allowedFigures.has(normalizeFigure(t)))) return false;
+
+  const allowedNames = new Set(properNouns(facts));
+  return properNouns(phrasing).every((w) => allowedNames.has(w));
 }
 
 /* ---------- The facts ---------- */
@@ -5212,7 +5242,7 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
   {
     key: 'rent.overdue',
     question: 'Which tenants are overdue on rent?',
-    strong: ['overdue', 'past due', 'delinquent', 'behind on rent'],
+    strong: ['overdue','past due','delinquent','behind on rent','behind on payment','behind on payments','lumampas na'],
     weak: ['late', 'rent', 'not paid', 'hindi nagbayad'],
     answer: (state, asked) => {
       const period = periodFromQuestion(asked);
@@ -5231,8 +5261,8 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
   {
     key: 'rent.unpaid',
     question: 'Who has not paid rent this month?',
-    strong: ['has not paid', 'not yet paid', 'unpaid rent', 'wala pang bayad', 'still owe', 'who has not paid'],
-    weak: ['unpaid', 'rent', 'outstanding'],
+    strong: ['has not paid','not yet paid','unpaid rent','wala pang bayad','still owe','who has not paid','hindi pa nagbabayad','hindi nagbabayad','hindi pa bayad','walang bayad'],
+    weak: ['unpaid','rent','outstanding','upa','bayad','nagbabayad'],
     answer: (state, asked) => {
       const period = periodFromQuestion(asked);
       const unpaid = state.tenants.filter((t) => rentStatusOf(t, period) !== 'Paid');
@@ -5250,8 +5280,8 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
   {
     key: 'rent.collected',
     question: 'How much rent have we collected this month?',
-    strong: ['collected', 'collection', 'nakolekta', 'rent income'],
-    weak: ['rent', 'how much', 'total'],
+    strong: ['collected','collection','nakolekta','rent income','naipon','take in','taken in'],
+    weak: ['rent','how much','total','upa','magkano'],
     answer: (state, asked) => {
       const period = periodFromQuestion(asked);
       const roll = rentRollFor(state.tenants, period);
@@ -5306,8 +5336,8 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
   {
     key: 'earnings.total',
     question: 'What are the market earnings?',
-    strong: ['earnings', 'revenue', 'income', 'kita', 'rent roll'],
-    weak: ['total', 'how much', 'money', 'earning'],
+    strong: ['earnings','revenue','income','kita','rent roll','total earning'],
+    weak: ['total','how much','money','earning','magkano'],
     answer: (state) => {
       const period = currentPeriod();
       const roll = rentRollFor(state.tenants, period);
@@ -5329,8 +5359,8 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
   {
     key: 'stalls.vacant',
     question: 'Which stalls are vacant?',
-    strong: ['vacant', 'available stall', 'empty stall', 'bakante', 'free stall', 'open stall'],
-    weak: ['stall', 'available', 'empty'],
+    strong: ['vacant','available stall','empty stall','bakante','free stall','open stall','walang laman','walang tao','puwesto na bakante'],
+    weak: ['stall','available','empty','puwesto','ilan'],
     answer: (state) => {
       const vacant = state.stalls.filter((s) => s.status === 'Available');
       return {

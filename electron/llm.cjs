@@ -44,7 +44,9 @@ async function getSession(app) {
 
   try {
     // Lazy, and optional: a build without the library still runs.
-    const { getLlama, LlamaChatSession } = require('node-llama-cpp');
+    // The library is ESM-only, so it is pulled in with a dynamic import --
+    // require() throws ERR_REQUIRE_ESM here.
+    const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
     const llama = await getLlama();
     const model = await llama.loadModel({ modelPath });
     const context = await model.createContext({ contextSize: 2048 });
@@ -55,6 +57,20 @@ async function getSession(app) {
     state.session = null;
   }
   return state.session;
+}
+
+// Qwen3 and its kin reason out loud unless told not to. `/no_think` is the
+// soft switch these models accept; the tag stripping is the belt to that
+// braces, since a model that ignores the switch would otherwise leak its
+// working into the answer shown to the officer.
+const NO_THINK = ' /no_think';
+
+function stripThinking(text) {
+  if (typeof text !== 'string') return null;
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/?think>/gi, '')
+    .trim();
 }
 
 // A model that stalls must never hang the assistant; the caller falls back to
@@ -79,20 +95,27 @@ function modelName() {
 async function classify(app, question, intents) {
   const session = await getSession(app);
   if (!session) return null;
-  const menu = intents.map((i, n) => `${n + 1}. [${i.key}] ${i.question}`).join('\n');
+  // Measured against this model, asking for a bare number beats asking for a
+  // key, and beats few-shot examples, which push it towards answering 0. Even
+  // then it is right well under half the time, which is why the keyword matcher
+  // in the page decides first and this only ever runs as the fallback.
+  const menu = intents.map((i, n) => (n + 1) + '. ' + i.question).join('\n');
   const prompt = [
-    'You route a question to one of the numbered options below.',
-    'Reply with the bracketed key only, exactly as written. No other words.',
-    'If none of them fit, reply NONE.',
+    'Below is a numbered list of questions a market office system can answer.',
     '',
     menu,
     '',
-    `Question: ${question}`,
+    'Which single numbered question best matches this request?',
+    'Request: "' + question + '"',
+    '',
+    'Answer with the number alone. If none match, answer 0.',
   ].join('\n');
   try {
-    const raw = await withTimeout(session.prompt(prompt, { maxTokens: 24, temperature: 0 }), 20000);
-    const found = intents.find((i) => raw.includes(i.key));
-    return found ? found.key : null;
+    const raw = stripThinking(await withTimeout(session.prompt(prompt + NO_THINK, { maxTokens: 8, temperature: 0 }), 30000)) || '';
+    const digits = raw.match(/[0-9]+/);
+    const picked = digits ? Number.parseInt(digits[0], 10) : 0;
+    if (!Number.isFinite(picked) || picked < 1 || picked > intents.length) return null;
+    return intents[picked - 1].key;
   } catch {
     return null;
   }
@@ -115,8 +138,8 @@ async function phrase(app, question, headline, lines) {
     lines.length ? `DETAIL:\n${lines.map((l) => `- ${l}`).join('\n')}` : '',
   ].filter(Boolean).join('\n');
   try {
-    const raw = await withTimeout(session.prompt(prompt, { maxTokens: 160, temperature: 0.2 }), 45000);
-    return typeof raw === 'string' ? raw.trim() : null;
+    const raw = await withTimeout(session.prompt(prompt + NO_THINK, { maxTokens: 220, temperature: 0.2 }), 60000);
+    return stripThinking(raw) || null;
   } catch {
     return null;
   }
