@@ -741,9 +741,15 @@ function rentPaymentHistory(tenant: Tenant): RentPayment[] {
   return Object.values(tenant.rentPayments).sort((a, b) => b.period.localeCompare(a.period));
 }
 
+/* What one tenant has paid across every month. Reads the payments unsorted —
+   only the ledger needs them in order. */
+function rentTotalPaid(tenant: Tenant) {
+  return Object.values(tenant.rentPayments).reduce((s, p) => s + p.amount, 0);
+}
+
 /* Every peso of rent ever recorded as collected, across all tenants. */
 function rentCollectedToDate(tenants: Tenant[]) {
-  return tenants.reduce((sum, t) => sum + rentPaymentHistory(t).reduce((s, p) => s + p.amount, 0), 0);
+  return tenants.reduce((sum, t) => sum + rentTotalPaid(t), 0);
 }
 
 /* Where one month's rent stands across the whole register. `due` is the rent
@@ -882,13 +888,21 @@ function App() {
 
   /* One tick so the receipt is laid out before the print dialog snapshots it.
      The body class is what narrows the print stylesheet down to the receipt —
-     without it, the desktop app's own File > Print would print a blank page. */
+     without it, the desktop app's own File > Print would print a blank page.
+
+     The job is dropped again as soon as the print dialog closes, whether it was
+     printed or cancelled. Leaving it mounted would leave the page in its
+     printing state, and the next plain Ctrl+P would silently reprint the last
+     receipt instead of the screen the officer is looking at. */
   useEffect(() => {
     if (!printJob) return;
     document.body.classList.add('printing');
+    const finish = () => setPrintJob(null);
+    window.addEventListener('afterprint', finish);
     const timer = window.setTimeout(() => window.print(), 80);
     return () => {
       window.clearTimeout(timer);
+      window.removeEventListener('afterprint', finish);
       document.body.classList.remove('printing');
     };
   }, [printJob]);
@@ -2038,7 +2052,9 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const fillFromRecords = (sid: string, tenant: Tenant | undefined, nextType: UtilityType) => {
     const last = sid ? lastReadingFor(bills, sid, nextType) : null;
     setPrevious(last !== null ? String(last) : '');
-    setMeterNumber(tenant?.meters[nextType] ?? lastMeterFor(bills, sid, nextType));
+    // `||`, not `??`: a tenant with no meter on file holds '', and an empty
+    // string has to fall through to the number the last bill was raised against.
+    setMeterNumber(tenant?.meters[nextType] || lastMeterFor(bills, sid, nextType));
   };
 
   const applyType = (next: UtilityType) => {
@@ -4094,7 +4110,7 @@ function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { t
   const paid = rentStatus === 'Paid';
   const payment = rentPaymentFor(tenant, period);
   const late = rentDaysLate(tenant, period);
-  const collected = rentPaymentHistory(tenant).reduce((s, p) => s + p.amount, 0);
+  const collected = rentTotalPaid(tenant);
 
   return (<>
     <RecordSheet
@@ -4803,7 +4819,7 @@ function RentDueDaySelect({ value, keepLabel, onChange }: { value: string; keepL
 /* The months this tenant has settled, newest first. */
 function RentLedger({ tenant }: { tenant: Tenant }) {
   const payments = rentPaymentHistory(tenant);
-  const total = payments.reduce((s, p) => s + p.amount, 0);
+  const total = rentTotalPaid(tenant);
   return (
     <div className="bill-history">
       <div className="bill-history-head">
