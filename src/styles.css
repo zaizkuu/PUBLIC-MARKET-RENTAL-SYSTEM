@@ -928,6 +928,9 @@ ul, ol {
 .graph-segment.collected { background: var(--color-success); }
 .graph-segment.maintenance,
 .graph-segment.outstanding { background: var(--color-danger); }
+.graph-segment.closed { background: var(--color-warning); }
+.graph-segment.shut { background: #7f1d1d; }
+.graph-segment.abandoned { background: #64748b; }
 .graph-segment.water { background: #0ea5e9; }
 
 .graph-footer {
@@ -1006,6 +1009,9 @@ ul, ol {
 .graph-key i.collected { background: var(--color-success); }
 .graph-key i.maintenance,
 .graph-key i.outstanding { background: var(--color-danger); }
+.graph-key i.closed { background: var(--color-warning); }
+.graph-key i.shut { background: #7f1d1d; }
+.graph-key i.abandoned { background: #64748b; }
 .graph-key i.water { background: #0ea5e9; }
 
 .graph-empty {
@@ -1336,19 +1342,15 @@ ul, ol {
   border-bottom: none;
 }
 
-/* Rent past its due date. The tint carries the whole row so an overdue tenancy
-   is found by scanning, not by reading the status column. Placed after the
-   striping and hover rules so it wins the tie on source order. */
-.data-table tbody tr.row-overdue,
-.data-table tbody tr.row-overdue:nth-child(even) {
-  background: #fef2f2;
-  box-shadow: inset 3px 0 0 var(--color-danger);
-}
+/* A record number is one token: TEN-001 must not break at its hyphen. The
+   tenant register carries more columns than the stall register, so without
+   this its ID and section cells wrapped and its rows stood taller. */
+.data-table td strong,
+.data-table td.no-wrap { white-space: nowrap; }
 
-.data-table tbody tr.row-overdue:hover {
-  background: #fee2e2;
-  box-shadow: inset 3px 0 0 var(--color-danger);
-}
+/* An overdue tenancy is marked by the Overdue badge in its rent column, not
+   by tinting the row: with rent still to be entered for most tenancies the
+   tint covered the whole register and stopped meaning anything. */
 
 /* Tick box and status badge as one control: the badge says where the month
    stands, the box is how it is changed. */
@@ -1532,6 +1534,7 @@ ul, ol {
 
 /* Needs attention, but nothing has gone wrong yet. */
 .badge-maintenance,
+.badge-closed,
 .badge-pending,
 .badge-incomplete,
 .badge-expiring,
@@ -1541,7 +1544,18 @@ ul, ol {
   color: #744d06;
 }
 
-/* Genuine problems — reserved so red keeps its meaning. */
+/* Abandoned is a dead record rather than an urgent one — grey keeps it clear
+   of the amber and red states that still need someone to act. */
+.badge-abandoned {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+/* Genuine problems — reserved so red keeps its meaning. A stall recorded as
+   CLOSED sits here too: it is shut with no note that it reopens. */
+.badge-shut,
+.badge-nobp,
 .badge-rejected,
 .badge-open,
 .badge-overdue {
@@ -2119,6 +2133,9 @@ ul, ol {
 .report-share-fill.occupied { background: var(--color-primary); }
 .report-share-fill.available { background: var(--color-success); }
 .report-share-fill.maintenance { background: var(--color-danger); }
+.report-share-fill.closed { background: var(--color-warning); }
+.report-share-fill.shut { background: #7f1d1d; }
+.report-share-fill.abandoned { background: #64748b; }
 
 .report-share span {
   flex: 0 0 52px;
@@ -2284,7 +2301,33 @@ ul, ol {
 }
 
 .modal-card.wide {
-  max-width: 640px;
+  max-width: 720px;
+}
+
+/* A record view is a document rather than a form, so it is given room for its
+   two columns of fields to sit apart, and the body padding is eased back —
+   the sheet has its own border and header band, and stacking the modal
+   padding on top of them just boxed the record in twice. */
+.modal-card.sheet {
+  max-width: 720px;
+}
+
+.modal-card.sheet .modal-body {
+  padding: 18px;
+}
+
+.modal-card.sheet .record-grid {
+  column-gap: 40px;
+}
+
+/* The extra width would otherwise let a short field label drift far from its
+   value; capping the row keeps the pair read as one. */
+.modal-card.sheet .record-section {
+  padding: 24px 28px;
+}
+
+.modal-card.sheet .record-header {
+  padding: 26px 28px;
 }
 
 .modal-header {
@@ -4624,11 +4667,16 @@ ul, ol {
 
 /* Warm and clearly orange, so it never reads as a darker grey. */
 .badge-maintenance,
+.badge-closed,
 .badge-pending,
 .badge-incomplete,
 .badge-expiring,
 .badge-unpaid { color: #8a4a04; }
 
+.badge-abandoned { color: #475569; }
+
+.badge-shut,
+.badge-nobp,
 .badge-rejected,
 .badge-open,
 .badge-overdue { color: #8f1613; }
@@ -5247,6 +5295,91 @@ ul, ol {
 
 /* ---------- On paper ---------- */
 
+/* ============================================================
+   Printed register
+   ============================================================ */
+
+/* Laid out in the page but never shown on screen — the print stylesheet is
+   what reveals it, exactly as the receipt sheets work. */
+.register-sheet {
+  display: none;
+}
+
+.register-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1.5pt solid #000;
+}
+
+/* The municipal seal, sized to sit against the two heading lines without
+   crowding them. */
+.register-seal {
+  flex: 0 0 auto;
+  width: 46pt;
+  height: 46pt;
+  object-fit: contain;
+}
+
+/* Takes the space the seal leaves, so the meta block stays hard right. */
+.register-headings {
+  flex: 1 1 auto;
+}
+
+.register-title {
+  font-size: 12pt;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.register-org {
+  font-size: 9pt;
+}
+
+.register-meta {
+  text-align: right;
+  font-size: 8.5pt;
+  line-height: 1.45;
+}
+
+.register-scope {
+  font-weight: 700;
+  font-style: italic;
+}
+
+.register-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 8.5pt;
+}
+
+.register-table th,
+.register-table td {
+  border: 0.75pt solid #000;
+  padding: 3pt 5pt;
+  text-align: left;
+  vertical-align: top;
+}
+
+.register-table th {
+  font-weight: 700;
+  background: #eee;
+}
+
+.register-table .num {
+  width: 26pt;
+  text-align: right;
+}
+
+.register-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-size: 8.5pt;
+}
 @media print {
   @page {
     size: A4 portrait;
@@ -5277,6 +5410,26 @@ ul, ol {
     width: 100%;
   }
 
+  /* A register runs as long as it needs to. Repeating the heading row on each
+     sheet is what makes page 4 of a roster readable on its own, and no row is
+     allowed to be split across the page break. */
+  .register-sheet {
+    display: block !important;
+  }
+
+  .register-seal {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .register-table thead {
+    display: table-header-group;
+  }
+
+  .register-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   /* One sheet per page, and never a receipt split across two. */
   .receipt-sheet {
     break-after: page;

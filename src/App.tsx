@@ -18,8 +18,18 @@ type ModuleKey =
   | 'settings'
   | 'support';
 
-type ApplicantStatus = 'Pending Review' | 'Incomplete' | 'Approved' | 'Rejected';
-type StallStatus = 'Occupied' | 'Available' | 'Maintenance';
+/* 'No BP' is a sitting stallholder the occupancy survey marked X in the WITH
+   BP column — trading without a business permit. It is not a stage of an
+   application, it is a compliance flag that clears when the permit is filed. */
+type ApplicantStatus = 'Pending Review' | 'Incomplete' | 'Approved' | 'Rejected' | 'No BP';
+/* 'Temporarily Closed' and 'Abandoned' come straight off the occupancy sheet:
+   a closed stall is still held by its tenant, an abandoned one is not yet
+   released. Neither is Available — the stall cannot be reassigned as it stands. */
+type StallStatus = 'Occupied' | 'Available' | 'Maintenance' | 'Temporarily Closed' | 'Closed' | 'Abandoned';
+
+/* Whether a business permit was sighted for the stall on the last survey.
+   'Not Recorded' is its own answer — the sheet leaves the column blank. */
+type PermitStatus = 'With BP' | 'No BP' | 'Not Recorded';
 
 type ViolationStatus = 'Open' | 'Resolved';
 
@@ -39,6 +49,18 @@ type PrintReceipt = { bill: UtilityBill; label: string };
    different bills tiled onto the same sheets. */
 type PrintRequest = { bills: UtilityBill[]; single: boolean };
 
+/* A whole register laid out for paper — every row a page is showing, not the
+   ten of them on screen. The active filters carry into the print, so a single
+   market section is printed by filtering to it first, which is how the office
+   keeps its occupancy sheets. */
+type RegisterJob = {
+  title: string;
+  subtitle: string;
+  columns: string[];
+  rows: string[][];
+  printedAt: string;
+};
+
 type ModalType =
   | null
   | 'add-stall' | 'add-applicant' | 'add-tenant' | 'add-log' | 'assign-stall' | 'add-violation'
@@ -52,7 +74,10 @@ type Applicant = {
   id: string;
   name: string;
   phone: string;
-  stallType: string;
+  /* The stall this record concerns: the vacancy an applicant asked for, or
+     the stall a sitting holder already occupies while working off a missing
+     requirement. Absent when no particular stall has been settled on. */
+  stallId?: string;
   status: ApplicantStatus;
   dateApplied: string;
   requirements: string[];
@@ -104,7 +129,11 @@ type Stall = {
   section: string;
   tenant: string;
   status: StallStatus;
+  permit: PermitStatus;
   lastInspection: string;
+  /* Anything the occupancy sheet noted in the margin — a deceased former
+     tenant, a newly issued stall. Empty for most rows. */
+  note: string;
 };
 
 type Violation = {
@@ -167,11 +196,16 @@ type ActivityItem = {
    Constants
    ============================================================ */
 
-const ITEMS_PER_PAGE = 5;
+const ITEMS_PER_PAGE = 10;
 const MAX_ACTIVITIES = 50;
 const SECTIONS = ['Meat & Poultry', 'Fish & Seafood', 'Vegetables & Fruits', 'Dry Goods'];
+const STALL_STATUSES: StallStatus[] = ['Occupied', 'Available', 'Maintenance', 'Temporarily Closed', 'Closed', 'Abandoned'];
+const PERMIT_STATUSES: PermitStatus[] = ['With BP', 'No BP', 'Not Recorded'];
+/* A stall in one of these states is spoken for — it cannot be let to anyone
+   else, whether or not the tenant is trading today. */
+const HELD_STATUSES: StallStatus[] = ['Occupied', 'Temporarily Closed', 'Closed', 'Abandoned'];
+const countStatus = (stalls: Stall[], status: StallStatus) => stalls.filter((s) => s.status === status).length;
 const KEEPER_RELATIONS = ['Self (tenant tends the stall)', 'Spouse', 'Child', 'Parent', 'Sibling', 'Other Relative', 'Hired Helper'];
-const STALL_TYPES = ['Produce (Wet)', 'Dry Goods', 'Vegetables', 'Fish & Seafood', 'Meat & Poultry'];
 const LOG_TYPES = ['Inspection', 'Incident', 'Maintenance', 'Collection', 'Announcement'];
 const VIOLATION_ISSUES = [
   'Late document submission',
@@ -183,7 +217,7 @@ const VIOLATION_ISSUES = [
   'Fire safety non-compliance',
   'Obstruction of walkway',
 ];
-const storageKey = 'pmrms-state-v3';
+const storageKey = 'pmrms-state-v9';
 const savedAtKey = 'pmrms-saved-at';
 const idCounterKey = 'pmrms-id-counters';
 /* Who last printed a receipt — offered back as the default the next time, so
@@ -246,6 +280,7 @@ const DEFAULT_RENT_DUE_DAY = 5;
 const MAX_RENT_DUE_DAY = 28;
 
 const REQUIREMENTS = [
+  'Business Permit',
   'Barangay Clearance',
   'Community Tax Certificate (Cedula)',
   'Health / Sanitary Permit',
@@ -263,71 +298,471 @@ const UTILITY_PRESETS: Record<UtilityType, { rate: number; fixedCharge: number; 
    Initial Data
    ============================================================ */
 
-/* Rent standing for a seeded tenant. The demo register opens with both settled
-   and outstanding months so the paid / unpaid / overdue states are all visible
-   without anyone having to click first. */
-function seedRent(paid: boolean, amount: number, meters: MeterNumbers, dueDay = DEFAULT_RENT_DUE_DAY): Pick<Tenant, 'meters' | 'rentDueDay' | 'rentPayments'> {
-  const period = currentPeriod();
-  return {
-    meters,
-    rentDueDay: dueDay,
-    rentPayments: paid ? { [period]: { period, paidOn: `${period}-03`, amount } } : {},
-  };
-}
+/* The register opens on the 2026 Status of Market Occupancy surveys for
+   Tanauan, Leyte — Meat Section (July 20, 2026), Kakanin (July 21, 2026),
+   Fish Section (July 22, 2026) and Fruits & Vegetable Section (July 23, 2026).
+   Every stall below is a row of one of those sheets; nothing here is
+   illustrative. The Kakanin sheet is filed under Dry Goods, which is why its
+   stalls keep a KK- number and say so in their note. */
 
 const initialState = {
-  applicants: [
-    { id: 'APP-001', name: 'Juan Santos', phone: '09171234567', stallType: 'Produce (Wet)', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 12, 2023', requirements: [...REQUIREMENTS] },
-    { id: 'APP-002', name: 'Maria Reyes', phone: '09209876543', stallType: 'Dry Goods', status: 'Incomplete' as ApplicantStatus, dateApplied: 'Oct 14, 2023', requirements: REQUIREMENTS.slice(0, 2) },
-    { id: 'APP-003', name: 'Liza Cruz', phone: '09185551234', stallType: 'Vegetables', status: 'Approved' as ApplicantStatus, dateApplied: 'Oct 10, 2023', requirements: [...REQUIREMENTS] },
-    { id: 'APP-004', name: 'Pedro Garcia', phone: '09153337890', stallType: 'Fish & Seafood', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 16, 2023', requirements: REQUIREMENTS.slice(0, 3) },
-    { id: 'APP-005', name: 'Ana Villanueva', phone: '09224445678', stallType: 'Meat & Poultry', status: 'Rejected' as ApplicantStatus, dateApplied: 'Oct 8, 2023', requirements: REQUIREMENTS.slice(0, 1) },
-  ] satisfies Applicant[],
+  applicants: [] as Applicant[],
   tenants: [
-    { id: 'TEN-001', name: 'Maria Santos', phone: '09172221100', stallId: 'A-001', section: 'Meat & Poultry', rent: 5000, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 5000, { Electricity: 'EM-1042', Water: 'WM-2211' }) },
-    { id: 'TEN-002', name: 'Juan Dela Cruz', phone: '09183332211', stallId: 'A-002', section: 'Fish & Seafood', rent: 4500, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 4500, { Electricity: 'EM-1043', Water: 'WM-2212' }) },
-    { id: 'TEN-003', name: 'Liza Reyes', phone: '09204443322', stallId: 'B-015', section: 'Dry Goods', rent: 3500, status: 'Active', barangay: '', keepers: [], ...seedRent(false, 3500, { Electricity: 'EM-1044', Water: 'WM-2213' }) },
-    { id: 'TEN-004', name: "Rosa's Butchery", phone: '09215554433', stallId: 'M-101', section: 'Meat & Poultry', rent: 5500, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 5500, { Electricity: 'EM-1101', Water: 'WM-2301' }) },
-    { id: 'TEN-005', name: 'Green Farm Organics', phone: '09226665544', stallId: 'V-045', section: 'Vegetables & Fruits', rent: 4000, status: 'Active', barangay: '', keepers: [], ...seedRent(false, 4000, { Electricity: 'EM-1045', Water: 'WM-2214' }) },
-    { id: 'TEN-006', name: 'Deep Blue Catch', phone: '09157776655', stallId: 'F-012', section: 'Fish & Seafood', rent: 4200, status: 'Expiring Soon', barangay: '', keepers: [], ...seedRent(false, 4200, { Electricity: 'EM-1012', Water: 'WM-2012' }) },
-    { id: 'TEN-007', name: 'Santos General Store', phone: '09198887766', stallId: 'D-203', section: 'Dry Goods', rent: 3800, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 3800, { Electricity: 'EM-1203', Water: 'WM-2203' }) },
+    { id: 'TEN-001', name: 'LOTEYRO, LEEMAR', phone: '', stallId: 'MS-01', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-002', name: 'LIPAYON, LORENA', phone: '', stallId: 'MS-02', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-003', name: 'EMOYLAN, CAROLINE', phone: '', stallId: 'MS-03', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-004', name: 'BORREL, FERDINAND', phone: '', stallId: 'MS-04', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-005', name: 'GAMEZ, GEMMA BERDAN', phone: '', stallId: 'MS-05', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-006', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-06', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-007', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-07', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-008', name: 'GEVEN, MA. FATIMA VALLER', phone: '', stallId: 'MS-08', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-009', name: 'AUCILA, GILBERT NIRZA', phone: '', stallId: 'MS-09', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-010', name: 'CAMERO, DESIDERIO NUEVAS', phone: '', stallId: 'MS-12', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-011', name: 'BANEZ, CELESTE A', phone: '', stallId: 'MS-17', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-012', name: 'RIZALDO BIGOY', phone: '', stallId: 'MS-20', section: 'Meat & Poultry', rent: 0, status: 'Abandoned', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-013', name: 'LIPAYON, GERRY INDIC', phone: '', stallId: 'MS-21', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-014', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-22', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-015', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-23', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-016', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-24', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-017', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-25', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-018', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-27', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-019', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-28', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-020', name: 'GEVEN, FATIMA VALLER', phone: '', stallId: 'MS-29', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-021', name: 'OGRIMEN, EDUARDO LACE', phone: '', stallId: 'MS-31', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-022', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-32', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-023', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-33', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-024', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-34', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-025', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-35', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-026', name: 'MAGDUA, CHARLES GODWIN ALMERIA', phone: '', stallId: 'MS-36', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-027', name: 'BIGOY, REGIE', phone: '', stallId: 'MS-37', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-028', name: 'TERADO, JINGJING MORALITA', phone: '', stallId: 'MS-38', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-029', name: 'ODTUHAN, AIZA SONGALIA', phone: '', stallId: 'MS-40', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-030', name: 'GERILLA, LEODEGARIO DUMASIG', phone: '', stallId: 'MS-41', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-031', name: 'LIPAYON, ROMEO L', phone: '', stallId: 'MS-44', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-032', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-01', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-033', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-02', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-034', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-03', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-035', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-04', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-036', name: 'MAGDUA, ASHLEY SIBYL AGUILLON', phone: '', stallId: 'CS-05', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-037', name: 'CERVANTES, JOSE PERCIVAL ESPADA', phone: '', stallId: 'CS-06', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-038', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-07', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-039', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-08', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-040', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-09', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-041', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-10', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-042', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-11', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-043', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-12', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-044', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-13', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-045', name: 'LAURINO, MARITES RABINA', phone: '', stallId: 'CS-14', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-046', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-16', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-047', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-17', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-048', name: 'TIZON, ELIZA ALMERIA', phone: '', stallId: 'CS-18', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-049', name: 'LANZA, VILMA ALBAO', phone: '', stallId: 'CS-19', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-050', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-20', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-051', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-21', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-052', name: 'LONZAGA, MARTHA MACARAY', phone: '', stallId: 'CS-22', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-053', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-01', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-054', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-02', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-055', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-03', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-056', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-04', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-057', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-05', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-058', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-06', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-059', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-07', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-060', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-08', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-061', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-09', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-062', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-10', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-063', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-11', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-064', name: 'MARABUT, MYRA SORILA', phone: '', stallId: 'FV-12', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-065', name: 'ESTEMBER, CHERIEMAE HEMBRA', phone: '', stallId: 'FV-13', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-066', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-14', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-067', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-15', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-068', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-16', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-069', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-17', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-070', name: 'PELINO, FLORENTINA ANCHITA', phone: '', stallId: 'FV-18', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-071', name: 'MAGDUA, GENEVIEVE BUHAWE', phone: '', stallId: 'FV-19', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-072', name: 'GUARDAYA, MA. LOURCEL GARCIA', phone: '', stallId: 'FV-20', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-073', name: 'VERTUDES, KATE MARABUT', phone: '', stallId: 'FV-21', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-074', name: 'TELEMBAN, ESMERALDA', phone: '', stallId: 'FV-22', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-075', name: 'SALCEDO, SOFIA MARIE', phone: '', stallId: 'FV-23', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-076', name: 'SALCEDO, SHAINE MARIE HEMBRA', phone: '', stallId: 'FV-24', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-077', name: 'GARCIA, ROBERTO III CORNEJO', phone: '', stallId: 'FV-25', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-078', name: 'CAMPOSANO, LISA MOLINA', phone: '', stallId: 'FV-26', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-079', name: 'ZIALCITA, SHERYL', phone: '', stallId: 'FV-27', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-080', name: 'LAGARTO, MARY JEAN', phone: '', stallId: 'FV-28', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-081', name: 'TOLIBAS, ROSELYN LANTAJO', phone: '', stallId: 'FV-29', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-082', name: 'PARANAS, LYN C', phone: '', stallId: 'FV-30', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-083', name: 'GARCIA, VELMA CINCO', phone: '', stallId: 'FV-31', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-084', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-32', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-085', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-33', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-086', name: 'PODOL, RAMIL M', phone: '', stallId: 'FV-34', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-087', name: 'ALBAO, DARWIN', phone: '', stallId: 'FV-35', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-088', name: 'VILLERO, ESTER FARON', phone: '', stallId: 'FV-36', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-089', name: 'MODESTO, JADE', phone: '', stallId: 'FV-37', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-090', name: 'MODESTO, JADE', phone: '', stallId: 'FV-38', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-091', name: 'VILLERO, CRISANTA CASIO', phone: '', stallId: 'FV-39', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-092', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-40', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-093', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-41', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-094', name: 'RELLONA, EVANGELINE ALBA', phone: '', stallId: 'FV-42', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-095', name: 'ANOS, DIANNE CORRAL', phone: '', stallId: 'FV-43', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-096', name: 'BLASE, MARICEL LASE', phone: '', stallId: 'FV-44', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-097', name: 'AMISTOSO, JONATHAN', phone: '', stallId: 'FV-45', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-098', name: 'DUMALAORON, ESTELITA MESIAS', phone: '', stallId: 'FV-46', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-099', name: 'ROYERAS, FRANCISCO CINCO', phone: '', stallId: 'FV-47', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-100', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-48', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-101', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-49', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-102', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-50', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-103', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-51', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-104', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-52', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-105', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-53', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-106', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-54', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-107', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-55', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-108', name: 'CATAN, ROSARIO V.', phone: '', stallId: 'FV-56', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-109', name: 'DANGCO, JAMEL ROSE PEREZ', phone: '', stallId: 'FV-57', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-110', name: 'BOCO, ORFIEL RECOTE', phone: '', stallId: 'FV-58', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-111', name: 'SOLANO, WILSON S', phone: '', stallId: 'FV-59', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-112', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-60', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-113', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-61', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-114', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-62', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-115', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-63', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-116', name: 'OLGUIRA, ANGEILA MAE L.', phone: '', stallId: 'FV-64', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-117', name: 'OLGUIRA, CARMILO RUEL L.', phone: '', stallId: 'FV-65', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-118', name: 'VILLEGAS, KAREN GRACE M', phone: '', stallId: 'FV-66', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-119', name: 'LAMOSTE, REY CAYANES', phone: '', stallId: 'FV-67', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-120', name: 'ALVAREZ, RUBY DEOANNE MACEDA', phone: '', stallId: 'FV-68', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-121', name: 'BETASOLO, GENEVIEVE TOLIBAS', phone: '', stallId: 'FV-69', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-122', name: 'RECOSANA, ROMEL NOLASCO', phone: '', stallId: 'FV-70', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-123', name: 'BOCO, IVY RICOTE', phone: '', stallId: 'FV-71', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-124', name: 'MARTOS, SYLDY', phone: '', stallId: 'FV-72', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-125', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-73', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-126', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-74', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-127', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-75', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-128', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-76', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-129', name: 'LANCANAN, ISABELITA BALMES', phone: '', stallId: 'FV-77', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-130', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-78', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-131', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-79', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-132', name: 'CAIMOY, GENEVIEVE OPERIO', phone: '', stallId: 'FV-80', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-133', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-81', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-134', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-82', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-135', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-83', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-136', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-84', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-137', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-85', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-138', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-86', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-139', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-87', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-140', name: 'DUQUILLA, IRENE TESTON', phone: '', stallId: 'FV-88', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-141', name: 'BASIHAN, JOSEPHINE', phone: '', stallId: 'FV-89', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-142', name: 'DUZON, DULCE CORAZON TAYANES', phone: '', stallId: 'FS-01', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-143', name: 'MORANTE, ELSA TAYANES', phone: '', stallId: 'FS-02', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-144', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-03', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-145', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-04', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-146', name: 'ESPADA, EVELYN BALTAZAR', phone: '', stallId: 'FS-05', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-147', name: 'CRISOLOGO, CRISPIN SINDAY', phone: '', stallId: 'FS-06', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-148', name: 'SABALZA, DARLYNA', phone: '', stallId: 'FS-07', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-149', name: 'PALABIO, FRANCISCO GHRAY JR. ORDAME', phone: '', stallId: 'FS-08', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-150', name: 'MONSAGA, MICHELLE LERIOS', phone: '', stallId: 'FS-09', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-151', name: 'ORDAME, RINE LERIOS', phone: '', stallId: 'FS-10', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-152', name: 'ORDAME, RICARDO LERIOS', phone: '', stallId: 'FS-11', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-153', name: 'LAURENTE, KAREN CALIPAYAN', phone: '', stallId: 'FS-12', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-154', name: 'COSTIMIANO, BENECIO', phone: '', stallId: 'FS-13', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-155', name: 'LABRADO, RESHILE', phone: '', stallId: 'FS-14', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-156', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-15', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-157', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-16', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-158', name: 'ABANO, HAIDE TAYANES', phone: '', stallId: 'FS-17', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-159', name: 'ABANO, DENNIS ALMADEN', phone: '', stallId: 'FS-18', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-160', name: 'PLABA, JOVITA', phone: '', stallId: 'FS-19', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-161', name: 'BARCILLA, LAILA BADE', phone: '', stallId: 'FS-20', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-162', name: 'ABANAG, ALMA', phone: '', stallId: 'FS-21', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-163', name: 'ABANAG, DANILO ABADIANO', phone: '', stallId: 'FS-22', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-164', name: 'ORDAME, CHARINA MELO', phone: '', stallId: 'FS-23', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-165', name: 'AGUILLON, MARIA CLARISS CAJEPE', phone: '', stallId: 'FS-24', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-166', name: 'PLABA, PRINCESS CABE', phone: '', stallId: 'FS-25', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-167', name: 'AGUILLON, SANDRO LABRADO', phone: '', stallId: 'FS-26', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-168', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-28', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-169', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-29', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-170', name: 'GARCIA, REGINE', phone: '', stallId: 'FS-33', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-171', name: 'AVILA, DAISY BAHIA', phone: '', stallId: 'FS-34', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-172', name: 'TAYANES, ARIEL VERUTIAO', phone: '', stallId: 'FS-35', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-173', name: 'TAYANES, JENNIFER CAINDOY', phone: '', stallId: 'FS-36', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-174', name: 'ABANDO, KIRBY ASDILLA', phone: '', stallId: 'FS-37', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-175', name: 'AGUILAR, JOEL FUENTES', phone: '', stallId: 'FS-38', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-176', name: 'AGUILAR, JOVE', phone: '', stallId: 'FS-39', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-177', name: 'IMPORTA, SONNY LUIS', phone: '', stallId: 'FS-40', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-178', name: 'ALBAO, NICANORA LAGO', phone: '', stallId: 'FS-41', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-179', name: 'AGUILAR, GLENN FUENTES', phone: '', stallId: 'FS-42', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-180', name: 'AGUILAR, GLORIA', phone: '', stallId: 'FS-43', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-181', name: 'ABAS, FELISA TIBE', phone: '', stallId: 'FS-44', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-182', name: 'ABANDO, JOEY B.', phone: '', stallId: 'FS-45', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-183', name: 'CANDELA, MARILYN ORDAME', phone: '', stallId: 'FS-46', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-184', name: 'FLORES, MELVIN', phone: '', stallId: 'FS-47', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-185', name: 'MELO, RENALYN', phone: '', stallId: 'FS-48', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-186', name: 'MELO, MELBA', phone: '', stallId: 'FS-49', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-187', name: 'PARDALES, ABELARDO NAPOLES', phone: '', stallId: 'FS-50', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-188', name: 'BAGUISA, MERLY ABANG', phone: '', stallId: 'FS-51', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-189', name: 'BAGUISA, COLITA ABANAG', phone: '', stallId: 'FS-52', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-190', name: 'TOMANDA, DANIEL OGARO', phone: '', stallId: 'FS-53', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-191', name: 'DUZON, MILO LOPEZ', phone: '', stallId: 'FS-54', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-192', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-55', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-193', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-56', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-194', name: 'SALAÑO, JEFER JOHN ABON', phone: '', stallId: 'FS-57', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-195', name: 'UBALDO, NILDA', phone: '', stallId: 'FS-58', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-196', name: 'VERTUDES, ERIC', phone: '', stallId: 'FS-59', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-197', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-01', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-198', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-02', section: 'Dry Goods', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-199', name: 'DUZON, DULCE CORAZON/MELODY TAYANES', phone: '', stallId: 'KK-03', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-200', name: 'FLORES, CATHERINE VERONA', phone: '', stallId: 'KK-04', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-201', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-05', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-202', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-06', section: 'Dry Goods', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-203', name: 'MEDRANO, MARTHY PALARON', phone: '', stallId: 'KK-07', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-204', name: 'AGUILLON, MARY JOY DELA CERNA', phone: '', stallId: 'KK-08', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-205', name: 'ELARDO, ROSARIO', phone: '', stallId: 'KK-09', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-206', name: 'ESLABAN, JULIFE PERALTA', phone: '', stallId: 'KK-10', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-207', name: 'REDONA, NARCISA', phone: '', stallId: 'KK-11', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-208', name: 'PERALTA, ERVIN PAULO MAQUILAN', phone: '', stallId: 'KK-12', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-209', name: 'CESAR, RHODORA LAMATA', phone: '', stallId: 'KK-13', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-210', name: 'LERIOS, NORIDAN', phone: '', stallId: 'KK-14', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-211', name: 'MODESTO, JADE', phone: '', stallId: 'KK-15', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
   ] satisfies Tenant[] as Tenant[],
   stalls: [
-    { id: 'M-101', section: 'Meat & Poultry', tenant: "Rosa's Butchery", status: 'Occupied' as StallStatus, lastInspection: 'Oct 12, 2023' },
-    { id: 'M-102', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, lastInspection: '-' },
-    { id: 'V-045', section: 'Vegetables & Fruits', tenant: 'Green Farm Organics', status: 'Occupied' as StallStatus, lastInspection: 'Oct 10, 2023' },
-    { id: 'F-012', section: 'Fish & Seafood', tenant: 'Deep Blue Catch', status: 'Maintenance' as StallStatus, lastInspection: 'Oct 15, 2023' },
-    { id: 'D-203', section: 'Dry Goods', tenant: 'Santos General Store', status: 'Occupied' as StallStatus, lastInspection: 'Sep 28, 2023' },
-    { id: 'M-103', section: 'Meat & Poultry', tenant: 'Fresh Cuts Co.', status: 'Occupied' as StallStatus, lastInspection: 'Oct 5, 2023' },
-    { id: 'V-046', section: 'Vegetables & Fruits', tenant: 'Vacant', status: 'Available' as StallStatus, lastInspection: '-' },
-    { id: 'D-204', section: 'Dry Goods', tenant: 'Vacant', status: 'Available' as StallStatus, lastInspection: '-' },
+    { id: 'MS-01', section: 'Meat & Poultry', tenant: 'LOTEYRO, LEEMAR', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-02', section: 'Meat & Poultry', tenant: 'LIPAYON, LORENA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-03', section: 'Meat & Poultry', tenant: 'EMOYLAN, CAROLINE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-04', section: 'Meat & Poultry', tenant: 'BORREL, FERDINAND', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-05', section: 'Meat & Poultry', tenant: 'GAMEZ, GEMMA BERDAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-06', section: 'Meat & Poultry', tenant: 'SALVE, NIDA MONTE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-07', section: 'Meat & Poultry', tenant: 'SALVE, NIDA MONTE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-08', section: 'Meat & Poultry', tenant: 'GEVEN, MA. FATIMA VALLER', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-09', section: 'Meat & Poultry', tenant: 'AUCILA, GILBERT NIRZA', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-10', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-11', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-12', section: 'Meat & Poultry', tenant: 'CAMERO, DESIDERIO NUEVAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-13', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-14', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-15', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-16', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-17', section: 'Meat & Poultry', tenant: 'BANEZ, CELESTE A', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-18', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-19', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-20', section: 'Meat & Poultry', tenant: 'RIZALDO BIGOY', status: 'Abandoned' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: 'Recorded on the sheet as ABANDONED; occupant entered as RIZALDO / BIGOY.' },
+    { id: 'MS-21', section: 'Meat & Poultry', tenant: 'LIPAYON, GERRY INDIC', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-22', section: 'Meat & Poultry', tenant: 'EMOYLAN, CAROLINE ALMERIA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-23', section: 'Meat & Poultry', tenant: 'EMOYLAN, CAROLINE ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-24', section: 'Meat & Poultry', tenant: 'ORINGO, JAIME COBACHA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-25', section: 'Meat & Poultry', tenant: 'ORINGO, JAIME COBACHA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-26', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: 'Former tenant DIORICO — recorded as deceased.' },
+    { id: 'MS-27', section: 'Meat & Poultry', tenant: 'BIGOY, RONALYN CORRALES', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-28', section: 'Meat & Poultry', tenant: 'BIGOY, RONALYN CORRALES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-29', section: 'Meat & Poultry', tenant: 'GEVEN, FATIMA VALLER', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-30', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-31', section: 'Meat & Poultry', tenant: 'OGRIMEN, EDUARDO LACE', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-32', section: 'Meat & Poultry', tenant: 'LANZA, LEO CAYUBIT', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-33', section: 'Meat & Poultry', tenant: 'LANZA, LEO CAYUBIT', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-34', section: 'Meat & Poultry', tenant: 'ALMADEN, MARY ANN KEMPIS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-35', section: 'Meat & Poultry', tenant: 'ALMADEN, MARY ANN KEMPIS', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-36', section: 'Meat & Poultry', tenant: 'MAGDUA, CHARLES GODWIN ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-37', section: 'Meat & Poultry', tenant: 'BIGOY, REGIE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: 'Marked New on the sheet.' },
+    { id: 'MS-38', section: 'Meat & Poultry', tenant: 'TERADO, JINGJING MORALITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-39', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-40', section: 'Meat & Poultry', tenant: 'ODTUHAN, AIZA SONGALIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-41', section: 'Meat & Poultry', tenant: 'GERILLA, LEODEGARIO DUMASIG', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-42', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-43', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-44', section: 'Meat & Poultry', tenant: 'LIPAYON, ROMEO L', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-45', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-46', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'CS-01', section: 'Meat & Poultry', tenant: 'ARCENA, BABY JANE TOLIBAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-02', section: 'Meat & Poultry', tenant: 'ARCENA, BABY JANE TOLIBAS', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-03', section: 'Meat & Poultry', tenant: 'LONZAGA, MANUEL, JR. AGUIRRE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-04', section: 'Meat & Poultry', tenant: 'LONZAGA, MANUEL, JR. AGUIRRE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-05', section: 'Meat & Poultry', tenant: 'MAGDUA, ASHLEY SIBYL AGUILLON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-06', section: 'Meat & Poultry', tenant: 'CERVANTES, JOSE PERCIVAL ESPADA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-07', section: 'Meat & Poultry', tenant: 'VILLERO, JETRO FARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-08', section: 'Meat & Poultry', tenant: 'VILLERO, JETRO FARON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-09', section: 'Meat & Poultry', tenant: 'CERVANTES, SOLEDAD LLEGE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-10', section: 'Meat & Poultry', tenant: 'CERVANTES, SOLEDAD LLEGE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-11', section: 'Meat & Poultry', tenant: 'MAGDUA, ALWIN AMARILLA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-12', section: 'Meat & Poultry', tenant: 'DAPITAN, ELAINE ANGELICA ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-13', section: 'Meat & Poultry', tenant: 'DAPITAN, ELAINE ANGELICA ALMERIA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-14', section: 'Meat & Poultry', tenant: 'LAURINO, MARITES RABINA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-15', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'CS-16', section: 'Meat & Poultry', tenant: 'MAGDUA, ALWIN AMARILLA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-17', section: 'Meat & Poultry', tenant: 'MAGDUA, ALWIN AMARILLA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-18', section: 'Meat & Poultry', tenant: 'TIZON, ELIZA ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-19', section: 'Meat & Poultry', tenant: 'LANZA, VILMA ALBAO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-20', section: 'Meat & Poultry', tenant: 'RIPALDA, CHRISTINE MAE FARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-21', section: 'Meat & Poultry', tenant: 'RIPALDA, CHRISTINE MAE FARON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-22', section: 'Meat & Poultry', tenant: 'LONZAGA, MARTHA MACARAY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'FV-01', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JOCELYN ROSENDE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-02', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JOCELYN ROSENDE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-03', section: 'Vegetables & Fruits', tenant: 'SACLAY, JULIETA REDOÑA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-04', section: 'Vegetables & Fruits', tenant: 'SACLAY, JULIETA REDOÑA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-05', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-06', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-07', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-08', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-09', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JACQUILINE ROSENDE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-10', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JACQUILINE ROSENDE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-11', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JACQUILINE ROSENDE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-12', section: 'Vegetables & Fruits', tenant: 'MARABUT, MYRA SORILA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-13', section: 'Vegetables & Fruits', tenant: 'ESTEMBER, CHERIEMAE HEMBRA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-14', section: 'Vegetables & Fruits', tenant: 'CANAYON, MADELYN SUYOM', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-15', section: 'Vegetables & Fruits', tenant: 'CANAYON, MADELYN SUYOM', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-16', section: 'Vegetables & Fruits', tenant: 'MARTOS, SYLVIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-17', section: 'Vegetables & Fruits', tenant: 'MARTOS, SYLVIA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-18', section: 'Vegetables & Fruits', tenant: 'PELINO, FLORENTINA ANCHITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-19', section: 'Vegetables & Fruits', tenant: 'MAGDUA, GENEVIEVE BUHAWE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-20', section: 'Vegetables & Fruits', tenant: 'GUARDAYA, MA. LOURCEL GARCIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-21', section: 'Vegetables & Fruits', tenant: 'VERTUDES, KATE MARABUT', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-22', section: 'Vegetables & Fruits', tenant: 'TELEMBAN, ESMERALDA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-23', section: 'Vegetables & Fruits', tenant: 'SALCEDO, SOFIA MARIE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-24', section: 'Vegetables & Fruits', tenant: 'SALCEDO, SHAINE MARIE HEMBRA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-25', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO III CORNEJO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-26', section: 'Vegetables & Fruits', tenant: 'CAMPOSANO, LISA MOLINA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-27', section: 'Vegetables & Fruits', tenant: 'ZIALCITA, SHERYL', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-28', section: 'Vegetables & Fruits', tenant: 'LAGARTO, MARY JEAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-29', section: 'Vegetables & Fruits', tenant: 'TOLIBAS, ROSELYN LANTAJO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-30', section: 'Vegetables & Fruits', tenant: 'PARANAS, LYN C', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-31', section: 'Vegetables & Fruits', tenant: 'GARCIA, VELMA CINCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-32', section: 'Vegetables & Fruits', tenant: 'UDTOHAN, NEIL ALBAO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-33', section: 'Vegetables & Fruits', tenant: 'UDTOHAN, NEIL ALBAO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-34', section: 'Vegetables & Fruits', tenant: 'PODOL, RAMIL M', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-35', section: 'Vegetables & Fruits', tenant: 'ALBAO, DARWIN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-36', section: 'Vegetables & Fruits', tenant: 'VILLERO, ESTER FARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-37', section: 'Vegetables & Fruits', tenant: 'MODESTO, JADE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-38', section: 'Vegetables & Fruits', tenant: 'MODESTO, JADE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-39', section: 'Vegetables & Fruits', tenant: 'VILLERO, CRISANTA CASIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-40', section: 'Vegetables & Fruits', tenant: 'PONFERRADA, VICTORINO CINCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-41', section: 'Vegetables & Fruits', tenant: 'PONFERRADA, VICTORINO CINCO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-42', section: 'Vegetables & Fruits', tenant: 'RELLONA, EVANGELINE ALBA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-43', section: 'Vegetables & Fruits', tenant: 'ANOS, DIANNE CORRAL', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-44', section: 'Vegetables & Fruits', tenant: 'BLASE, MARICEL LASE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-45', section: 'Vegetables & Fruits', tenant: 'AMISTOSO, JONATHAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-46', section: 'Vegetables & Fruits', tenant: 'DUMALAORON, ESTELITA MESIAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-47', section: 'Vegetables & Fruits', tenant: 'ROYERAS, FRANCISCO CINCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-48', section: 'Vegetables & Fruits', tenant: 'CAMINO, CHENEE MARABUT', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-49', section: 'Vegetables & Fruits', tenant: 'CAMINO, CHENEE MARABUT', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-50', section: 'Vegetables & Fruits', tenant: 'MARABUT, MYLENE SORILA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-51', section: 'Vegetables & Fruits', tenant: 'MARABUT, MYLENE SORILA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-52', section: 'Vegetables & Fruits', tenant: 'MENAYA, ROY G', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-53', section: 'Vegetables & Fruits', tenant: 'MENAYA, ROY G', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-54', section: 'Vegetables & Fruits', tenant: 'NERJA, NERLY ANDO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-55', section: 'Vegetables & Fruits', tenant: 'NERJA, NERLY ANDO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-56', section: 'Vegetables & Fruits', tenant: 'CATAN, ROSARIO V.', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-57', section: 'Vegetables & Fruits', tenant: 'DANGCO, JAMEL ROSE PEREZ', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-58', section: 'Vegetables & Fruits', tenant: 'BOCO, ORFIEL RECOTE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-59', section: 'Vegetables & Fruits', tenant: 'SOLANO, WILSON S', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-60', section: 'Vegetables & Fruits', tenant: 'CORDERO, MARIA NILDA P.', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-61', section: 'Vegetables & Fruits', tenant: 'CORDERO, MARIA NILDA P.', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-62', section: 'Vegetables & Fruits', tenant: 'YEPES, OSCAR MENDIOLA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-63', section: 'Vegetables & Fruits', tenant: 'YEPES, OSCAR MENDIOLA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-64', section: 'Vegetables & Fruits', tenant: 'OLGUIRA, ANGEILA MAE L.', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-65', section: 'Vegetables & Fruits', tenant: 'OLGUIRA, CARMILO RUEL L.', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-66', section: 'Vegetables & Fruits', tenant: 'VILLEGAS, KAREN GRACE M', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-67', section: 'Vegetables & Fruits', tenant: 'LAMOSTE, REY CAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-68', section: 'Vegetables & Fruits', tenant: 'ALVAREZ, RUBY DEOANNE MACEDA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-69', section: 'Vegetables & Fruits', tenant: 'BETASOLO, GENEVIEVE TOLIBAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-70', section: 'Vegetables & Fruits', tenant: 'RECOSANA, ROMEL NOLASCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-71', section: 'Vegetables & Fruits', tenant: 'BOCO, IVY RICOTE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-72', section: 'Vegetables & Fruits', tenant: 'MARTOS, SYLDY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-73', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-74', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-75', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-76', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-77', section: 'Vegetables & Fruits', tenant: 'LANCANAN, ISABELITA BALMES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-78', section: 'Vegetables & Fruits', tenant: 'OPERIO, JENEFER CHUCA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-79', section: 'Vegetables & Fruits', tenant: 'OPERIO, JENEFER CHUCA', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-80', section: 'Vegetables & Fruits', tenant: 'CAIMOY, GENEVIEVE OPERIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-81', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO II CORNEJO', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-82', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO II CORNEJO', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-83', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO II CORNEJO', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-84', section: 'Vegetables & Fruits', tenant: 'PEPITO, ROSELYN RICARTE', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-85', section: 'Vegetables & Fruits', tenant: 'PEPITO, ROSELYN RICARTE', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-86', section: 'Vegetables & Fruits', tenant: 'MENDIOLA, ALDWIN G.', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-87', section: 'Vegetables & Fruits', tenant: 'MENDIOLA, ALDWIN G.', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-88', section: 'Vegetables & Fruits', tenant: 'DUQUILLA, IRENE TESTON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-89', section: 'Vegetables & Fruits', tenant: 'BASIHAN, JOSEPHINE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FS-01', section: 'Fish & Seafood', tenant: 'DUZON, DULCE CORAZON TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-02', section: 'Fish & Seafood', tenant: 'MORANTE, ELSA TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-03', section: 'Fish & Seafood', tenant: 'CREER, HERSHEY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-04', section: 'Fish & Seafood', tenant: 'CREER, HERSHEY', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-05', section: 'Fish & Seafood', tenant: 'ESPADA, EVELYN BALTAZAR', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-06', section: 'Fish & Seafood', tenant: 'CRISOLOGO, CRISPIN SINDAY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-07', section: 'Fish & Seafood', tenant: 'SABALZA, DARLYNA', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-08', section: 'Fish & Seafood', tenant: 'PALABIO, FRANCISCO GHRAY JR. ORDAME', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-09', section: 'Fish & Seafood', tenant: 'MONSAGA, MICHELLE LERIOS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-10', section: 'Fish & Seafood', tenant: 'ORDAME, RINE LERIOS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: 'Marked New on the sheet.' },
+    { id: 'FS-11', section: 'Fish & Seafood', tenant: 'ORDAME, RICARDO LERIOS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-12', section: 'Fish & Seafood', tenant: 'LAURENTE, KAREN CALIPAYAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-13', section: 'Fish & Seafood', tenant: 'COSTIMIANO, BENECIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-14', section: 'Fish & Seafood', tenant: 'LABRADO, RESHILE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-15', section: 'Fish & Seafood', tenant: 'GERILLA, JOHN DRANDREB', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-16', section: 'Fish & Seafood', tenant: 'GERILLA, JOHN DRANDREB', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-17', section: 'Fish & Seafood', tenant: 'ABANO, HAIDE TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-18', section: 'Fish & Seafood', tenant: 'ABANO, DENNIS ALMADEN', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-19', section: 'Fish & Seafood', tenant: 'PLABA, JOVITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-20', section: 'Fish & Seafood', tenant: 'BARCILLA, LAILA BADE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-21', section: 'Fish & Seafood', tenant: 'ABANAG, ALMA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-22', section: 'Fish & Seafood', tenant: 'ABANAG, DANILO ABADIANO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-23', section: 'Fish & Seafood', tenant: 'ORDAME, CHARINA MELO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-24', section: 'Fish & Seafood', tenant: 'AGUILLON, MARIA CLARISS CAJEPE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-25', section: 'Fish & Seafood', tenant: 'PLABA, PRINCESS CABE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-26', section: 'Fish & Seafood', tenant: 'AGUILLON, SANDRO LABRADO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-27', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-28', section: 'Fish & Seafood', tenant: 'CINCO, JANITH ABANO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-29', section: 'Fish & Seafood', tenant: 'CINCO, JANITH ABANO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-30', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-31', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-32', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: 'Row left entirely blank on the sheet — no tenant and no status recorded.' },
+    { id: 'FS-33', section: 'Fish & Seafood', tenant: 'GARCIA, REGINE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-34', section: 'Fish & Seafood', tenant: 'AVILA, DAISY BAHIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-35', section: 'Fish & Seafood', tenant: 'TAYANES, ARIEL VERUTIAO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-36', section: 'Fish & Seafood', tenant: 'TAYANES, JENNIFER CAINDOY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-37', section: 'Fish & Seafood', tenant: 'ABANDO, KIRBY ASDILLA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-38', section: 'Fish & Seafood', tenant: 'AGUILAR, JOEL FUENTES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-39', section: 'Fish & Seafood', tenant: 'AGUILAR, JOVE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-40', section: 'Fish & Seafood', tenant: 'IMPORTA, SONNY LUIS', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-41', section: 'Fish & Seafood', tenant: 'ALBAO, NICANORA LAGO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-42', section: 'Fish & Seafood', tenant: 'AGUILAR, GLENN FUENTES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-43', section: 'Fish & Seafood', tenant: 'AGUILAR, GLORIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-44', section: 'Fish & Seafood', tenant: 'ABAS, FELISA TIBE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-45', section: 'Fish & Seafood', tenant: 'ABANDO, JOEY B.', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-46', section: 'Fish & Seafood', tenant: 'CANDELA, MARILYN ORDAME', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-47', section: 'Fish & Seafood', tenant: 'FLORES, MELVIN', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-48', section: 'Fish & Seafood', tenant: 'MELO, RENALYN', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-49', section: 'Fish & Seafood', tenant: 'MELO, MELBA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-50', section: 'Fish & Seafood', tenant: 'PARDALES, ABELARDO NAPOLES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-51', section: 'Fish & Seafood', tenant: 'BAGUISA, MERLY ABANG', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-52', section: 'Fish & Seafood', tenant: 'BAGUISA, COLITA ABANAG', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-53', section: 'Fish & Seafood', tenant: 'TOMANDA, DANIEL OGARO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-54', section: 'Fish & Seafood', tenant: 'DUZON, MILO LOPEZ', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-55', section: 'Fish & Seafood', tenant: 'DE LA CRUZ, LYZA/CORAZON AVILA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-56', section: 'Fish & Seafood', tenant: 'DE LA CRUZ, LYZA/CORAZON AVILA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-57', section: 'Fish & Seafood', tenant: 'SALAÑO, JEFER JOHN ABON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-58', section: 'Fish & Seafood', tenant: 'UBALDO, NILDA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-59', section: 'Fish & Seafood', tenant: 'VERTUDES, ERIC', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-60', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-61', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-62', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-63', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'KK-01', section: 'Dry Goods', tenant: 'ARELLANO, JOEL ASTILLERO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 1.' },
+    { id: 'KK-02', section: 'Dry Goods', tenant: 'ARELLANO, JOEL ASTILLERO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 2.' },
+    { id: 'KK-03', section: 'Dry Goods', tenant: 'DUZON, DULCE CORAZON/MELODY TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 3.' },
+    { id: 'KK-04', section: 'Dry Goods', tenant: 'FLORES, CATHERINE VERONA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 4.' },
+    { id: 'KK-05', section: 'Dry Goods', tenant: 'FLORES, JACQUILINE NOVIO', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 5.' },
+    { id: 'KK-06', section: 'Dry Goods', tenant: 'FLORES, JACQUILINE NOVIO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 6.' },
+    { id: 'KK-07', section: 'Dry Goods', tenant: 'MEDRANO, MARTHY PALARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 7.' },
+    { id: 'KK-08', section: 'Dry Goods', tenant: 'AGUILLON, MARY JOY DELA CERNA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 8.' },
+    { id: 'KK-09', section: 'Dry Goods', tenant: 'ELARDO, ROSARIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 9.' },
+    { id: 'KK-10', section: 'Dry Goods', tenant: 'ESLABAN, JULIFE PERALTA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 10.' },
+    { id: 'KK-11', section: 'Dry Goods', tenant: 'REDONA, NARCISA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 11.' },
+    { id: 'KK-12', section: 'Dry Goods', tenant: 'PERALTA, ERVIN PAULO MAQUILAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 12.' },
+    { id: 'KK-13', section: 'Dry Goods', tenant: 'CESAR, RHODORA LAMATA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 13.' },
+    { id: 'KK-14', section: 'Dry Goods', tenant: 'LERIOS, NORIDAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 14.' },
+    { id: 'KK-15', section: 'Dry Goods', tenant: 'MODESTO, JADE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 15.' },
   ] satisfies Stall[],
-  violations: [
-    { id: 'VIO-001', tenant: 'Juan Santos', issue: 'Late document submission', status: 'Open' as ViolationStatus, points: 1, dateRecorded: '2023-10-12', dateResolved: '', notes: '' },
-    { id: 'VIO-002', tenant: 'Liza Reyes', issue: 'Improper stall cleanup', status: 'Resolved' as ViolationStatus, points: 2, dateRecorded: '2023-10-05', dateResolved: '2023-10-09', notes: 'Stall cleared and re-inspected.' },
-    { id: 'VIO-003', tenant: 'Deep Blue Catch', issue: 'Health code violation', status: 'Open' as ViolationStatus, points: 3, dateRecorded: '2023-10-15', dateResolved: '', notes: 'Chilled storage below required temperature.' },
-  ] satisfies Violation[],
+  violations: [] as Violation[],
 
-  utilities: [
-    { id: 'UTL-001', type: 'Electricity' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', meterNumber: 'EM-1101', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 1240, currentReading: 1512, consumption: 272, rate: 11.5, fixedCharge: 150, amount: 3278, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'Refrigeration units running 24/7.' },
-    { id: 'UTL-002', type: 'Water' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', meterNumber: 'WM-2301', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 84, currentReading: 103, consumption: 19, rate: 25, fixedCharge: 80, amount: 555, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-003', type: 'Electricity' as UtilityType, stallId: 'V-045', tenantId: 'TEN-005', tenantName: 'Green Farm Organics', section: 'Vegetables & Fruits', meterNumber: 'EM-1045', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 640, currentReading: 745, consumption: 105, rate: 11.5, fixedCharge: 150, amount: 1357.5, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-004', type: 'Water' as UtilityType, stallId: 'F-012', tenantId: 'TEN-006', tenantName: 'Deep Blue Catch', section: 'Fish & Seafood', meterNumber: 'WM-2012', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 210, currentReading: 268, consumption: 58, rate: 25, fixedCharge: 80, amount: 1530, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'High usage — check for leaking hose.' },
-    { id: 'UTL-005', type: 'Electricity' as UtilityType, stallId: 'D-203', tenantId: 'TEN-007', tenantName: 'Santos General Store', section: 'Dry Goods', meterNumber: 'EM-1203', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 320, currentReading: 388, consumption: 68, rate: 11.5, fixedCharge: 150, amount: 932, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-  ] satisfies UtilityBill[],
+  utilities: [] as UtilityBill[],
 
-  logs: [
-    { id: 'LOG-001', date: todayIso(), time: '08:15 AM', type: 'Inspection', details: 'Morning walkthrough for Section A completed.' },
-    { id: 'LOG-002', date: todayIso(), time: '09:42 AM', type: 'Incident', details: 'Vendor boundary dispute resolved between M-101 and M-102.' },
-    { id: 'LOG-003', date: todayIso(), time: '11:05 AM', type: 'Maintenance', details: 'Leaking pipe reported in Restroom C — plumber dispatched.' },
-    { id: 'LOG-004', date: todayIso(), time: '01:30 PM', type: 'Collection', details: 'Monthly rent collected from Section D tenants.' },
-    { id: 'LOG-005', date: todayIso(), time: '03:15 PM', type: 'Inspection', details: 'Fire safety equipment inspection for Zones B and C.' },
-  ] satisfies LogEntry[],
-  activities: [
-    { id: 'ACT-2', icon: 'person_add', iconColor: 'red', highlight: 'New Applicant', text: ' submitted requirements for Stall B-04.', time: '1 hour ago' },
-    { id: 'ACT-3', icon: 'warning', iconColor: 'amber', highlight: 'Maintenance', text: ' reported plumbing issue near Zone C.', time: '3 hours ago' },
-    { id: 'ACT-4', icon: 'check_circle', iconColor: 'green', highlight: 'Health inspection', text: ' passed for Meat Section.', time: 'Yesterday' },
-  ] satisfies ActivityItem[],
+  logs: [] as LogEntry[],
+  activities: [] as ActivityItem[],
 };
 
 type AppState = typeof initialState;
@@ -377,7 +812,7 @@ function normalizeApplicant(raw: Applicant): Applicant {
     id: raw.id,
     name: raw.name,
     phone: raw.phone,
-    stallType: raw.stallType,
+    stallId: typeof raw.stallId === 'string' ? raw.stallId : undefined,
     status: raw.status,
     dateApplied: raw.dateApplied,
     requirements,
@@ -450,6 +885,18 @@ function normalizeBill(raw: UtilityBill): UtilityBill {
   return { ...raw, meterNumber, period: periodOf(periodEnd) || period, periodStart, periodEnd };
 }
 
+/* A stall saved before the occupancy sheet was imported carries no permit or
+   note. A missing permit is 'Not Recorded' — the sheet's own answer for a
+   blank cell — never an assumption that the stall has no permit. */
+function normalizeStall(s: Stall): Stall {
+  const loose = s as Partial<Stall>;
+  return {
+    ...s,
+    permit: PERMIT_STATUSES.includes(loose.permit as PermitStatus) ? (loose.permit as PermitStatus) : 'Not Recorded',
+    note: typeof loose.note === 'string' ? loose.note : '',
+  };
+}
+
 function mergeState(input: unknown): AppState {
   const parsed = (input && typeof input === 'object' ? input : {}) as Partial<AppState>;
   const pick = <K extends keyof AppState>(key: K): AppState[K] =>
@@ -459,7 +906,7 @@ function mergeState(input: unknown): AppState {
     tenants: pick('tenants').map(normalizeTenant),
     logs: pick('logs').map((l) => ({ ...l, date: typeof l?.date === 'string' ? l.date : '' })),
     activities: pick('activities').slice(0, MAX_ACTIVITIES),
-    stalls: pick('stalls'),
+    stalls: pick('stalls').map(normalizeStall),
     violations: pick('violations').map((v) => ({
       ...v,
       points: Math.max(0, Number(v?.points) || 0),
@@ -499,9 +946,30 @@ function submittedCount(a: Applicant) {
   return REQUIREMENTS.filter((r) => a.requirements.includes(r)).length;
 }
 
+/* Ticking Business Permit on an application is the office recording that the
+   permit is in hand, so the stall it names stops reading No BP without anyone
+   having to go and edit the stall as well.
+
+   It only ever upgrades. Clearing the tick is treated as a correction to the
+   application, not as a permit being revoked on the stall — that is a
+   decision for the stall record, made deliberately. */
+function stallGainingPermit(stalls: Stall[], applicant: Applicant): Stall | undefined {
+  if (!applicant.stallId || !applicant.requirements.includes('Business Permit')) return undefined;
+  return stalls.find((st) => st.id === applicant.stallId && st.permit !== 'With BP');
+}
+
+function applyPermitFromApplicant(stalls: Stall[], applicant: Applicant): Stall[] {
+  if (!stallGainingPermit(stalls, applicant)) return stalls;
+  return stalls.map((st) => (st.id === applicant.stallId ? { ...st, permit: 'With BP' as PermitStatus } : st));
+}
+
 function deriveStatus(current: ApplicantStatus, requirements: string[]): ApplicantStatus {
   if (current === 'Approved' || current === 'Rejected') return current;
-  return REQUIREMENTS.every((r) => requirements.includes(r)) ? 'Pending Review' : 'Incomplete';
+  const settled = REQUIREMENTS.every((r) => requirements.includes(r)) ? 'Pending Review' : 'Incomplete';
+  /* Only a record already flagged No BP behaves this way, so a normal
+     application still runs Incomplete → Pending Review as it always did. */
+  if (current === 'No BP') return requirements.includes('Business Permit') ? settled : 'No BP';
+  return settled;
 }
 
 function toNumber(raw: string) {
@@ -660,6 +1128,9 @@ const STALL_STATUS_SERIES: GraphSeries[] = [
   { key: 'Occupied', label: 'Occupied', tone: 'occupied' },
   { key: 'Available', label: 'Available', tone: 'available' },
   { key: 'Maintenance', label: 'Maintenance', tone: 'maintenance' },
+  { key: 'Temporarily Closed', label: 'Temp. Closed', tone: 'closed' },
+  { key: 'Closed', label: 'Closed', tone: 'shut' },
+  { key: 'Abandoned', label: 'Abandoned', tone: 'abandoned' },
 ];
 
 const UTILITY_SERIES: GraphSeries[] = [
@@ -685,6 +1156,9 @@ function sectionOccupancyColumns(stalls: Stall[]): GraphColumn[] {
         Occupied: inSection.filter((s) => s.status === 'Occupied').length,
         Available: inSection.filter((s) => s.status === 'Available').length,
         Maintenance: inSection.filter((s) => s.status === 'Maintenance').length,
+        'Temporarily Closed': inSection.filter((s) => s.status === 'Temporarily Closed').length,
+        Closed: inSection.filter((s) => s.status === 'Closed').length,
+        Abandoned: inSection.filter((s) => s.status === 'Abandoned').length,
       },
     };
   });
@@ -926,6 +1400,7 @@ function App() {
      hidden on screen and is the only thing the print stylesheet lets through. */
   const [printRequest, setPrintRequest] = useState<PrintRequest | null>(null);
   const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string } | null>(null);
+  const [registerJob, setRegisterJob] = useState<RegisterJob | null>(null);
 
   const requestPrint = (bill: UtilityBill) => setPrintRequest({ bills: [bill], single: true });
 
@@ -963,6 +1438,31 @@ function App() {
     setToasts((prev) => [...prev, { id, message }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
+
+  /* Every list page prints through here, so one sheet layout serves them all. */
+  const printRegister = useCallback((title: string, subtitle: string, columns: string[], rows: string[][]) => {
+    if (rows.length === 0) {
+      showToast('Nothing to print — no records match the current filters');
+      return;
+    }
+    setRegisterJob({ title, subtitle, columns, rows, printedAt: manilaStamp() });
+  }, [showToast]);
+
+  /* Same two-step as a receipt: lay the sheet out, let the print stylesheet cut
+     everything else away, then drop it so a later plain Ctrl+P prints the
+     screen rather than silently reprinting this register. */
+  useEffect(() => {
+    if (!registerJob) return;
+    document.body.classList.add('printing');
+    const finish = () => setRegisterJob(null);
+    window.addEventListener('afterprint', finish);
+    const timer = window.setTimeout(() => window.print(), 80);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('afterprint', finish);
+      document.body.classList.remove('printing');
+    };
+  }, [registerJob]);
 
   useEffect(() => {
     try {
@@ -1029,7 +1529,20 @@ function App() {
     ({ id: nextId('LOG', existing.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type, details });
 
   const addStall = (stall: Stall) => { setState((p) => ({ ...p, stalls: [...p.stalls, stall], activities: withActivity(p.activities, 'storefront', 'blue', stall.id, ` added as new stall in ${stall.section}.`) })); showToast(`Stall ${stall.id} added successfully`); closeModal(); };
-  const addApplicant = (app: Applicant) => { setState((p) => ({ ...p, applicants: [...p.applicants, app], activities: withActivity(p.activities, 'person_add', 'green', app.name, ` applied for ${app.stallType} stall.`) })); showToast(`Applicant ${app.name} added successfully`); closeModal(); };
+  const addApplicant = (app: Applicant) => {
+    const permitted = stallGainingPermit(state.stalls, app);
+    setState((p) => ({
+      ...p,
+      applicants: [...p.applicants, app],
+      stalls: applyPermitFromApplicant(p.stalls, app),
+      activities: withActivity(p.activities, 'person_add', 'green', app.name, ` applied${app.stallId ? ` for stall ${app.stallId}` : ''}.`),
+      ...(permitted
+        ? { logs: [...p.logs, makeLog(p.logs, 'Announcement', `Stall ${permitted.id} recorded as With BP from application ${app.id} (${app.name}).`)] }
+        : {}),
+    }));
+    showToast(permitted ? `Applicant ${app.name} added — stall ${permitted.id} is now With BP` : `Applicant ${app.name} added successfully`);
+    closeModal();
+  };
   const addLog = (l: LogEntry) => { setState((p) => ({ ...p, logs: [...p.logs, l] })); showToast('Log entry added'); closeModal(); };
 
   const addTenant = (t: Tenant) => {
@@ -1110,17 +1623,23 @@ function App() {
     // save in the same session still logs against its true starting point.
     const previous = snapshot ?? state.applicants.find((a) => a.id === updated.id);
     const statusChanged = !!previous && previous.status !== updated.status;
+    const permitted = stallGainingPermit(state.stalls, updated);
     setState((p) => ({
       ...p,
       applicants: p.applicants.map((a) => (a.id === updated.id ? updated : a)),
+      stalls: applyPermitFromApplicant(p.stalls, updated),
       ...(log
         ? {
             activities: withActivity(p.activities, 'person_add', updated.status === 'Approved' ? 'green' : updated.status === 'Rejected' ? 'red' : 'amber', updated.name, statusChanged ? `'s application was marked ${updated.status}.` : `'s application details were updated.`),
-            logs: [...p.logs, makeLog(p.logs, 'Announcement', statusChanged && previous ? `Application ${updated.id} (${updated.name}) changed from ${previous.status} to ${updated.status}.` : `Application ${updated.id} (${updated.name}) was updated.`)],
+            logs: [
+              ...p.logs,
+              makeLog(p.logs, 'Announcement', statusChanged && previous ? `Application ${updated.id} (${updated.name}) changed from ${previous.status} to ${updated.status}.` : `Application ${updated.id} (${updated.name}) was updated.`),
+              ...(permitted ? [makeLog(p.logs, 'Announcement', `Stall ${permitted.id} recorded as With BP from application ${updated.id} (${updated.name}).`)] : []),
+            ],
           }
         : {}),
     }));
-    if (log) showToast(statusChanged ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
+    if (log) showToast(permitted ? `${updated.name} updated — stall ${permitted.id} is now With BP` : statusChanged ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
     if (promptAssign) setModal({ type: 'assign-stall', data: updated });
     else if (close) closeModal();
   };
@@ -1200,16 +1719,23 @@ function App() {
     const { log = true, close = true } = opts;
     setState((p) => {
       const occupant = p.tenants.find((t) => t.stallId === updated.id);
+      /* Released: the stall is being handed back, so the tenancy on it ends. */
+      const released = updated.status === 'Available' && !!occupant;
+      const stall = released ? { ...updated, tenant: 'Vacant' } : updated;
       return {
         ...p,
-        stalls: p.stalls.map((s) => (s.id === updated.id ? updated : s)),
-        tenants: occupant && occupant.section !== updated.section
-          ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section } : t))
-          : p.tenants,
+        stalls: p.stalls.map((s) => (s.id === updated.id ? stall : s)),
+        tenants: released
+          ? p.tenants.filter((t) => t.id !== occupant.id)
+          : occupant && occupant.section !== updated.section
+            ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section } : t))
+            : p.tenants,
         ...(log
           ? {
-              activities: withActivity(p.activities, 'storefront', 'blue', updated.id, ' was updated in stall management.'),
-              logs: [...p.logs, makeLog(p.logs, 'Maintenance', `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}.`)],
+              activities: withActivity(p.activities, 'storefront', released ? 'red' : 'blue', updated.id, released ? ` was released to Available; ${occupant.name} was removed from tenant records.` : ' was updated in stall management.'),
+              logs: [...p.logs, makeLog(p.logs, 'Maintenance', released
+                ? `Stall ${updated.id} was released to Available — tenant ${occupant.id} (${occupant.name}) was removed from tenant records.`
+                : `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}.`)],
             }
           : {}),
       };
@@ -1342,13 +1868,13 @@ function App() {
 
         <div className="page-content">
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onPrintBatch={(bs) => setPrintRequest({ bills: bs, single: false })} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
-          {active === 'stalls' && <StallManagementPage stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onEdit={(s) => setModal({ type: 'edit-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
-          {active === 'tenants' && <TenantRecordsPage tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onEdit={(t) => setModal({ type: 'edit-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
-          {active === 'applicants' && <ApplicantManagementPage applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
-          {active === 'violations' && <ViolationsPage violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
+          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'stalls' && <StallManagementPage onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
+          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
+          {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
+          {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
-          {active === 'logbook' && <LogbookPage logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
+          {active === 'logbook' && <LogbookPage onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
           {active === 'assistant' && <AssistantPage state={state} onNavigate={setActive} />}
           {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
@@ -1356,20 +1882,20 @@ function App() {
       </main>
 
       {modal.type === 'add-stall' && <Modal title="Add New Stall" onClose={closeModal}><AddStallForm existingIds={state.stalls.map(s => s.id)} onSubmit={addStall} onCancel={closeModal} /></Modal>}
-      {modal.type === 'add-applicant' && <Modal title="Add New Applicant" onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-applicant' && <Modal title="Add New Applicant" onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} stalls={state.stalls} tenants={state.tenants} applicants={state.applicants} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-tenant' && <Modal title="Add New Tenant" wide onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
       {modal.type === 'assign-stall' && <Modal title="Assign Stall & Create Tenant" wide onClose={closeModal}><AssignStallForm applicant={modal.data as Applicant} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onSkip={closeModal} /></Modal>}
       {modal.type === 'add-log' && <Modal title="Add Log Entry" onClose={closeModal}><AddLogForm existingIds={state.logs.map(l => l.id)} onSubmit={addLog} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-violation' && <Modal title="Record a Violation" wide onClose={closeModal}><ViolationForm existingIds={state.violations.map(v => v.id)} tenants={state.tenants} onSubmit={addViolation} onCancel={closeModal} /></Modal>}
-      {modal.type === 'view-violation' && <Modal title="Violation Details" wide onClose={closeModal}><ViolationDetailView violation={liveViolation(modal.data as Violation)} onEdit={() => setModal({ type: 'edit-violation', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-violation' && <Modal title="Violation Details" sheet onClose={closeModal}><ViolationDetailView violation={liveViolation(modal.data as Violation)} onEdit={() => setModal({ type: 'edit-violation', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-violation' && <Modal title="Edit Violation" wide onClose={closeModal}><ViolationEditForm violation={modal.data as Violation} current={liveViolation(modal.data as Violation)} tenants={state.tenants} onSave={updateViolation} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-stall' && <Modal title="Stall Details" wide onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-stall' && <Modal title="Stall Details" sheet onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-stall' && <Modal title="Edit Stall Details" wide onClose={closeModal}><StallEditForm stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onSave={updateStall} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-applicant' && <Modal title="Applicant Details" wide onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-applicant' && <Modal title="Applicant Details" sheet onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-tenant' && <Modal title="Tenant Details" wide onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-tenant' && <Modal title="Tenant Details" sheet onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-tenant' && <Modal title="Edit Tenant Details" wide onClose={closeModal}><TenantEditForm tenant={modal.data as Tenant} current={liveTenant(modal.data as Tenant)} tenants={state.tenants} stalls={state.stalls} onSave={updateTenant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" wide onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" sheet onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
       {modal.type === 'confirm-logout' && <ConfirmDialog icon="logout" iconStyle="warning" title="Log Out?" description="Are you sure you want to log out? All data is saved locally." confirmLabel="Log Out" onConfirm={() => { showToast('Logged out successfully'); closeModal(); }} onCancel={closeModal} />}
       {modal.type === 'confirm-reset' && <ConfirmDialog icon="delete_forever" iconStyle="danger" title="Reset All Data?" description="This will permanently reset all data to factory defaults. This cannot be undone." confirmLabel="Reset Data" confirmDanger onConfirm={resetData} onCancel={closeModal} />}
       {modal.type === 'confirm-delete-stall' && (() => {
@@ -1414,6 +1940,7 @@ function App() {
       })()}
       {printRequest && <PrintPreviewDialog request={printRequest} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
       {printJob && <div className="print-area"><ReceiptSheets receipts={printJob.receipts} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
+      {registerJob && <div className="print-area"><RegisterSheet job={registerJob} /></div>}
 
       {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
 
@@ -1474,8 +2001,8 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
       out.push({ key: `t${t.id}`, module: 'tenants', icon: 'groups', label: t.name, detail: `${t.id} \u00b7 Stall ${t.stallId} \u00b7 ${t.section}`, kind: 'Tenant' }));
     state.stalls.filter((st) => has(st.id, st.tenant, st.section)).forEach((st) =>
       out.push({ key: `s${st.id}`, module: 'stalls', icon: 'storefront', label: `Stall ${st.id}`, detail: `${st.section} \u00b7 ${st.tenant}`, kind: 'Stall' }));
-    state.applicants.filter((a) => has(a.name, a.id, a.phone, a.stallType)).forEach((a) =>
-      out.push({ key: `a${a.id}`, module: 'applicants', icon: 'assignment_ind', label: a.name, detail: `${a.id} \u00b7 ${a.stallType}`, kind: 'Applicant' }));
+    state.applicants.filter((a) => has(a.name, a.id, a.phone, a.stallId ?? '')).forEach((a) =>
+      out.push({ key: `a${a.id}`, module: 'applicants', icon: 'assignment_ind', label: a.name, detail: `${a.id}${a.stallId ? ` \u00b7 ${a.stallId}` : ''}`, kind: 'Applicant' }));
     state.utilities.filter((b) => has(b.id, b.stallId, b.tenantName)).forEach((b) =>
       out.push({ key: `b${b.id}`, module: 'utilities', icon: 'receipt_long', label: `${b.type} \u2014 Stall ${b.stallId}`, detail: `${b.id} \u00b7 ${billPeriodText(b)} \u00b7 ${money(b.amount)}`, kind: 'Bill' }));
     state.violations.filter((v) => has(v.id, v.tenant, v.issue)).forEach((v) =>
@@ -1521,7 +2048,7 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
           <div className="stat-value">{state.stalls.length}</div>
-          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available{maintenanceCount > 0 ? `, ${maintenanceCount} Maintenance` : ''}</div>
+          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available{countStatus(state.stalls, 'Temporarily Closed') > 0 ? `, ${countStatus(state.stalls, 'Temporarily Closed')} Temp. Closed` : ''}{countStatus(state.stalls, 'Closed') > 0 ? `, ${countStatus(state.stalls, 'Closed')} Closed` : ''}{countStatus(state.stalls, 'Abandoned') > 0 ? `, ${countStatus(state.stalls, 'Abandoned')} Abandoned` : ''}{maintenanceCount > 0 ? `, ${maintenanceCount} Maintenance` : ''}</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Occupancy</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
@@ -1619,7 +2146,14 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
    Stall Management Page
    ============================================================ */
 
-function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onEdit, onDelete }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onEdit: (s: Stall) => void; onDelete: (s: Stall) => void }) {
+function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onDelete, onPrintList }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onDelete: (s: Stall) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  /* Prints every row the filters are showing, not the page of them on screen. */
+  const printList = () => onPrintList(
+    sectionFilter || 'All Sections',
+    `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Stall ID', 'Section', 'Tenant', 'Status', 'Permit', 'Last Inspection', 'Note'],
+    filtered.map((s) => [s.id, s.section, s.tenant, s.status, s.permit === 'Not Recorded' ? '—' : s.permit, s.lastInspection, s.note || '']),
+  );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -1646,6 +2180,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div><h2 className="page-title">Stall Management</h2><p className="page-subtitle">Monitor occupancy, status, and tenant details.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Stall</button>
         </div>
       </div>
@@ -1653,7 +2188,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
           <div className="stat-value">{stalls.length}</div>
-          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available</div>
+          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available{countStatus(stalls, 'Closed') > 0 ? `, ${countStatus(stalls, 'Closed')} Closed` : ''}{countStatus(stalls, 'Abandoned') > 0 ? `, ${countStatus(stalls, 'Abandoned')} Abandoned` : ''}</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Occupied</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
@@ -1670,18 +2205,23 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
           <div className="stat-value danger">{maintenanceCount}</div>
           <div className="stat-caption">{maintenanceCount === 0 ? 'None out of service' : `${maintenanceCount} out of service`}</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Temporarily Closed</span><span className="material-symbols-outlined stat-icon">pause_circle</span></div>
+          <div className="stat-value">{countStatus(stalls, 'Temporarily Closed')}</div>
+          <div className="stat-caption">Held by a tenant, not trading</div>
+        </div>
       </div>
       <div className="panel">
         <div className="filter-row">
           <select className="filter-select" value={sectionFilter} onChange={(e) => { setSectionFilter(e.target.value); setPage(1); }}><option value="">All Sections</option>{SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Occupied">Occupied</option><option value="Available">Available</option><option value="Maintenance">Maintenance</option></select>
+          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option>{STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} stalls</span>
         </div>
         <div className="table-wrap">
-          <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Last Inspection</th><th>Action</th></tr></thead>
+          <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Permit</th><th>Last Inspection</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit stall" aria-label="Edit stall" onClick={() => onEdit(s)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
-              {paged.items.length === 0 && <tr><td colSpan={6}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
+              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td><PermitBadge permit={s.permit} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
+              {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -1695,7 +2235,13 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
    Applicant Management Page
    ============================================================ */
 
-function ApplicantManagementPage({ applicants, pendingApplicants, incompleteApplicants, approvedApplicants, search, onAdd, onView, onEdit, onDelete }: { applicants: Applicant[]; pendingApplicants: number; incompleteApplicants: number; approvedApplicants: number; search: string; onAdd: () => void; onView: (a: Applicant) => void; onEdit: (a: Applicant) => void; onDelete: (a: Applicant) => void }) {
+function ApplicantManagementPage({ applicants, pendingApplicants, incompleteApplicants, approvedApplicants, search, onAdd, onView, onEdit, onDelete, onPrintList }: { applicants: Applicant[]; pendingApplicants: number; incompleteApplicants: number; approvedApplicants: number; search: string; onAdd: () => void; onView: (a: Applicant) => void; onEdit: (a: Applicant) => void; onDelete: (a: Applicant) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  const printList = () => onPrintList(
+    'Applicants',
+    `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Applicant ID', 'Name', 'Stall', 'Contact', 'Status', 'Date Applied', 'Requirements'],
+    filtered.map((a) => [a.id, a.name, a.stallId || '—', formatPhone(a.phone) || '—', a.status, a.dateApplied, `${a.requirements.length} of ${REQUIREMENTS.length}`]),
+  );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
 
@@ -1703,7 +2249,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
 
   const filtered = useMemo(() => applicants.filter((a) => {
     if (statusFilter && a.status !== statusFilter) return false;
-    if (search) { const q = search.toLowerCase(); if (!a.name.toLowerCase().includes(q) && !a.phone.includes(q) && !a.stallType.toLowerCase().includes(q)) return false; }
+    if (search) { const q = search.toLowerCase(); if (!a.name.toLowerCase().includes(q) && !a.phone.includes(q) && !(a.stallId ?? '').toLowerCase().includes(q)) return false; }
     return true;
   }), [applicants, statusFilter, search]);
 
@@ -1715,6 +2261,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
         <div><h2 className="page-title">Applicant Management</h2><p className="page-subtitle">Review stall applications and verify requirement submissions.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => setStatusFilter('')}><span className="material-symbols-outlined">tune</span>Clear Filter</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Applicant</button>
         </div>
       </div>
@@ -1732,7 +2279,12 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Incomplete Docs</span></div>
           <div className="stat-value">{incompleteApplicants}</div>
-          <div className="stat-caption">{incompleteApplicants === 0 ? 'All requirements filed' : 'Awaiting requirements'}</div>
+          <div className="stat-caption">{incompleteApplicants === 0 ? 'None at this stage' : 'Awaiting requirements'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">No Business Permit</span></div>
+          <div className="stat-value danger">{applicants.filter((a) => a.status === 'No BP').length}</div>
+          <div className="stat-caption">Trading without a permit on file</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Approved (This Mo.)</span></div>
@@ -1742,19 +2294,18 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
       </div>
       <div className="panel">
         <div className="filter-row">
-          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Pending Review">Pending Review</option><option value="Incomplete">Incomplete</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select>
+          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Pending Review">Pending Review</option><option value="Incomplete">Incomplete</option><option value="No BP">No BP</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total}</span>
         </div>
         <div className="table-wrap">
-          <table className="data-table"><thead><tr><th>Applicant Name</th><th>Date Applied</th><th>Stall Type</th><th>Requirements</th><th>Status</th><th>Actions</th></tr></thead>
+          <table className="data-table"><thead><tr><th>Applicant Name</th><th>Stall</th><th>Date Applied</th><th>Requirements</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {paged.items.map((a, i) => {
                 const done = submittedCount(a);
                 return (
                   <tr key={a.id}>
-                    <td><div className="applicant-cell"><div className={`avatar-initials ${getAvatarColor(i)}`}>{getInitials(a.name)}</div><div className="applicant-info"><div className="name">{a.name}</div><div className="phone">{formatPhone(a.phone)}</div></div></div></td>
+                    <td><div className="applicant-cell"><div className={`avatar-initials ${getAvatarColor(i)}`}>{getInitials(a.name)}</div><div className="applicant-info"><div className="name">{a.name}</div><div className="phone">{formatPhone(a.phone)}</div></div></div></td><td className="no-wrap">{a.stallId || '—'}</td>
                     <td>{a.dateApplied}</td>
-                    <td>{a.stallType}</td>
                     <td>
                       <div className="req-marks" title={REQUIREMENTS.map((r) => `${a.requirements.includes(r) ? '✓' : '✗'} ${r}`).join('\n')}>
                         {REQUIREMENTS.map((r) => (
@@ -1794,7 +2345,13 @@ function EarningsFigure({ label, value, basis, tone }: { label: string; value: s
    Tenant Records Page
    ============================================================ */
 
-function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, onSetRentPaid }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onEdit: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void }) {
+function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  const printList = () => onPrintList(
+    sectionFilter || 'All Sections',
+    `Tenant register · rent for ${formatPeriodShort(period)}${search ? ` · matching “${search}”` : ''}`,
+    ['Tenant ID', 'Name', 'Stall ID', 'Section', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`, 'Status'],
+    filtered.map((t) => [t.id, t.name, t.stallId, t.section, money(t.rent), rentStatusOf(t, period), t.status]),
+  );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [rentFilter, setRentFilter] = useState('');
@@ -1832,6 +2389,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
         <div><h2 className="page-title">Tenant Records</h2><p className="page-subtitle">View and manage all tenant information and lease details.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); setRentFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Tenant</button>
         </div>
       </div>
@@ -1886,11 +2444,11 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
                   ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'} — tick to undo`
                   : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''} — tick once collected`;
                 return (
-                  <tr key={t.id} className={rentStatus === 'Overdue' ? 'row-overdue' : ''}>
+                  <tr key={t.id}>
                     <td><strong>{t.id}</strong></td>
-                    <td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{formatPhone(t.phone) || '—'}</div></div></td>
-                    <td>{t.stallId}</td>
-                    <td>{t.section}</td>
+                    <td className="no-wrap">{t.name}</td>
+                    <td className="no-wrap">{t.stallId}</td>
+                    <td className="no-wrap">{t.section}</td>
                     <td>{money(t.rent)}</td>
                     <td>
                       <label className="rent-toggle" title={rentTitle}>
@@ -1899,7 +2457,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
                       </label>
                     </td>
                     <td><TenantStatusBadge status={t.status} /></td>
-                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit tenant" aria-label="Edit tenant" onClick={() => onEdit(t)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
+                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
                   </tr>
                 );
               })}
@@ -1917,14 +2475,21 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
    Utility Billing Page — electricity & water calculator + records
    ============================================================ */
 
-function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport }: {
+function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onRecordMeter, onExport, onPrintList }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; search: string;
   onAdd: (b: UtilityBill) => void; onView: (b: UtilityBill) => void;
   onToggleStatus: (id: string) => void; onDelete: (b: UtilityBill) => void;
-  onPrint: (b: UtilityBill) => void; onPrintBatch: (bills: UtilityBill[]) => void;
+  onPrint: (b: UtilityBill) => void;
   onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
   onExport: () => void;
+  onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void;
 }) {
+  const printList = () => onPrintList(
+    'Utility Billing',
+    `${typeFilter || 'Electricity and water'} · ${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Bill ID', 'Type', 'Stall', 'Tenant', 'Meter No.', 'Period', 'Consumption', 'Amount', 'Status', 'Due'],
+    filtered.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.meterNumber || '—', billPeriodText(b), String(b.consumption), money(b.amount), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dueDate)]),
+  );
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -1966,11 +2531,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         <div><h2 className="page-title">Utility Billing</h2><p className="page-subtitle">Compute electricity and water charges and post them to a stall or tenant record.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setTypeFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
-          {/* Prints whatever the filters currently show, four bills to a sheet —
-              a section's or a month's receipts in one run. */}
-          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No bills match the current filters' : undefined} onClick={() => onPrintBatch(filtered)}>
-            <span className="material-symbols-outlined">print</span>Print {filtered.length} Receipt{filtered.length === 1 ? '' : 's'}
-          </button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
         </div>
       </div>
@@ -2369,11 +2930,18 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
    Violations Page — the register of citations issued to tenants
    ============================================================ */
 
-function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, onExport }: {
+function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, onExport, onPrintList }: {
   violations: Violation[]; search: string;
   onAdd: () => void; onView: (v: Violation) => void; onEdit: (v: Violation) => void;
   onDelete: (v: Violation) => void; onExport: () => void;
+  onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void;
 }) {
+  const printList = () => onPrintList(
+    'Violations',
+    `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Violation ID', 'Tenant', 'Issue', 'Points', 'Status', 'Recorded', 'Resolved', 'Notes'],
+    ordered.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes || '']),
+  );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
 
@@ -2417,6 +2985,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
         <div className="page-actions">
           <button className="btn-outline" onClick={() => setStatusFilter('')}><span className="material-symbols-outlined">tune</span>Clear Filter</button>
           <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
+          <button className="btn-outline" disabled={ordered.length === 0} title={ordered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>Record Violation</button>
         </div>
       </div>
@@ -2757,7 +3326,7 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
   const monthlyRent = useMemo(() => state.tenants.reduce((s, t) => s + t.rent, 0), [state.tenants]);
 
   const applicantRows = useMemo(() => {
-    const statuses: ApplicantStatus[] = ['Pending Review', 'Incomplete', 'Approved', 'Rejected'];
+    const statuses: ApplicantStatus[] = ['Pending Review', 'Incomplete', 'No BP', 'Approved', 'Rejected'];
     return statuses.map((status) => ({ status, count: state.applicants.filter((a) => a.status === status).length }));
   }, [state.applicants]);
   const pendingApplicants = applicantRows[0].count;
@@ -2832,6 +3401,9 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
     { label: 'Occupied', count: occupiedCount, tone: 'occupied' },
     { label: 'Available', count: availableCount, tone: 'available' },
     { label: 'Maintenance', count: maintenanceCount, tone: 'maintenance' },
+    { label: 'Temporarily Closed', count: countStatus(state.stalls, 'Temporarily Closed'), tone: 'closed' },
+    { label: 'Closed', count: countStatus(state.stalls, 'Closed'), tone: 'shut' },
+    { label: 'Abandoned', count: countStatus(state.stalls, 'Abandoned'), tone: 'abandoned' },
   ];
 
   const reference = `PMRMS-AR-${isoDate(generatedAt).replace(/-/g, '')}`;
@@ -3036,7 +3608,13 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
    Logbook Page
    ============================================================ */
 
-function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEntry[]; search: string; onAdd: () => void; onDelete: (l: LogEntry) => void; onExport: () => void }) {
+function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList }: { logs: LogEntry[]; search: string; onAdd: () => void; onDelete: (l: LogEntry) => void; onExport: () => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  const printList = () => onPrintList(
+    'Logbook',
+    `${typeFilter || 'All entry types'}${dayFilter ? ` · ${formatIsoDate(dayFilter)}` : ''}${search ? ` · matching “${search}”` : ''}`,
+    ['Date', 'Time', 'Type', 'Details'],
+    ordered.map((l) => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]),
+  );
   const [typeFilter, setTypeFilter] = useState('');
   const [dayFilter, setDayFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -3066,7 +3644,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEnt
     <>
       <div className="page-header">
         <div><h2 className="page-title">Logbook</h2><p className="page-subtitle">Operational history and daily activity logs.</p></div>
-        <div className="page-actions"><button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Log</button><button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Entry</button></div>
+        <div className="page-actions"><button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Log</button><button className="btn-outline" disabled={ordered.length === 0} title={ordered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button><button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Entry</button></div>
       </div>
       <div className="panel">
         <div className="panel-header">
@@ -3405,8 +3983,8 @@ function keepText(draft: string, current: string) {
 /* `stacked` is for a dialog opened from inside another one: it sits on a higher
    layer and swallows Escape before the form underneath sees it, so closing the
    sub-dialog never dismisses the record being edited. */
-function Modal({ title, subtitle, onClose, wide, narrow, stacked, children }: {
-  title: string; subtitle?: string; onClose: () => void; wide?: boolean; narrow?: boolean; stacked?: boolean; children: ReactNode;
+function Modal({ title, subtitle, onClose, wide, narrow, stacked, sheet, children }: {
+  title: string; subtitle?: string; onClose: () => void; wide?: boolean; narrow?: boolean; stacked?: boolean; sheet?: boolean; children: ReactNode;
 }) {
   useEffect(() => {
     if (!stacked) return;
@@ -3424,7 +4002,7 @@ function Modal({ title, subtitle, onClose, wide, narrow, stacked, children }: {
 
   return (
     <div className={`modal-overlay${stacked ? ' stacked' : ''}`} onClick={onClose}>
-      <div className={`modal-card${wide ? ' wide' : ''}${narrow ? ' narrow' : ''}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-card${wide ? ' wide' : ''}${sheet ? ' sheet' : ''}${narrow ? ' narrow' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-heading">
             <h3>{title}</h3>
@@ -3467,11 +4045,12 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
   const [section, setSection] = useState(SECTIONS[0]);
   const [tenant, setTenant] = useState('');
   const [status, setStatus] = useState<StallStatus>('Available');
+  const [permit, setPermit] = useState<PermitStatus>('Not Recorded');
   const [error, setError] = useState('');
 
   const handleSubmit = () => {
-    if (status === 'Occupied' && !tenant.trim()) {
-      setError('Enter the tenant occupying this stall, or set the status to Available.');
+    if (HELD_STATUSES.includes(status) && !tenant.trim()) {
+      setError('Enter the tenant holding this stall, or set the status to Available.');
       return;
     }
     const typedId = id.trim();
@@ -3480,7 +4059,7 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
       return;
     }
     const stallId = typedId || nextId('STL', existingIds);
-    onSubmit({ id: stallId, section, tenant: status === 'Available' ? 'Vacant' : (tenant.trim() || 'Vacant'), status, lastInspection: status === 'Available' ? '-' : todayStr() });
+    onSubmit({ id: stallId, section, tenant: status === 'Available' ? 'Vacant' : (tenant.trim() || 'Vacant'), status, permit, lastInspection: status === 'Available' ? '-' : todayStr(), note: '' });
   };
 
   return (
@@ -3491,7 +4070,11 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
       </div>
       <div className="form-row">
         <div className="form-group"><label className="form-label">Tenant{status === 'Occupied' ? ' *' : ''}</label><input className="form-input" placeholder={status === 'Occupied' ? 'Required for an occupied stall' : 'Leave blank if vacant'} value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} /></div>
-        <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => { setStatus(e.target.value as StallStatus); setError(''); }}><option value="Available">Available</option><option value="Occupied">Occupied</option><option value="Maintenance">Maintenance</option></select></div>
+        <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => { setStatus(e.target.value as StallStatus); setError(''); }}>{STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label className="form-label">Business Permit</label><select className="form-select" value={permit} onChange={(e) => setPermit(e.target.value as PermitStatus)}>{PERMIT_STATUSES.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+        <div className="form-group" />
       </div>
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
       <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}><button className="btn-outline" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={handleSubmit}>Add Stall</button></div>
@@ -3537,12 +4120,28 @@ function RequirementsChecklist({ selected, onChange }: { selected: string[]; onC
   );
 }
 
-function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]; onSubmit: (a: Applicant) => void; onCancel: () => void }) {
+function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, onCancel }: { existingIds: string[]; stalls: Stall[]; tenants: Tenant[]; applicants: Applicant[]; onSubmit: (a: Applicant) => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [stallType, setStallType] = useState(STALL_TYPES[0]);
+  const [section, setSection] = useState(SECTIONS[0]);
+  const [stallId, setStallId] = useState('');
   const [requirements, setRequirements] = useState<string[]>([]);
   const [error, setError] = useState('');
+
+  /* Offerable means the office marked it Available and no tenant record holds
+     it. An existing application naming the stall does not withhold it — the
+     applicant list is a queue of requests, not a set of reservations. */
+  const takenByTenant = useMemo(() => new Set(tenants.map((t) => t.stallId)), [tenants]);
+  const openStalls = useMemo(
+    () => stalls.filter((st) => st.section === section && st.status === 'Available' && !takenByTenant.has(st.id)),
+    [stalls, section, takenByTenant],
+  );
+  /* Who already asked for each stall, so the clerk is told rather than blocked. */
+  const requestedBy = useMemo(() => {
+    const map = new Map<string, string>();
+    applicants.forEach((a) => { if (a.stallId && !map.has(a.stallId)) map.set(a.stallId, a.name); });
+    return map;
+  }, [applicants]);
 
   const handleSubmit = () => {
     if (!name.trim()) { setError('Full name is required.'); return; }
@@ -3552,7 +4151,7 @@ function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: st
       id: nextId('APP', existingIds),
       name: name.trim(),
       phone: phone.trim() || '—',
-      stallType,
+      stallId: stallId || undefined,
       status: deriveStatus('Incomplete', requirements),
       dateApplied: todayStr(),
       requirements,
@@ -3570,7 +4169,21 @@ function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: st
         </div>
       </div>
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Stall Type</label><select className="form-select" value={stallType} onChange={(e) => setStallType(e.target.value)}>{STALL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+        <div className="form-group">
+          <label className="form-label">Section</label>
+          <select className="form-select" value={section} onChange={(e) => { setSection(e.target.value); setStallId(''); setError(''); }}>
+            {SECTIONS.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
+          </select>
+          <span className="form-hint">Choosing a section lists the stalls still free in it.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Preferred Stall</label>
+          <select className="form-select" value={stallId} disabled={openStalls.length === 0} onChange={(e) => { setStallId(e.target.value); setError(''); }}>
+            <option value="">{openStalls.length === 0 ? '— None free in this section' : '— Decide later'}</option>
+            {openStalls.map((st) => <option key={st.id} value={st.id}>{st.id}{requestedBy.has(st.id) ? ` · also asked for by ${requestedBy.get(st.id)}` : ''}</option>)}
+          </select>
+          <span className="form-hint">{openStalls.length} stall{openStalls.length === 1 ? '' : 's'} free in {section}.</span>
+        </div>
       </div>
       <RequirementsChecklist selected={requirements} onChange={setRequirements} />
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
@@ -3586,10 +4199,16 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
     [stalls, takenStalls],
   );
 
-  const [stallId, setStallId] = useState(vacantStalls[0]?.id ?? '');
+  /* Open on the stall the applicant asked for, as long as it is still free. */
+  const requested = useMemo(
+    () => (applicant.stallId ? vacantStalls.find((v) => v.id === applicant.stallId) : undefined),
+    [applicant.stallId, vacantStalls],
+  );
+  const opening = requested ?? vacantStalls[0];
+  const [stallId, setStallId] = useState(opening?.id ?? '');
   const [name, setName] = useState(applicant.name);
   const [phone, setPhone] = useState(() => digitsOnly(applicant.phone));
-  const [section, setSection] = useState(() => vacantStalls[0]?.section ?? SECTIONS[0]);
+  const [section, setSection] = useState(() => opening?.section ?? SECTIONS[0]);
   const [rent, setRent] = useState(3500);
   const [status, setStatus] = useState('Active');
   const [error, setError] = useState('');
@@ -3666,8 +4285,6 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
             <div className="form-group"><label className="form-label">Monthly Rent (₱)</label><input className="form-input" type="number" min="0" step="500" value={rent} onChange={(e) => setRent(toAmount(e.target.value))} /></div>
             <div className="form-group"><label className="form-label">Lease Status</label><select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select></div>
           </div>
-
-          <div className="form-group"><label className="form-label">Applied For</label><input className="form-input" value={applicant.stallType} disabled /></div>
 
           {duplicate && <span className="form-hint error">A tenant named "{duplicate.name}" ({duplicate.id}) already exists — check this is not a duplicate.</span>}
         </>
@@ -3815,6 +4432,8 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose }: { stall: S
           <RecordRow label="Market Section" value={stall.section} />
           <RecordRow label="Occupancy Status" node={<StatusBadge status={stall.status} />} />
           <RecordRow label="Last Inspection" value={stall.lastInspection === '-' ? '' : stall.lastInspection} />
+          <RecordRow label="Business Permit" node={<PermitBadge permit={stall.permit} />} />
+          <RecordRow label="Sheet Note" value={stall.note} />
         </div>
       </RecordSection>
 
@@ -3858,30 +4477,38 @@ function StallEditForm({ stall, occupant, bills, onSave, onClose }: { stall: Sta
   const [section, setSection] = useState('');
   const [tenant, setTenant] = useState('');
   const [status, setStatus] = useState<'' | StallStatus>('');
+  const [permit, setPermit] = useState<'' | PermitStatus>('');
   const [lastInspection, setLastInspection] = useState('');
 
   const locked = !!occupant;
   const recordedTenant = stall.tenant === 'Vacant' ? '' : stall.tenant;
-  const dirty = !!(section || tenant.trim() || status || lastInspection.trim());
-  const effectiveStatus: StallStatus = locked ? 'Occupied' : (status || stall.status);
+  const dirty = !!(section || tenant.trim() || status || permit || lastInspection.trim());
+  /* A tenant record holds the stall, but it does not mean the stall is trading —
+     a temporarily closed or abandoned one keeps that state through an edit. */
+  const heldFallback: StallStatus = HELD_STATUSES.includes(stall.status) ? stall.status : 'Occupied';
+  const effectiveStatus: StallStatus = locked ? (status || heldFallback) : (status || stall.status);
+  /* Choosing Available on a held stall ends the tenancy — flagged in the form
+     before it is saved, because the tenant record does not come back. */
+  const releasing = locked && effectiveStatus === 'Available';
 
   const merged = (): Stall => {
-    const nextTenant = locked
-      ? occupant.name
-      : effectiveStatus === 'Available' ? 'Vacant' : (keepText(tenant, recordedTenant) || 'Vacant');
+    const nextTenant = effectiveStatus === 'Available'
+      ? 'Vacant'
+      : locked ? occupant.name : (keepText(tenant, recordedTenant) || 'Vacant');
     return {
       ...stall,
       section: section || stall.section,
       tenant: nextTenant,
       status: effectiveStatus,
+      permit: permit || stall.permit,
       lastInspection: keepText(lastInspection, stall.lastInspection) || '-',
     };
   };
 
   const commit = () => {
     const next = merged();
-    if (!locked && next.status === 'Occupied' && next.tenant === 'Vacant') {
-      return 'Enter the tenant occupying this stall, or set the status back to Available.';
+    if (!locked && HELD_STATUSES.includes(next.status) && next.tenant === 'Vacant') {
+      return 'Enter the tenant holding this stall, or set the status back to Available.';
     }
     onSave(next, {}, stall);
     return '';
@@ -3911,11 +4538,23 @@ function StallEditForm({ stall, occupant, bills, onSave, onClose }: { stall: Sta
         </div>
         <div className="form-group">
           <label className="form-label">Status</label>
-          <select className="form-select" value={locked ? 'Occupied' : status} disabled={locked} onChange={(e) => edit(setStatus)(e.target.value as StallStatus)}>
-            {!locked && <option value="">— Keep {stall.status}</option>}
-            <option value="Available">Available</option><option value="Occupied">Occupied</option><option value="Maintenance">Maintenance</option>
+          <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value as StallStatus)}>
+            <option value="">— Keep {stall.status}</option>
+            {STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {locked && <span className="form-hint">Occupied while a tenant record is assigned to it.</span>}
+          {locked && !releasing && <span className="form-hint">Held by tenant record {occupant.id}. Setting this to Available hands the stall back and removes that record.</span>}
+          {releasing && (
+            <span className="form-hint error">
+              Saving will remove tenant {occupant.id} ({occupant.name}) from tenant records and leave {stall.id} vacant. Their utility bills are kept as billing history. This cannot be undone.
+            </span>
+          )}
+        </div>
+        <div className="form-group">
+          <label className="form-label">Business Permit</label>
+          <select className="form-select" value={permit} onChange={(e) => edit(setPermit)(e.target.value as PermitStatus)}>
+            <option value="">— Keep {stall.permit}</option>
+            {PERMIT_STATUSES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
         </div>
       </div>
       <div className="form-group">
@@ -3964,7 +4603,6 @@ function ApplicantDetailView({ applicant, onReview, onClose }: { applicant: Appl
         <div className="record-grid">
           <RecordRow label="Full Name" value={applicant.name} />
           <RecordRow label="Contact Number" value={formatPhone(applicant.phone)} />
-          <RecordRow label="Stall Type Applied For" value={applicant.stallType} />
           <RecordRow label="Date Applied" value={applicant.dateApplied} />
         </div>
       </RecordSection>
@@ -3998,7 +4636,6 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
   // Blank draft — anything left blank keeps what the application already has.
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [stallType, setStallType] = useState('');
   const [status, setStatus] = useState<'' | ApplicantStatus>('');
 
   /* The checklist is ticked in the draft like every other field, so a document
@@ -4007,7 +4644,7 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
   const complete = REQUIREMENTS.every((r) => requirements.includes(r));
   const missing = REQUIREMENTS.length - requirements.length;
   const reqsChanged = REQUIREMENTS.some((r) => requirements.includes(r) !== current.requirements.includes(r));
-  const dirty = !!(name.trim() || phone.trim() || stallType || status || reqsChanged);
+  const dirty = !!(name.trim() || phone.trim() || status || reqsChanged);
 
   const merged = (overrideStatus?: ApplicantStatus): Applicant => {
     const base = status || current.status;
@@ -4015,7 +4652,6 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
       ...current,
       name: keepText(name, current.name),
       phone: keepText(phone, current.phone) || '—',
-      stallType: stallType || current.stallType,
       requirements,
       /* A tick that completes or breaks the checklist moves the standing with
          it, unless the officer chose a status explicitly. */
@@ -4054,18 +4690,12 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
       </div>
       <div className="form-row">
         <div className="form-group">
-          <label className="form-label">Stall Type</label>
-          <select className="form-select" value={stallType} onChange={(e) => edit(setStallType)(e.target.value)}>
-            <option value="">— Keep {current.stallType}</option>
-            {STALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div className="form-group">
           <label className="form-label">Status</label>
           <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value as ApplicantStatus)}>
             <option value="">— Keep {current.status}</option>
             <option value="Pending Review">Pending Review</option>
             <option value="Incomplete">Incomplete</option>
+            <option value="No BP">No BP</option>
             <option value="Approved">Approved</option>
             <option value="Rejected">Rejected</option>
           </select>
@@ -4714,13 +5344,60 @@ function PaginationBar({ info, page, totalPages, onPage, compact }: { info: stri
   );
 }
 
+/* The printed register. Deliberately plain — a column of running numbers, the
+   same headings as the screen, and a footer that says how many records were on
+   the sheet so a printout can be checked against the system later. */
+function RegisterSheet({ job }: { job: RegisterJob }) {
+  return (
+    <div className="register-sheet">
+      <div className="register-head">
+        <img className="register-seal" src="./logo.jpg" alt="" />
+        <div className="register-headings">
+          <div className="register-title">2026 Status of Market Occupancy</div>
+          <div className="register-org">Tanauan, Leyte · Market Office</div>
+        </div>
+        <div className="register-meta">
+          <div className="register-scope">{job.title}</div>
+          <div>{job.subtitle}</div>
+          <div>Printed {job.printedAt}</div>
+        </div>
+      </div>
+      <table className="register-table">
+        <thead>
+          <tr><th className="num">No.</th>{job.columns.map((c) => <th key={c}>{c}</th>)}</tr>
+        </thead>
+        <tbody>
+          {job.rows.map((row, i) => (
+            <tr key={i}><td className="num">{i + 1}</td>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="register-foot">
+        <span>{job.rows.length} record{job.rows.length === 1 ? '' : 's'}</span>
+        <span>Checked by ______________________</span>
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     'Occupied': 'badge badge-occupied', 'Available': 'badge badge-available', 'Maintenance': 'badge badge-maintenance',
+    'Temporarily Closed': 'badge badge-closed', 'Closed': 'badge badge-shut', 'Abandoned': 'badge badge-abandoned',
     'Pending Review': 'badge badge-pending', 'Incomplete': 'badge badge-incomplete', 'Approved': 'badge badge-approved', 'Rejected': 'badge badge-rejected',
+    'No BP': 'badge badge-nobp',
     'Active': 'badge badge-active', 'Expiring Soon': 'badge badge-expiring', 'Open': 'badge badge-open', 'Resolved': 'badge badge-resolved',
   };
   return <span className={map[status] || 'badge'}>{status}</span>;
+}
+
+/* The business-permit column of the occupancy sheet. A blank cell there is
+   'Not Recorded' — which is not the same as knowing the stall has no permit. */
+function PermitBadge({ permit }: { permit: PermitStatus }) {
+  const map: Record<PermitStatus, string> = {
+    'With BP': 'badge badge-active', 'No BP': 'badge badge-open', 'Not Recorded': 'badge',
+  };
+  return <span className={map[permit]}>{permit === 'Not Recorded' ? '—' : permit}</span>;
 }
 
 function BillStatusBadge({ bill }: { bill: UtilityBill }) {
@@ -5382,12 +6059,18 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
       const occupied = state.stalls.filter((s) => s.status === 'Occupied').length;
       const available = state.stalls.filter((s) => s.status === 'Available').length;
       const maintenance = state.stalls.filter((s) => s.status === 'Maintenance').length;
+      const closed = state.stalls.filter((s) => s.status === 'Temporarily Closed').length;
+      const shut = state.stalls.filter((s) => s.status === 'Closed').length;
+      const abandoned = state.stalls.filter((s) => s.status === 'Abandoned').length;
       return {
         intent: 'stalls.status',
         headline: `${occupied} of ${state.stalls.length} stalls are occupied — ${percent(ratio(occupied, state.stalls.length))} occupancy.`,
         lines: [
           `Occupied: ${occupied}`,
           `Available: ${available}`,
+          `Temporarily closed: ${closed}`,
+          `Closed: ${shut}`,
+          `Abandoned: ${abandoned}`,
           `Under maintenance: ${maintenance}`,
         ],
         navigate: 'stalls',
@@ -5481,7 +6164,7 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
         intent: 'applicants.pending',
         headline: `${pending.length} applicant${pending.length === 1 ? ' is' : 's are'} awaiting review, out of ${state.applicants.length} on file.`,
         lines: [
-          ...pending.map((a) => `${a.name} (${a.id}) — ${a.stallType}, applied ${a.dateApplied}`),
+          ...pending.map((a) => `${a.name} (${a.id})${a.stallId ? ` — stall ${a.stallId}` : ''}, applied ${a.dateApplied}`),
           `${incomplete.length} application${incomplete.length === 1 ? ' is' : 's are'} incomplete`,
         ],
         navigate: 'applicants',
