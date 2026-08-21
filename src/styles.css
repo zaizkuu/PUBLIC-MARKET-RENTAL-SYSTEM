@@ -1060,6 +1060,141 @@ ul, ol {
   overscroll-behavior: contain;
 }
 
+/* ============================================================
+   Market Earnings — what the rent roll is actually bringing in
+   ============================================================ */
+
+.earnings-panel {
+  margin-bottom: 24px;
+}
+
+.earnings-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 2fr;
+  gap: 24px;
+  padding: 20px;
+}
+
+/* The headline figure sits apart from the supporting ones and is ruled off, so
+   the month's collection reads as the answer and the rest as its workings. */
+.earnings-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 24px;
+  border-right: 1px solid var(--color-border-light);
+}
+
+.earnings-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.earnings-value {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+.earnings-basis {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.earnings-meter {
+  height: 8px;
+  margin: 10px 0 4px;
+  background: var(--color-bg);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.earnings-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary-light), var(--color-primary));
+  border-radius: var(--radius-full);
+  transition: width 0.6s ease;
+}
+
+.earnings-meter-fill.danger {
+  background: linear-gradient(90deg, #f87171, var(--color-danger));
+}
+
+.earnings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+
+.earnings-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
+
+.earnings-figure-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.earnings-figure-value {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.earnings-figure-value.danger { color: var(--color-danger); }
+.earnings-figure-value.success { color: var(--color-success); }
+
+.earnings-figure-basis {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.earnings-total {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-top: 2px solid var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.earnings-total strong {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 900px) {
+  .earnings-body {
+    grid-template-columns: 1fr;
+  }
+
+  .earnings-headline {
+    padding-right: 0;
+    padding-bottom: 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+}
+
 /* Activity Feed */
 
 .activity-list {
@@ -1199,6 +1334,81 @@ ul, ol {
 
 .data-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* Rent past its due date. The tint carries the whole row so an overdue tenancy
+   is found by scanning, not by reading the status column. Placed after the
+   striping and hover rules so it wins the tie on source order. */
+.data-table tbody tr.row-overdue,
+.data-table tbody tr.row-overdue:nth-child(even) {
+  background: #fef2f2;
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+.data-table tbody tr.row-overdue:hover {
+  background: #fee2e2;
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+/* Tick box and status badge as one control: the badge says where the month
+   stands, the box is how it is changed. */
+.rent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rent-toggle input {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--color-success);
+  cursor: pointer;
+  margin: 0;
+}
+
+.rent-toggle:hover .badge {
+  filter: brightness(0.97);
+}
+
+.rent-toggle input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Month picker in a filter row — a labelled input rather than a bare box, so
+   it is not mistaken for another dropdown. */
+.filter-month {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.filter-month input {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  padding: 3px 0;
+}
+
+.filter-month input:focus {
+  outline: none;
+}
+
+.filter-month:focus-within {
+  border-color: var(--color-primary-light);
 }
 
 .tenant-cell {
@@ -4706,4 +4916,661 @@ ul, ol {
 .dialog-note strong {
   font-weight: 700;
   color: var(--color-text);
+}
+
+/* ============================================================
+   Billing Receipts — four to an A4 sheet
+   ============================================================ */
+
+/* A4 less the page margin. The sheet is laid out at real size in both the
+   preview and the print, and the preview only scales it down, so what is on
+   screen is the sheet that comes out of the printer. */
+:root {
+  --sheet-width: 194mm;
+  --sheet-height: 281mm;
+}
+
+.print-area {
+  display: none;
+}
+
+.receipt-sheet {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: var(--sheet-width);
+  height: var(--sheet-height);
+  background: #fff;
+  box-sizing: border-box;
+}
+
+/* One quarter. The dashed rule is the cut line; only the inner edges carry one
+   so a cut sheet has no dashes left around its outside. */
+.receipt {
+  display: flex;
+  flex-direction: column;
+  padding: 5mm 5.5mm;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 7.6px;
+  line-height: 1.38;
+  color: #000;
+  background: #fff;
+}
+
+.receipt-sheet > .receipt:nth-child(odd) {
+  border-right: 1px dashed #b0b0b0;
+}
+
+.receipt-sheet > .receipt:nth-child(-n + 2) {
+  border-bottom: 1px dashed #b0b0b0;
+}
+
+.receipt-blank {
+  background: #fff;
+}
+
+.receipt-masthead {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1.5px solid #000;
+}
+
+.receipt-seal {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.receipt-identity {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.receipt-identity span {
+  font-size: 6.6px;
+  letter-spacing: 0.01em;
+}
+
+.receipt-identity strong {
+  font-size: 8.2px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Which of the copies this quarter is, so the office copy is not handed over. */
+.receipt-copy {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 1.5px 4px;
+  border: 1px solid #000;
+  border-radius: 2px;
+  font-size: 5.8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.receipt-title {
+  margin: 5px 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.receipt-ref {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  font-size: 7px;
+}
+
+/* Stall and tenant, boxed away from the figures — this is the block that says
+   whose bill a cut-out quarter is. */
+.receipt-party {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 4px 0;
+  padding: 4px 5px;
+  border: 1px solid #444;
+  background: #f4f4f4;
+}
+
+.receipt-party-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.receipt-party-row span {
+  flex: 0 0 21mm;
+  font-size: 6.6px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #333;
+}
+
+.receipt-party-row strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 8px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receipt-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0;
+}
+
+/* Leader dots carry the eye from each label across to its figure. */
+.receipt-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.receipt-line span {
+  flex: 0 0 auto;
+}
+
+.receipt-line::after {
+  content: '';
+  order: 1;
+  flex: 1 1 auto;
+  height: 0;
+  margin-bottom: 2px;
+  border-bottom: 1px dotted #aaa;
+}
+
+.receipt-line strong {
+  order: 2;
+  flex: 0 0 auto;
+  font-weight: 600;
+  text-align: right;
+}
+
+.receipt-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 3px;
+  padding: 3px 0;
+  border-top: 1.5px solid #000;
+  border-bottom: 1.5px solid #000;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.receipt-total strong {
+  font-size: 11px;
+}
+
+.receipt-status {
+  margin-top: 3px;
+  font-size: 7px;
+  letter-spacing: 0.02em;
+}
+
+.receipt-notes {
+  margin-top: 3px;
+  padding: 3px 4px;
+  border: 1px solid #ccc;
+  font-size: 6.8px;
+  line-height: 1.35;
+  max-height: 8mm;
+  overflow: hidden;
+}
+
+.receipt-notes span {
+  font-weight: 700;
+}
+
+/* Pushed to the foot of the quarter so every receipt signs off in the same
+   place, however much sits above it. */
+.receipt-signatures {
+  display: flex;
+  gap: 6mm;
+  margin-top: auto;
+  padding-top: 6mm;
+}
+
+.receipt-sign {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+}
+
+.receipt-sign-name {
+  font-size: 7px;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receipt-sign-rule {
+  width: 100%;
+  margin-top: 1px;
+  border-bottom: 1px solid #000;
+}
+
+.receipt-sign-role {
+  margin-top: 2px;
+  font-size: 6.2px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #333;
+}
+
+.receipt-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid #999;
+  font-size: 6.2px;
+  color: #333;
+}
+
+/* ---------- Print preview ---------- */
+
+.print-setup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+/* The sheet is rendered at its true size and scaled down to fit the dialog, so
+   nothing about the layout differs between the preview and the paper. */
+.print-preview {
+  margin-top: 14px;
+  padding: 20px;
+  max-height: 46vh;
+  overflow: auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.print-preview-scale {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  transform: scale(0.62);
+  transform-origin: top center;
+  /* Claws back the empty space the transform leaves behind. */
+  margin-bottom: calc(-38% - 20px);
+}
+
+.print-preview-scale .receipt-sheet {
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .print-setup {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- On paper ---------- */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  /* Scoped to a receipt actually being printed. A plain Ctrl+P with no receipt
+     open still prints the page it is looking at, as it always did. */
+  body.printing * {
+    visibility: hidden !important;
+  }
+
+  body.printing .print-area,
+  body.printing .print-area * {
+    visibility: visible !important;
+  }
+
+  body.printing .print-area {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* One sheet per page, and never a receipt split across two. */
+  .receipt-sheet {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .receipt-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .receipt {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Printers drop backgrounds by default; the tenant block needs its tint. */
+  .receipt-party {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ============================================================
+   Market Clock — Philippine Standard Time in the topbar
+   ============================================================ */
+
+.market-clock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 10px;
+  margin-right: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  white-space: nowrap;
+}
+
+.market-clock > .material-symbols-outlined {
+  font-size: 19px;
+  color: var(--color-text-tertiary);
+}
+
+.market-clock-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+/* Tabular figures so the seconds tick without the line shuffling sideways. */
+.market-clock-time {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.market-clock-time abbr {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  border: none;
+}
+
+.market-clock-date {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+/* On a narrow window the date line goes first, then the whole clock. */
+@media (max-width: 1100px) {
+  .market-clock-date {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  .market-clock {
+    display: none;
+  }
+}
+
+/* ============================================================
+   Market Assistant
+   ============================================================ */
+
+.assistant-panel {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-height) - 190px);
+  min-height: 420px;
+}
+
+.assistant-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.assistant-intro {
+  margin: auto;
+  max-width: 560px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.assistant-intro > .material-symbols-outlined {
+  font-size: 40px;
+  color: var(--color-text-tertiary);
+}
+
+.assistant-intro h3 {
+  margin: 8px 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.assistant-intro p {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.assistant-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.assistant-chip {
+  padding: 7px 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.assistant-chip:hover {
+  border-color: var(--color-primary-light);
+  background: var(--color-primary-bg);
+}
+
+.assistant-turn {
+  display: flex;
+}
+
+.assistant-turn.officer {
+  justify-content: flex-end;
+}
+
+.assistant-bubble {
+  max-width: 78%;
+  padding: 12px 15px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg);
+}
+
+.assistant-turn.officer .assistant-bubble {
+  border-color: transparent;
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.assistant-text {
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.assistant-working {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.assistant-lines {
+  margin: 9px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.assistant-lines li::marker {
+  color: var(--color-text-tertiary);
+}
+
+/* Where the wording came from. The officer should never have to wonder whether
+   a sentence was computed or written by the model. */
+.assistant-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.assistant-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-tertiary);
+}
+
+.assistant-source .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.assistant-jump {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.assistant-jump:hover {
+  text-decoration: underline;
+}
+
+.assistant-composer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.assistant-input {
+  flex: 1 1 auto;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--color-text);
+}
+
+.assistant-input:focus {
+  outline: none;
+  border-color: var(--color-primary-light);
+}
+
+/* Whether a language model is installed at all. */
+.assistant-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.assistant-model.on {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #0b5030;
+}
+
+.assistant-model .material-symbols-outlined {
+  font-size: 17px;
 }

@@ -14,6 +14,7 @@ type ModuleKey =
   | 'violations'
   | 'analytics'
   | 'logbook'
+  | 'assistant'
   | 'settings'
   | 'support';
 
@@ -24,6 +25,19 @@ type ViolationStatus = 'Open' | 'Resolved';
 
 type UtilityType = 'Electricity' | 'Water';
 type BillStatus = 'Unpaid' | 'Paid';
+
+/* Rent standing for one month. 'Overdue' is not a state anyone sets — it is
+   what 'Unpaid' becomes once the due date has passed. */
+type RentStatus = 'Paid' | 'Unpaid' | 'Overdue';
+
+/* One receipt on a sheet. `label` names which copy it is when the same bill is
+   printed more than once (tenant's, office's); it is blank when a sheet is
+   carrying four different bills. */
+type PrintReceipt = { bill: UtilityBill; label: string };
+
+/* `single` distinguishes one bill printed in several copies from a batch of
+   different bills tiled onto the same sheets. */
+type PrintRequest = { bills: UtilityBill[]; single: boolean };
 
 type ModalType =
   | null
@@ -54,6 +68,20 @@ type Stallkeeper = {
   barangay: string;
 };
 
+/* One month's rent settled by a tenant. Held on the tenant record under the
+   period it settles, so a month can only ever be paid once. */
+type RentPayment = {
+  period: string;
+  paidOn: string;
+  /* What was actually collected, kept as its own figure so a later change to
+     the monthly rent never rewrites what a past month was paid. */
+  amount: number;
+};
+
+/* The meters serving a tenant's stall, by utility. The number is a property of
+   the tenancy, not of any one bill — every bill copies it as it stood. */
+type MeterNumbers = Record<UtilityType, string>;
+
 type Tenant = {
   id: string;
   name: string;
@@ -65,6 +93,10 @@ type Tenant = {
   status: string;
   applicantId?: string;
   keepers: Stallkeeper[];
+  meters: MeterNumbers;
+  /* Day of the month rent falls due, and every month settled so far. */
+  rentDueDay: number;
+  rentPayments: Record<string, RentPayment>;
 };
 
 type Stall = {
@@ -93,6 +125,9 @@ type UtilityBill = {
   tenantId: string;
   tenantName: string;
   section: string;
+  /* The meter the readings came off, copied from the tenant record when the
+     bill is raised so the receipt can be traced back to a physical meter. */
+  meterNumber: string;
   /* `period` is the YYYY-MM the bill belongs to — it groups and de-duplicates
      bills by month. `periodStart`/`periodEnd` are the actual days covered,
      which is what the tenant is shown. */
@@ -151,6 +186,64 @@ const VIOLATION_ISSUES = [
 const storageKey = 'pmrms-state-v3';
 const savedAtKey = 'pmrms-saved-at';
 const idCounterKey = 'pmrms-id-counters';
+/* Who last printed a receipt — offered back as the default the next time, so
+   the officer on duty types their name once a shift rather than once a bill. */
+const printedByKey = 'pmrms-printed-by';
+
+/* Four receipts to an A4 sheet, in two columns of two, cut apart afterwards. */
+const RECEIPTS_PER_SHEET = 4;
+/* Which copy each of the four is, when one bill is issued in duplicate or more.
+   The office keeps its own copy of anything a tenant is handed. */
+const RECEIPT_COPY_LABELS = ["Tenant's Copy", 'Market Office Copy', "Treasurer's Copy", 'File Copy'];
+
+/* ---------- Philippine time ----------
+
+   Every date the system reasons about is Philippine Standard Time, whatever
+   the computer itself is set to. A market office in Tanauan should not get a
+   different answer about whose rent is overdue because a machine came back
+   from repair on the wrong timezone. PST has no daylight saving, so the offset
+   never moves; reading it through Intl rather than a fixed +08:00 keeps it
+   correct regardless. */
+const MARKET_TIME_ZONE = 'Asia/Manila';
+
+const manilaPartsFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: MARKET_TIME_ZONE,
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+});
+
+/* The wall-clock reading in Tanauan right now, broken into parts. */
+function manilaParts(when: Date = new Date()): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of manilaPartsFmt.formatToParts(when)) out[part.type] = part.value;
+  // hour12:false reports midnight as 24 in some engines; the day has rolled by then.
+  if (out.hour === '24') out.hour = '00';
+  return out;
+}
+
+const manilaDateFmt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TIME_ZONE, month: 'short', day: 'numeric', year: 'numeric' });
+const manilaTimeFmt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: true });
+const manilaLongFmt = new Intl.DateTimeFormat('en-PH', { timeZone: MARKET_TIME_ZONE, dateStyle: 'long', timeStyle: 'short' });
+/* The clock face in the topbar. */
+const clockDateFmt = new Intl.DateTimeFormat('en-PH', { timeZone: MARKET_TIME_ZONE, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const clockTimeFmt = new Intl.DateTimeFormat('en-PH', { timeZone: MARKET_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+function todayStr() {
+  return manilaDateFmt.format(new Date());
+}
+
+function nowTimeStr() {
+  return manilaTimeFmt.format(new Date());
+}
+
+/* A full date and time stamp, for receipts and reports. */
+function manilaStamp(when: Date = new Date()) {
+  return `${manilaLongFmt.format(when)} PHT`;
+}
+
+const DEFAULT_RENT_DUE_DAY = 5;
+/* Every month has a 28th, so a due day is never dragged forward in February. */
+const MAX_RENT_DUE_DAY = 28;
 
 const REQUIREMENTS = [
   'Barangay Clearance',
@@ -170,6 +263,18 @@ const UTILITY_PRESETS: Record<UtilityType, { rate: number; fixedCharge: number; 
    Initial Data
    ============================================================ */
 
+/* Rent standing for a seeded tenant. The demo register opens with both settled
+   and outstanding months so the paid / unpaid / overdue states are all visible
+   without anyone having to click first. */
+function seedRent(paid: boolean, amount: number, meters: MeterNumbers, dueDay = DEFAULT_RENT_DUE_DAY): Pick<Tenant, 'meters' | 'rentDueDay' | 'rentPayments'> {
+  const period = currentPeriod();
+  return {
+    meters,
+    rentDueDay: dueDay,
+    rentPayments: paid ? { [period]: { period, paidOn: `${period}-03`, amount } } : {},
+  };
+}
+
 const initialState = {
   applicants: [
     { id: 'APP-001', name: 'Juan Santos', phone: '09171234567', stallType: 'Produce (Wet)', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 12, 2023', requirements: [...REQUIREMENTS] },
@@ -179,13 +284,13 @@ const initialState = {
     { id: 'APP-005', name: 'Ana Villanueva', phone: '09224445678', stallType: 'Meat & Poultry', status: 'Rejected' as ApplicantStatus, dateApplied: 'Oct 8, 2023', requirements: REQUIREMENTS.slice(0, 1) },
   ] satisfies Applicant[],
   tenants: [
-    { id: 'TEN-001', name: 'Maria Santos', phone: '09172221100', stallId: 'A-001', section: 'Meat & Poultry', rent: 5000, status: 'Active', barangay: '', keepers: [] },
-    { id: 'TEN-002', name: 'Juan Dela Cruz', phone: '09183332211', stallId: 'A-002', section: 'Fish & Seafood', rent: 4500, status: 'Active', barangay: '', keepers: [] },
-    { id: 'TEN-003', name: 'Liza Reyes', phone: '09204443322', stallId: 'B-015', section: 'Dry Goods', rent: 3500, status: 'Active', barangay: '', keepers: [] },
-    { id: 'TEN-004', name: "Rosa's Butchery", phone: '09215554433', stallId: 'M-101', section: 'Meat & Poultry', rent: 5500, status: 'Active', barangay: '', keepers: [] },
-    { id: 'TEN-005', name: 'Green Farm Organics', phone: '09226665544', stallId: 'V-045', section: 'Vegetables & Fruits', rent: 4000, status: 'Active', barangay: '', keepers: [] },
-    { id: 'TEN-006', name: 'Deep Blue Catch', phone: '09157776655', stallId: 'F-012', section: 'Fish & Seafood', rent: 4200, status: 'Expiring Soon', barangay: '', keepers: [] },
-    { id: 'TEN-007', name: 'Santos General Store', phone: '09198887766', stallId: 'D-203', section: 'Dry Goods', rent: 3800, status: 'Active', barangay: '', keepers: [] },
+    { id: 'TEN-001', name: 'Maria Santos', phone: '09172221100', stallId: 'A-001', section: 'Meat & Poultry', rent: 5000, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 5000, { Electricity: 'EM-1042', Water: 'WM-2211' }) },
+    { id: 'TEN-002', name: 'Juan Dela Cruz', phone: '09183332211', stallId: 'A-002', section: 'Fish & Seafood', rent: 4500, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 4500, { Electricity: 'EM-1043', Water: 'WM-2212' }) },
+    { id: 'TEN-003', name: 'Liza Reyes', phone: '09204443322', stallId: 'B-015', section: 'Dry Goods', rent: 3500, status: 'Active', barangay: '', keepers: [], ...seedRent(false, 3500, { Electricity: 'EM-1044', Water: 'WM-2213' }) },
+    { id: 'TEN-004', name: "Rosa's Butchery", phone: '09215554433', stallId: 'M-101', section: 'Meat & Poultry', rent: 5500, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 5500, { Electricity: 'EM-1101', Water: 'WM-2301' }) },
+    { id: 'TEN-005', name: 'Green Farm Organics', phone: '09226665544', stallId: 'V-045', section: 'Vegetables & Fruits', rent: 4000, status: 'Active', barangay: '', keepers: [], ...seedRent(false, 4000, { Electricity: 'EM-1045', Water: 'WM-2214' }) },
+    { id: 'TEN-006', name: 'Deep Blue Catch', phone: '09157776655', stallId: 'F-012', section: 'Fish & Seafood', rent: 4200, status: 'Expiring Soon', barangay: '', keepers: [], ...seedRent(false, 4200, { Electricity: 'EM-1012', Water: 'WM-2012' }) },
+    { id: 'TEN-007', name: 'Santos General Store', phone: '09198887766', stallId: 'D-203', section: 'Dry Goods', rent: 3800, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 3800, { Electricity: 'EM-1203', Water: 'WM-2203' }) },
   ] satisfies Tenant[] as Tenant[],
   stalls: [
     { id: 'M-101', section: 'Meat & Poultry', tenant: "Rosa's Butchery", status: 'Occupied' as StallStatus, lastInspection: 'Oct 12, 2023' },
@@ -204,11 +309,11 @@ const initialState = {
   ] satisfies Violation[],
 
   utilities: [
-    { id: 'UTL-001', type: 'Electricity' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 1240, currentReading: 1512, consumption: 272, rate: 11.5, fixedCharge: 150, amount: 3278, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'Refrigeration units running 24/7.' },
-    { id: 'UTL-002', type: 'Water' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 84, currentReading: 103, consumption: 19, rate: 25, fixedCharge: 80, amount: 555, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-003', type: 'Electricity' as UtilityType, stallId: 'V-045', tenantId: 'TEN-005', tenantName: 'Green Farm Organics', section: 'Vegetables & Fruits', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 640, currentReading: 745, consumption: 105, rate: 11.5, fixedCharge: 150, amount: 1357.5, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-004', type: 'Water' as UtilityType, stallId: 'F-012', tenantId: 'TEN-006', tenantName: 'Deep Blue Catch', section: 'Fish & Seafood', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 210, currentReading: 268, consumption: 58, rate: 25, fixedCharge: 80, amount: 1530, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'High usage — check for leaking hose.' },
-    { id: 'UTL-005', type: 'Electricity' as UtilityType, stallId: 'D-203', tenantId: 'TEN-007', tenantName: 'Santos General Store', section: 'Dry Goods', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 320, currentReading: 388, consumption: 68, rate: 11.5, fixedCharge: 150, amount: 932, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
+    { id: 'UTL-001', type: 'Electricity' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', meterNumber: 'EM-1101', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 1240, currentReading: 1512, consumption: 272, rate: 11.5, fixedCharge: 150, amount: 3278, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'Refrigeration units running 24/7.' },
+    { id: 'UTL-002', type: 'Water' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', meterNumber: 'WM-2301', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 84, currentReading: 103, consumption: 19, rate: 25, fixedCharge: 80, amount: 555, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
+    { id: 'UTL-003', type: 'Electricity' as UtilityType, stallId: 'V-045', tenantId: 'TEN-005', tenantName: 'Green Farm Organics', section: 'Vegetables & Fruits', meterNumber: 'EM-1045', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 640, currentReading: 745, consumption: 105, rate: 11.5, fixedCharge: 150, amount: 1357.5, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
+    { id: 'UTL-004', type: 'Water' as UtilityType, stallId: 'F-012', tenantId: 'TEN-006', tenantName: 'Deep Blue Catch', section: 'Fish & Seafood', meterNumber: 'WM-2012', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 210, currentReading: 268, consumption: 58, rate: 25, fixedCharge: 80, amount: 1530, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'High usage — check for leaking hose.' },
+    { id: 'UTL-005', type: 'Electricity' as UtilityType, stallId: 'D-203', tenantId: 'TEN-007', tenantName: 'Santos General Store', section: 'Dry Goods', meterNumber: 'EM-1203', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 320, currentReading: 388, consumption: 68, rate: 11.5, fixedCharge: 150, amount: 932, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
   ] satisfies UtilityBill[],
 
   logs: [
@@ -240,6 +345,7 @@ const navigation: Array<{ key: ModuleKey; label: string; icon: string }> = [
   { key: 'violations', label: 'Violations', icon: 'gavel' },
   { key: 'analytics', label: 'Analytics', icon: 'analytics' },
   { key: 'logbook', label: 'Logbook', icon: 'menu_book' },
+  { key: 'assistant', label: 'Assistant', icon: 'forum' },
 ];
 
 const searchPlaceholders: Record<ModuleKey, string> = {
@@ -251,6 +357,7 @@ const searchPlaceholders: Record<ModuleKey, string> = {
   violations: 'Search violation ID, tenant, or issue...',
   analytics: 'Search is not used on Analytics',
   logbook: 'Search log details or type...',
+  assistant: 'Search is not used on the Assistant',
   settings: 'Search is not used on Settings',
   support: 'Search is not used on Support',
 };
@@ -295,6 +402,26 @@ function normalizeTenant(raw: Tenant): Tenant {
     : text(legacy.keeperName)
       ? [{ id: 'KPR-1', name: text(legacy.keeperName), phone: text(legacy.keeperPhone), relation: text(legacy.keeperRelation), barangay: text(legacy.keeperBarangay) }]
       : [];
+  /* Records saved before rent was tracked carry no payments and no meters —
+     they read as a tenant who has simply not paid anything yet. */
+  const rawMeters = (raw as { meters?: Partial<MeterNumbers> })?.meters;
+  const meters = { Electricity: text(rawMeters?.Electricity), Water: text(rawMeters?.Water) };
+
+  const rentPayments: Record<string, RentPayment> = {};
+  const rawPayments = (raw as { rentPayments?: unknown })?.rentPayments;
+  if (rawPayments && typeof rawPayments === 'object') {
+    Object.entries(rawPayments as Record<string, Partial<RentPayment>>).forEach(([key, value]) => {
+      const period = /^\d{4}-\d{2}$/.test(key) ? key : text(value?.period).slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(period)) return;
+      const amount = Number(value?.amount);
+      rentPayments[period] = {
+        period,
+        paidOn: typeof value?.paidOn === 'string' ? value.paidOn : '',
+        amount: Number.isFinite(amount) ? amount : Number(raw?.rent) || 0,
+      };
+    });
+  }
+
   return {
     id: raw.id,
     name: raw.name,
@@ -306,6 +433,9 @@ function normalizeTenant(raw: Tenant): Tenant {
     status: raw.status,
     applicantId: raw.applicantId,
     keepers: fromList,
+    meters,
+    rentDueDay: clampDueDay(raw?.rentDueDay),
+    rentPayments,
   };
 }
 
@@ -316,7 +446,8 @@ function normalizeBill(raw: UtilityBill): UtilityBill {
   const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
   const periodStart = isDay(raw?.periodStart) ? raw.periodStart : monthStartIso(period);
   const periodEnd = isDay(raw?.periodEnd) ? raw.periodEnd : monthEndIso(period);
-  return { ...raw, period: periodOf(periodEnd) || period, periodStart, periodEnd };
+  const meterNumber = typeof raw?.meterNumber === 'string' ? raw.meterNumber.trim() : '';
+  return { ...raw, meterNumber, period: periodOf(periodEnd) || period, periodStart, periodEnd };
 }
 
 function mergeState(input: unknown): AppState {
@@ -574,22 +705,17 @@ function paginate<T>(items: T[], page: number, perPage = ITEMS_PER_PAGE) {
   };
 }
 
-function todayStr() {
-  return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function nowTimeStr() {
-  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-}
-
 /* ---------- Utility billing helpers ---------- */
 
 function isoDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/* Today in Tanauan, as YYYY-MM-DD. Every overdue test is a string comparison
+   against this, so the whole system turns over at midnight Philippine time. */
 function todayIso() {
-  return isoDate(new Date());
+  const p = manilaParts();
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 function isoPlusDays(iso: string, days: number) {
@@ -607,14 +733,82 @@ function formatIsoDate(iso: string) {
 }
 
 function currentPeriod() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const p = manilaParts();
+  return `${p.year}-${p.month}`;
 }
 
 function formatPeriod(period: string) {
   const [y, m] = period.split('-').map(Number);
   if (!y || !m) return period || '—';
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+/* "Aug 2026" — for column headings and buttons, where the long form crowds. */
+function formatPeriodShort(period: string) {
+  const [y, m] = period.split('-').map(Number);
+  if (!y || !m) return period || '—';
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+/* ---------- Monthly rent ---------- */
+
+function clampDueDay(raw: unknown) {
+  const n = Math.round(Number(raw));
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_RENT_DUE_DAY;
+  return Math.min(MAX_RENT_DUE_DAY, n);
+}
+
+/* The day this tenant's rent falls due in a given month. */
+function rentDueIso(tenant: Tenant, period: string) {
+  return `${period}-${String(clampDueDay(tenant.rentDueDay)).padStart(2, '0')}`;
+}
+
+function rentPaymentFor(tenant: Tenant, period: string): RentPayment | undefined {
+  return tenant.rentPayments[period];
+}
+
+/* Unpaid rent turns overdue on its own the day after it falls due — nothing has
+   to be run, clicked or rolled over for the register to go red. */
+function rentStatusOf(tenant: Tenant, period: string): RentStatus {
+  if (rentPaymentFor(tenant, period)) return 'Paid';
+  return rentDueIso(tenant, period) < todayIso() ? 'Overdue' : 'Unpaid';
+}
+
+function rentDaysLate(tenant: Tenant, period: string) {
+  if (rentStatusOf(tenant, period) !== 'Overdue') return 0;
+  return Math.max(0, periodDays(rentDueIso(tenant, period), todayIso()) - 1);
+}
+
+/* Every month this tenant has settled, newest first. */
+function rentPaymentHistory(tenant: Tenant): RentPayment[] {
+  return Object.values(tenant.rentPayments).sort((a, b) => b.period.localeCompare(a.period));
+}
+
+/* What one tenant has paid across every month. Reads the payments unsorted —
+   only the ledger needs them in order. */
+function rentTotalPaid(tenant: Tenant) {
+  return Object.values(tenant.rentPayments).reduce((s, p) => s + p.amount, 0);
+}
+
+/* Every peso of rent ever recorded as collected, across all tenants. */
+function rentCollectedToDate(tenants: Tenant[]) {
+  return tenants.reduce((sum, t) => sum + rentTotalPaid(t), 0);
+}
+
+/* Where one month's rent stands across the whole register. `due` is the rent
+   roll — what the market is contracted to earn in a month. */
+function rentRollFor(tenants: Tenant[], period: string) {
+  const due = tenants.reduce((s, t) => s + t.rent, 0);
+  const paid = tenants.filter((t) => rentStatusOf(t, period) === 'Paid');
+  const collected = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.amount ?? t.rent), 0);
+  return {
+    due,
+    collected,
+    outstanding: Math.max(0, due - collected),
+    paidCount: paid.length,
+    unpaidCount: tenants.length - paid.length,
+    overdueCount: tenants.filter((t) => rentStatusOf(t, period) === 'Overdue').length,
+  };
 }
 
 /* ---------- Billing period (the days a bill covers) ---------- */
@@ -681,6 +875,15 @@ function lastReadingFor(bills: UtilityBill[], stallId: string, type: UtilityType
   return matches.length > 0 ? matches[matches.length - 1].currentReading : null;
 }
 
+/* Fallback for a stall whose tenant has no meter on file — the number the last
+   bill for that stall was raised against. */
+function lastMeterFor(bills: UtilityBill[], stallId: string, type: UtilityType) {
+  const matches = bills
+    .filter((b) => b.stallId === stallId && b.type === type && b.meterNumber)
+    .sort((a, b) => a.period.localeCompare(b.period));
+  return matches.length > 0 ? matches[matches.length - 1].meterNumber : '';
+}
+
 function downloadJSON(data: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -717,6 +920,43 @@ function App() {
 
   const [lastSaved, setLastSaved] = useState<string>(() => localStorage.getItem(savedAtKey) ?? '');
   const storageWarned = useRef(false);
+
+  /* Printing runs in two steps: `printRequest` is what the preview dialog is
+     open on, `printJob` is the sheet already laid out on the page. The sheet is
+     hidden on screen and is the only thing the print stylesheet lets through. */
+  const [printRequest, setPrintRequest] = useState<PrintRequest | null>(null);
+  const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string } | null>(null);
+
+  const requestPrint = (bill: UtilityBill) => setPrintRequest({ bills: [bill], single: true });
+
+  /* One tick so the receipt is laid out before the print dialog snapshots it.
+     The body class is what narrows the print stylesheet down to the receipt —
+     without it, the desktop app's own File > Print would print a blank page.
+
+     The job is dropped again as soon as the print dialog closes, whether it was
+     printed or cancelled. Leaving it mounted would leave the page in its
+     printing state, and the next plain Ctrl+P would silently reprint the last
+     receipt instead of the screen the officer is looking at. */
+  useEffect(() => {
+    if (!printJob) return;
+    document.body.classList.add('printing');
+    const finish = () => setPrintJob(null);
+    window.addEventListener('afterprint', finish);
+    const timer = window.setTimeout(() => window.print(), 80);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('afterprint', finish);
+      document.body.classList.remove('printing');
+    };
+  }, [printJob]);
+
+  const confirmPrint = (receipts: PrintReceipt[], printedBy: string) => {
+    try { localStorage.setItem(printedByKey, printedBy); } catch { /* full storage must not stop a receipt printing */ }
+    setPrintJob({ receipts, printedBy, printedAt: manilaStamp() });
+    setPrintRequest(null);
+    const sheets = Math.ceil(receipts.length / RECEIPTS_PER_SHEET);
+    showToast(`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`);
+  };
 
   const showToast = useCallback((message: string) => {
     const id = ++toastSeq.current;
@@ -759,6 +999,9 @@ function App() {
 
   const notifications = useMemo(() => {
     const items: Array<{ id: string; icon: string; tone: string; title: string; detail: string; target: ModuleKey }> = [];
+    const rentPeriod = currentPeriod();
+    const rentLate = state.tenants.filter((t) => rentStatusOf(t, rentPeriod) === 'Overdue');
+    if (rentLate.length > 0) items.push({ id: 'n-rent', icon: 'payments', tone: 'danger', title: `${rentLate.length} tenant${rentLate.length > 1 ? 's' : ''} past due on rent`, detail: `${money(rentLate.reduce((s, t) => s + t.rent, 0))} uncollected for ${formatPeriod(rentPeriod)}`, target: 'tenants' });
     const overdue = state.utilities.filter(isOverdue);
     if (overdue.length > 0) items.push({ id: 'n-overdue', icon: 'receipt_long', tone: 'danger', title: `${overdue.length} overdue utility bill${overdue.length > 1 ? 's' : ''}`, detail: `${money(overdue.reduce((s, b) => s + b.amount, 0))} past due`, target: 'utilities' });
     if (unpaidBills.length > 0) items.push({ id: 'n-unpaid', icon: 'payments', tone: 'warning', title: `${unpaidBills.length} unpaid utility bill${unpaidBills.length > 1 ? 's' : ''}`, detail: `${money(outstandingUtilities)} outstanding`, target: 'utilities' });
@@ -814,6 +1057,51 @@ function App() {
     setState((p) => ({ ...p, utilities: p.utilities.map((b) => (b.id === id ? { ...b, status: b.status === 'Paid' ? 'Unpaid' : 'Paid' } : b)) }));
     const bill = state.utilities.find((b) => b.id === id);
     showToast(bill?.status === 'Paid' ? `${id} marked as unpaid` : `${id} marked as paid`);
+  };
+
+  /* Rent is settled a month at a time. Marking a month paid stamps the day it
+     was collected; unmarking removes the month again, which is how a payment
+     entered against the wrong tenant is undone. */
+  const setRentPaid = (tenantId: string, period: string, paid: boolean) => {
+    const tenant = state.tenants.find((t) => t.id === tenantId);
+    if (!tenant || !!rentPaymentFor(tenant, period) === paid) return;
+    const label = formatPeriod(period);
+    setState((p) => ({
+      ...p,
+      tenants: p.tenants.map((t) => {
+        if (t.id !== tenantId) return t;
+        const next = { ...t.rentPayments };
+        if (paid) next[period] = { period, paidOn: todayIso(), amount: t.rent };
+        else delete next[period];
+        return { ...t, rentPayments: next };
+      }),
+      activities: withActivity(
+        p.activities,
+        paid ? 'payments' : 'undo',
+        paid ? 'green' : 'amber',
+        tenant.name,
+        paid ? ` paid ${money(tenant.rent)} rent for ${label}.` : `'s rent for ${label} was set back to unpaid.`,
+      ),
+      logs: [...p.logs, makeLog(p.logs, 'Collection', paid
+        ? `Rent for ${label} collected from ${tenant.name} (${tenant.id}${tenant.stallId && tenant.stallId !== '—' ? `, stall ${tenant.stallId}` : ''}): ${money(tenant.rent)}.`
+        : `Rent payment for ${label} by ${tenant.name} (${tenant.id}) was reversed.`)],
+    }));
+    showToast(paid ? `${tenant.name} marked paid for ${label}` : `${tenant.name} marked unpaid for ${label}`);
+  };
+
+  /* A meter number typed into the calculator for a tenant who has none on file
+     is kept on the tenant record, where it belongs. A number already on record
+     is never overwritten from a bill — that is an edit to the tenant. */
+  const recordMeterNumber = (tenantId: string, type: UtilityType, meterNumber: string) => {
+    const trimmed = meterNumber.trim();
+    if (!tenantId || !trimmed) return;
+    const tenant = state.tenants.find((t) => t.id === tenantId);
+    if (!tenant || tenant.meters[type]) return;
+    setState((p) => ({
+      ...p,
+      tenants: p.tenants.map((t) => (t.id === tenantId ? { ...t, meters: { ...t.meters, [type]: trimmed } } : t)),
+    }));
+    showToast(`${type} meter ${trimmed} saved to ${tenant.name}`);
   };
 
   const updateApplicant = (updated: Applicant, opts: SaveOpts = {}, snapshot?: Applicant, promptAssign?: boolean) => {
@@ -1025,6 +1313,7 @@ function App() {
             </div>
           ) : <div className="topbar-spacer" />}
           <div className="topbar-actions">
+            <MarketClock />
             <div className="notif-wrapper">
               <button className="icon-btn" title="Notifications" onClick={() => setNotifOpen((v) => !v)}>
                 <span className="material-symbols-outlined">notifications</span>
@@ -1053,13 +1342,14 @@ function App() {
 
         <div className="page-content">
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onPrintBatch={(bs) => setPrintRequest({ bills: bs, single: false })} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onEdit={(s) => setModal({ type: 'edit-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
-          {active === 'tenants' && <TenantRecordsPage tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onEdit={(t) => setModal({ type: 'edit-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} />}
+          {active === 'tenants' && <TenantRecordsPage tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onEdit={(t) => setModal({ type: 'edit-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
           {active === 'violations' && <ViolationsPage violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
+          {active === 'assistant' && <AssistantPage state={state} onNavigate={setActive} />}
           {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
@@ -1077,9 +1367,9 @@ function App() {
       {modal.type === 'edit-stall' && <Modal title="Edit Stall Details" wide onClose={closeModal}><StallEditForm stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onSave={updateStall} onClose={closeModal} /></Modal>}
       {modal.type === 'view-applicant' && <Modal title="Applicant Details" wide onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-tenant' && <Modal title="Tenant Details" wide onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-tenant' && <Modal title="Tenant Details" wide onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-tenant' && <Modal title="Edit Tenant Details" wide onClose={closeModal}><TenantEditForm tenant={modal.data as Tenant} current={liveTenant(modal.data as Tenant)} tenants={state.tenants} stalls={state.stalls} onSave={updateTenant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" wide onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" wide onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
       {modal.type === 'confirm-logout' && <ConfirmDialog icon="logout" iconStyle="warning" title="Log Out?" description="Are you sure you want to log out? All data is saved locally." confirmLabel="Log Out" onConfirm={() => { showToast('Logged out successfully'); closeModal(); }} onCancel={closeModal} />}
       {modal.type === 'confirm-reset' && <ConfirmDialog icon="delete_forever" iconStyle="danger" title="Reset All Data?" description="This will permanently reset all data to factory defaults. This cannot be undone." confirmLabel="Reset Data" confirmDanger onConfirm={resetData} onCancel={closeModal} />}
       {modal.type === 'confirm-delete-stall' && (() => {
@@ -1122,6 +1412,9 @@ function App() {
           description={`The ${violation.status.toLowerCase()} citation against ${violation.tenant} for "${violation.issue}" will be permanently removed from the register.${violation.status === 'Open' ? ' Resolve it instead if it was served and settled — delete only if it was recorded in error.' : ' Delete only if it was recorded in error; resolved citations are the register’s history.'} This cannot be undone.`}
           confirmLabel="Delete Violation" confirmDanger onConfirm={() => deleteViolation(violation)} onCancel={closeModal} />;
       })()}
+      {printRequest && <PrintPreviewDialog request={printRequest} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
+      {printJob && <div className="print-area"><ReceiptSheets receipts={printJob.receipts} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
+
       {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
 
       {toasts.length > 0 && (
@@ -1157,6 +1450,17 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
   const overdueBillCount = state.utilities.filter(isOverdue).length;
 
   const occupancyColumns = useMemo(() => sectionOccupancyColumns(state.stalls), [state.stalls]);
+
+  /* What the market earns. The rent roll is what every tenancy on record is
+     contracted to pay in a month; collected is what has actually come in. */
+  const rentPeriod = currentPeriod();
+  const roll = useMemo(() => rentRollFor(state.tenants, rentPeriod), [state.tenants, rentPeriod]);
+  const rentToDate = useMemo(() => rentCollectedToDate(state.tenants), [state.tenants]);
+  const utilitiesCollected = useMemo(
+    () => state.utilities.filter((b) => b.status === 'Paid').reduce((s, b) => s + b.amount, 0),
+    [state.utilities],
+  );
+  const collectionPct = ratio(roll.collected, roll.due);
 
   /* Global search. The dashboard has no table of its own, so the topbar
      search looks across every record set and offers a jump to the module
@@ -1244,6 +1548,38 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
           <button type="button" className="stat-link" onClick={() => onNavigate('utilities')}>{unpaidBillCount} bill{unpaidBillCount === 1 ? '' : 's'} outstanding</button>
         </div>
       </div>
+
+      <div className="panel earnings-panel">
+        <div className="panel-header">
+          <div className="panel-heading">
+            <h3 className="panel-title">Market Earnings</h3>
+            <span className="panel-caption">Rent income for {formatPeriod(rentPeriod)} · {state.tenants.length} tenanc{state.tenants.length === 1 ? 'y' : 'ies'} on the rent roll</span>
+          </div>
+          <button className="btn-outline-sm" onClick={() => onNavigate('tenants')}>Open Rent Register</button>
+        </div>
+        <div className="earnings-body">
+          <div className="earnings-headline">
+            <span className="earnings-label">Rent Collected — {formatPeriod(rentPeriod)}</span>
+            <strong className="earnings-value">{money(roll.collected)}</strong>
+            <span className="earnings-basis">of {money(roll.due)} contracted for the month</span>
+            <div className="earnings-meter">
+              <div className={`earnings-meter-fill${roll.overdueCount > 0 ? ' danger' : ''}`} style={{ width: `${collectionPct}%` }} />
+            </div>
+            <span className="earnings-basis">{percent(collectionPct)} collected · {roll.paidCount} of {state.tenants.length} tenants paid</span>
+          </div>
+          <div className="earnings-grid">
+            <EarningsFigure label="Monthly Rent Roll" value={money(roll.due)} basis="Contracted rent from every tenancy on record" />
+            <EarningsFigure label="Rent Outstanding" value={money(roll.outstanding)} tone={roll.outstanding > 0 ? 'danger' : 'success'} basis={`${roll.unpaidCount} unpaid · ${roll.overdueCount} past due`} />
+            <EarningsFigure label="Rent Collected to Date" value={money(rentToDate)} tone="success" basis="Every month recorded as settled" />
+            <EarningsFigure label="Utilities Collected" value={money(utilitiesCollected)} basis={`${money(outstandingUtilities)} still outstanding`} />
+          </div>
+          <div className="earnings-total">
+            <span>Total Market Earnings to Date</span>
+            <strong>{money(rentToDate + utilitiesCollected)}</strong>
+          </div>
+        </div>
+      </div>
+
       <div className="dashboard-grid">
         <div className="panel">
           <div className="panel-header">
@@ -1444,27 +1780,49 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
   );
 }
 
+function EarningsFigure({ label, value, basis, tone }: { label: string; value: string; basis: string; tone?: string }) {
+  return (
+    <div className="earnings-figure">
+      <span className="earnings-figure-label">{label}</span>
+      <strong className={`earnings-figure-value${tone ? ` ${tone}` : ''}`}>{value}</strong>
+      <span className="earnings-figure-basis">{basis}</span>
+    </div>
+  );
+}
+
 /* ============================================================
    Tenant Records Page
    ============================================================ */
 
-function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onEdit: (t: Tenant) => void; onDelete: (t: Tenant) => void }) {
+function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, onSetRentPaid }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onEdit: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void }) {
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [rentFilter, setRentFilter] = useState('');
+  /* Rent is recorded a month at a time. The register opens on the current
+     month; the picker is how a payment is entered against an earlier one. */
+  const [period, setPeriod] = useState(currentPeriod);
   const [page, setPage] = useState(1);
 
   const activeCount = tenants.filter(t => t.status === 'Active').length;
   const expiringCount = tenants.filter(t => t.status === 'Expiring Soon').length;
   const monthlyRent = tenants.reduce((s, t) => s + t.rent, 0);
+  const roll = useMemo(() => rentRollFor(tenants, period), [tenants, period]);
 
   useEffect(() => { setPage(1); }, [search]);
 
   const filtered = useMemo(() => tenants.filter((t) => {
     if (sectionFilter && t.section !== sectionFilter) return false;
     if (statusFilter && t.status !== statusFilter) return false;
+    if (rentFilter) {
+      const rent = rentStatusOf(t, period);
+      // "Unpaid" covers everything not settled, overdue months included.
+      if (rentFilter === 'Paid' && rent !== 'Paid') return false;
+      if (rentFilter === 'Unpaid' && rent === 'Paid') return false;
+      if (rentFilter === 'Overdue' && rent !== 'Overdue') return false;
+    }
     if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q) && !t.keepers.some((k) => k.name.toLowerCase().includes(q))) return false; }
     return true;
-  }), [tenants, sectionFilter, statusFilter, search]);
+  }), [tenants, sectionFilter, statusFilter, rentFilter, period, search]);
 
   const paged = paginate(filtered, page);
 
@@ -1473,7 +1831,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete }:
       <div className="page-header">
         <div><h2 className="page-title">Tenant Records</h2><p className="page-subtitle">View and manage all tenant information and lease details.</p></div>
         <div className="page-actions">
-          <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); setRentFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Tenant</button>
         </div>
       </div>
@@ -1498,18 +1856,54 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete }:
           <div className="stat-value">{moneyShort(monthlyRent)}</div>
           <div className="stat-caption">{money(Math.round(monthlyRent / Math.max(tenants.length, 1)))} average rent</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Rent Collected</span><span className={`material-symbols-outlined stat-icon ${roll.overdueCount > 0 ? 'danger' : 'success'}`}>account_balance_wallet</span></div>
+          <div className={`stat-value${roll.overdueCount > 0 ? ' danger' : ''}`}>{moneyShort(roll.collected)}</div>
+          <div className="stat-caption">{formatPeriodShort(period)} · {roll.paidCount} paid, {roll.overdueCount} overdue</div>
+          <div className="stat-progress"><div className="stat-progress-fill" style={{ width: `${ratio(roll.collected, roll.due)}%` }} /></div>
+        </div>
       </div>
       <div className="panel">
         <div className="filter-row">
           <select className="filter-select" value={sectionFilter} onChange={(e) => { setSectionFilter(e.target.value); setPage(1); }}><option value="">All Sections</option>{SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
           <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select>
+          <select className="filter-select" value={rentFilter} onChange={(e) => { setRentFilter(e.target.value); setPage(1); }}><option value="">All Rent</option><option value="Paid">Rent Paid</option><option value="Unpaid">Rent Unpaid</option><option value="Overdue">Rent Overdue</option></select>
+          <label className="filter-month">
+            <span>Rent month</span>
+            <input type="month" value={period} onChange={(e) => { setPeriod(e.target.value || currentPeriod()); setPage(1); }} />
+          </label>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} tenants</span>
         </div>
         <div className="table-wrap">
-          <table className="data-table"><thead><tr><th>Tenant ID</th><th>Name</th><th>Stall ID</th><th>Section</th><th>Monthly Rent</th><th>Status</th><th>Action</th></tr></thead>
+          <table className="data-table"><thead><tr><th>Tenant ID</th><th>Name</th><th>Stall ID</th><th>Section</th><th>Monthly Rent</th><th>Rent — {formatPeriodShort(period)}</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((t) => (<tr key={t.id}><td><strong>{t.id}</strong></td><td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{formatPhone(t.phone) || '—'}</div></div></td><td>{t.stallId}</td><td>{t.section}</td><td>{money(t.rent)}</td><td><TenantStatusBadge status={t.status} /></td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit tenant" aria-label="Edit tenant" onClick={() => onEdit(t)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
-              {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">groups</span>No tenants match the current filters.</div></td></tr>}
+              {paged.items.map((t) => {
+                const rentStatus = rentStatusOf(t, period);
+                const paid = rentStatus === 'Paid';
+                const payment = rentPaymentFor(t, period);
+                const late = rentDaysLate(t, period);
+                const rentTitle = paid
+                  ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'} — tick to undo`
+                  : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''} — tick once collected`;
+                return (
+                  <tr key={t.id} className={rentStatus === 'Overdue' ? 'row-overdue' : ''}>
+                    <td><strong>{t.id}</strong></td>
+                    <td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{formatPhone(t.phone) || '—'}</div></div></td>
+                    <td>{t.stallId}</td>
+                    <td>{t.section}</td>
+                    <td>{money(t.rent)}</td>
+                    <td>
+                      <label className="rent-toggle" title={rentTitle}>
+                        <input type="checkbox" checked={paid} onChange={(e) => onSetRentPaid(t.id, period, e.target.checked)} aria-label={`Rent paid for ${formatPeriod(period)} by ${t.name}`} />
+                        <RentStatusBadge status={rentStatus} />
+                      </label>
+                    </td>
+                    <td><TenantStatusBadge status={t.status} /></td>
+                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit tenant" aria-label="Edit tenant" onClick={() => onEdit(t)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
+                  </tr>
+                );
+              })}
+              {paged.items.length === 0 && <tr><td colSpan={8}><div className="empty-state"><span className="material-symbols-outlined">groups</span>No tenants match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -1523,10 +1917,13 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete }:
    Utility Billing Page — electricity & water calculator + records
    ============================================================ */
 
-function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onExport }: {
+function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; search: string;
   onAdd: (b: UtilityBill) => void; onView: (b: UtilityBill) => void;
-  onToggleStatus: (id: string) => void; onDelete: (b: UtilityBill) => void; onExport: () => void;
+  onToggleStatus: (id: string) => void; onDelete: (b: UtilityBill) => void;
+  onPrint: (b: UtilityBill) => void; onPrintBatch: (bills: UtilityBill[]) => void;
+  onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
+  onExport: () => void;
 }) {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -1569,6 +1966,11 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         <div><h2 className="page-title">Utility Billing</h2><p className="page-subtitle">Compute electricity and water charges and post them to a stall or tenant record.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setTypeFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          {/* Prints whatever the filters currently show, four bills to a sheet —
+              a section's or a month's receipts in one run. */}
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No bills match the current filters' : undefined} onClick={() => onPrintBatch(filtered)}>
+            <span className="material-symbols-outlined">print</span>Print {filtered.length} Receipt{filtered.length === 1 ? '' : 's'}
+          </button>
           <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
         </div>
       </div>
@@ -1596,7 +1998,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         </div>
       </div>
 
-      <BillCalculator bills={bills} tenants={tenants} stalls={stalls} onAdd={onAdd} />
+      <BillCalculator bills={bills} tenants={tenants} stalls={stalls} onAdd={onAdd} onPrint={onPrint} onRecordMeter={onRecordMeter} />
 
       <div className="panel" style={{ marginTop: '20px' }}>
         <div className="panel-header"><h3 className="panel-title">Billing Records</h3></div>
@@ -1607,13 +2009,14 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Bill ID</th><th>Utility</th><th>Stall No.</th><th>Tenant</th><th>Period</th><th>Consumption</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+            <thead><tr><th>Bill ID</th><th>Utility</th><th>Stall No.</th><th>Meter No.</th><th>Tenant</th><th>Period</th><th>Consumption</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
               {paged.items.map((b) => (
                 <tr key={b.id}>
                   <td><strong>{b.id}</strong></td>
                   <td><span className={`utility-tag ${b.type.toLowerCase()}`}><span className="material-symbols-outlined">{UTILITY_PRESETS[b.type].icon}</span>{b.type}</span></td>
                   <td><strong>{b.stallId}</strong></td>
+                  <td className={b.meterNumber ? '' : 'tenant-cell'}>{b.meterNumber || 'Not on record'}</td>
                   <td className={b.tenantName ? '' : 'tenant-cell'}>{b.tenantName || 'Unassigned'}</td>
                   <td>{billPeriodText(b)}</td>
                   <td>{b.consumption.toLocaleString()} {UTILITY_PRESETS[b.type].unit}</td>
@@ -1623,12 +2026,13 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
                     <div className="row-actions">
                       <button type="button" className="row-icon-btn" title="View bill" aria-label="View bill" onClick={() => onView(b)}><span className="material-symbols-outlined">visibility</span></button>
                       <button type="button" className="row-icon-btn" title={b.status === 'Paid' ? 'Mark unpaid' : 'Mark paid'} aria-label={b.status === 'Paid' ? 'Mark unpaid' : 'Mark paid'} onClick={() => onToggleStatus(b.id)}><span className="material-symbols-outlined">{b.status === 'Paid' ? 'undo' : 'check_circle'}</span></button>
+                      <button type="button" className="row-icon-btn" title="Print receipt" aria-label="Print receipt" onClick={() => onPrint(b)}><span className="material-symbols-outlined">print</span></button>
                       <button type="button" className="row-icon-btn danger" title="Delete bill" aria-label="Delete bill" onClick={() => onDelete(b)}><span className="material-symbols-outlined">delete</span></button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {paged.items.length === 0 && <tr><td colSpan={9}><div className="empty-state"><span className="material-symbols-outlined">receipt_long</span>No utility bills match the current filters.</div></td></tr>}
+              {paged.items.length === 0 && <tr><td colSpan={10}><div className="empty-state"><span className="material-symbols-outlined">receipt_long</span>No utility bills match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -1638,10 +2042,15 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
   );
 }
 
-function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; onAdd: (b: UtilityBill) => void }) {
+function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter }: {
+  bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[];
+  onAdd: (b: UtilityBill) => void; onPrint: (b: UtilityBill) => void;
+  onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
+}) {
   const [type, setType] = useState<UtilityType>('Electricity');
   const [stallId, setStallId] = useState('');
   const [tenantId, setTenantId] = useState('');
+  const [meterNumber, setMeterNumber] = useState('');
   /* The period is read to the day. It still belongs to the month its end date
      falls in, which is what groups and de-duplicates bills. */
   const [periodStart, setPeriodStart] = useState(() => monthStartIso(currentPeriod()));
@@ -1682,12 +2091,22 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
     return stalls.find((s) => s.id === stallId)?.section ?? '';
   }, [selectedTenant, stalls, stallId]);
 
+  /* Picking a stall, a tenant or a utility refills the two things that are
+     already on record for them: the meter serving that tenancy, and the closing
+     reading of their last bill of the same utility. Both stay editable. */
+  const fillFromRecords = (sid: string, tenant: Tenant | undefined, nextType: UtilityType) => {
+    const last = sid ? lastReadingFor(bills, sid, nextType) : null;
+    setPrevious(last !== null ? String(last) : '');
+    // `||`, not `??`: a tenant with no meter on file holds '', and an empty
+    // string has to fall through to the number the last bill was raised against.
+    setMeterNumber(tenant?.meters[nextType] || lastMeterFor(bills, sid, nextType));
+  };
+
   const applyType = (next: UtilityType) => {
     setType(next);
     setRate(String(UTILITY_PRESETS[next].rate));
     setFixedCharge(String(UTILITY_PRESETS[next].fixedCharge));
-    const last = stallId ? lastReadingFor(bills, stallId, next) : null;
-    setPrevious(last !== null ? String(last) : '');
+    fillFromRecords(stallId, tenants.find((t) => t.id === tenantId), next);
     setError('');
   };
 
@@ -1695,21 +2114,28 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
     setStallId(sid);
     const t = tenantForStall(sid);
     setTenantId(t ? t.id : '');
-    const last = sid ? lastReadingFor(bills, sid, type) : null;
-    setPrevious(last !== null ? String(last) : '');
+    fillFromRecords(sid, t, type);
     setError('');
   };
 
   const applyTenant = (tid: string) => {
     setTenantId(tid);
     const t = tenants.find((x) => x.id === tid);
-    if (t && t.stallId && t.stallId !== '—') {
-      setStallId(t.stallId);
-      const last = lastReadingFor(bills, t.stallId, type);
-      setPrevious(last !== null ? String(last) : '');
-    }
+    const sid = t && t.stallId && t.stallId !== '—' ? t.stallId : stallId;
+    if (t && t.stallId && t.stallId !== '—') setStallId(t.stallId);
+    fillFromRecords(sid, t, type);
     setError('');
   };
+
+  /* Where the meter number in the box came from, so nobody has to guess whether
+     it was filled in for them or is about to be recorded for the first time. */
+  const meterHint = (() => {
+    if (!stallId && !selectedTenant) return 'Select a stall or tenant and the meter on record fills in here.';
+    if (selectedTenant?.meters[type]) return `On record for ${selectedTenant.name}.`;
+    if (lastMeterFor(bills, stallId, type)) return `Carried over from the last ${type.toLowerCase()} bill for ${stallId}.`;
+    if (selectedTenant) return `No ${type.toLowerCase()} meter on record for ${selectedTenant.name} — what you enter is saved to the tenant.`;
+    return 'No meter on record for this stall yet.';
+  })();
 
   const prevNum = toAmount(previous);
   const currNum = toAmount(current);
@@ -1722,32 +2148,32 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
     setCurrent(''); setNotes(''); setError('');
   };
 
-  const handleSave = () => {
-    if (!stallId) { setError('Select the stall number this bill belongs to.'); return; }
-    if (current === '') { setError('Enter the current meter reading.'); return; }
-    if (isNegative(previous) || isNegative(current)) { setError('Meter readings cannot be negative.'); return; }
-    if (readingsInverted) { setError('Current reading cannot be lower than the previous reading.'); return; }
-    if (rateNum <= 0) { setError('Rate per unit must be greater than zero.'); return; }
-    if (isNegative(fixedCharge)) { setError('Fixed / service charge cannot be negative.'); return; }
-    if (!periodStart || !periodEnd) { setError('Set the days this billing period covers.'); return; }
-    if (periodEnd < periodStart) { setError('The billing period cannot end before it starts.'); return; }
-    if (dueDate && dueDate < periodEnd) { setError('The due date falls before the billing period ends.'); return; }
-
-    const duplicate = bills.find((b) => b.stallId === stallId && b.type === type && b.period === period);
-    if (duplicate) { setDuplicatePrompt(duplicate); return; }
-    commitBill();
+  /* Everything both Save and Print insist on before a bill is worth issuing. */
+  const validate = () => {
+    if (!stallId) return 'Select the stall number this bill belongs to.';
+    if (current === '') return 'Enter the current meter reading.';
+    if (isNegative(previous) || isNegative(current)) return 'Meter readings cannot be negative.';
+    if (readingsInverted) return 'Current reading cannot be lower than the previous reading.';
+    if (rateNum <= 0) return 'Rate per unit must be greater than zero.';
+    if (isNegative(fixedCharge)) return 'Fixed / service charge cannot be negative.';
+    if (!periodStart || !periodEnd) return 'Set the days this billing period covers.';
+    if (periodEnd < periodStart) return 'The billing period cannot end before it starts.';
+    if (dueDate && dueDate < periodEnd) return 'The due date falls before the billing period ends.';
+    return '';
   };
 
-  const commitBill = () => {
-    setDuplicatePrompt(null);
+  /* The bill as the form currently reads it, with no ID — it has no number
+     until it is on record. */
+  const draftBill = (): UtilityBill => {
     const tenant = tenants.find((t) => t.id === tenantId);
-    onAdd({
-      id: nextId('UTL', bills.map((b) => b.id)),
+    return {
+      id: '',
       type,
       stallId,
       tenantId: tenant?.id ?? '',
       tenantName: tenant?.name ?? '',
       section,
+      meterNumber: meterNumber.trim(),
       period,
       periodStart,
       periodEnd,
@@ -1761,10 +2187,37 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
       dateIssued: todayIso(),
       dueDate,
       notes: notes.trim(),
-    });
+    };
+  };
+
+  const handleSave = () => {
+    const problem = validate();
+    if (problem) { setError(problem); return; }
+    const duplicate = bills.find((b) => b.stallId === stallId && b.type === type && b.period === period);
+    if (duplicate) { setDuplicatePrompt(duplicate); return; }
+    commitBill();
+  };
+
+  const commitBill = () => {
+    setDuplicatePrompt(null);
+    onAdd({ ...draftBill(), id: nextId('UTL', bills.map((b) => b.id)) });
+    // A meter typed in for a tenant who had none on file belongs on the tenant.
+    onRecordMeter(tenantId, type, meterNumber);
 
     setPrevious(String(currNum));
     resetForm();
+  };
+
+  /* A receipt carries a bill number only when this exact bill is already on
+     record — matched on the stall, utility and month that identify a bill here,
+     and on the figures, so an edited form never prints under an old number. */
+  const handlePrint = () => {
+    const problem = validate();
+    if (problem) { setError(problem); return; }
+    const onRecord = bills.find((b) =>
+      b.stallId === stallId && b.type === type && b.period === period
+      && b.previousReading === prevNum && b.currentReading === currNum && b.amount === amount);
+    onPrint(onRecord ?? draftBill());
   };
 
   return (
@@ -1799,8 +2252,14 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
                 <option value="">No tenant on file — charge the stall</option>
                 {tenants.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.stallId})</option>)}
               </select>
-              <span className="form-hint">Picking either field fills in the other automatically.</span>
+              <span className="form-hint">Picking either field fills in the other, along with the meter number and last reading on record.</span>
             </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">{type} Meter Number</label>
+            <input className="form-input" value={meterNumber} onChange={(e) => { setMeterNumber(e.target.value); setError(''); }} placeholder={`e.g. ${type === 'Electricity' ? 'EM-1101' : 'WM-2301'}`} />
+            <span className="form-hint">{meterHint}</span>
           </div>
 
           <div className="form-row">
@@ -1874,6 +2333,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
               <span>{stallId ? `Stall ${stallId}` : 'No stall selected'}{selectedTenant ? ` · ${selectedTenant.name}` : ''}</span>
             </div>
           </div>
+          <div className="calc-row"><span>Meter number</span><strong>{meterNumber.trim() || 'Not on record'}</strong></div>
           <div className="calc-row"><span>Period covered</span><strong>{formatPeriodRange(periodStart, periodEnd)}</strong></div>
           <div className="calc-row"><span>Previous reading</span><strong>{prevNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row"><span>Current reading</span><strong>{currNum.toLocaleString()} {preset.unit}</strong></div>
@@ -1884,7 +2344,8 @@ function BillCalculator({ bills, tenants, stalls, onAdd }: { bills: UtilityBill[
           <div className="calc-row"><span>Due date</span><strong>{formatIsoDate(dueDate)}</strong></div>
           {error && <div className="calc-error"><span className="material-symbols-outlined">error</span>{error}</div>}
           <div className="calc-actions">
-            <button className="btn-outline" onClick={() => { setStallId(''); setTenantId(''); setPrevious(''); setCurrent(''); setNotes(''); setError(''); }}>Clear</button>
+            <button className="btn-outline" onClick={() => { setStallId(''); setTenantId(''); setMeterNumber(''); setPrevious(''); setCurrent(''); setNotes(''); setError(''); }}>Clear</button>
+            <button className="btn-outline" onClick={handlePrint}><span className="material-symbols-outlined">print</span>Print Receipt</button>
             <button className="btn-primary" onClick={handleSave}><span className="material-symbols-outlined">save</span>Save to Records</button>
           </div>
         </div>
@@ -2374,7 +2835,7 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
   ];
 
   const reference = `PMRMS-AR-${isoDate(generatedAt).replace(/-/g, '')}`;
-  const stamp = generatedAt.toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' });
+  const stamp = manilaStamp(generatedAt);
 
   return (
     <div className="report">
@@ -3158,6 +3619,10 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
       rent,
       status,
       applicantId: applicant.id,
+      /* Meters are read off the stall later; rent starts unpaid for the month. */
+      meters: { Electricity: '', Water: '' },
+      rentDueDay: DEFAULT_RENT_DUE_DAY,
+      rentPayments: {},
     });
   };
 
@@ -3224,8 +3689,11 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   const [stallId, setStallId] = useState('');
   const [section, setSection] = useState(SECTIONS[0]);
   const [rent, setRent] = useState(3500);
+  const [rentDueDay, setRentDueDay] = useState(DEFAULT_RENT_DUE_DAY);
   const [status, setStatus] = useState('Active');
   const [barangay, setBarangay] = useState('');
+  const [electricMeter, setElectricMeter] = useState('');
+  const [waterMeter, setWaterMeter] = useState('');
   const [keeperDrafts, setKeeperDrafts] = useState<KeeperDraft[]>([]);
   const [error, setError] = useState('');
 
@@ -3249,6 +3717,9 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
       id: nextId('TEN', existingIds), name: name.trim(), phone: phone.trim() || '—', barangay: barangay.trim(),
       stallId: trimmedStall || '—', section, rent, status,
       keepers: resolveKeepers(keeperDrafts),
+      meters: { Electricity: electricMeter.trim(), Water: waterMeter.trim() },
+      rentDueDay: clampDueDay(rentDueDay),
+      rentPayments: {},
     });
   };
 
@@ -3278,7 +3749,25 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
         <div className="form-group"><label className="form-label">Section</label><select className="form-select" value={section} onChange={(e) => setSection(e.target.value)}>{SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
         <div className="form-group"><label className="form-label">Monthly Rent (₱)</label><input className="form-input" type="number" min="0" step="500" value={rent} onChange={(e) => setRent(toAmount(e.target.value))} /></div>
       </div>
-      <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select></div>
+      <div className="form-row">
+        <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select></div>
+        <div className="form-group">
+          <label className="form-label">Rent Due Day</label>
+          <RentDueDaySelect value={String(rentDueDay)} onChange={(v) => setRentDueDay(clampDueDay(v))} />
+          <span className="form-hint">Rent unpaid after this day of the month is flagged overdue.</span>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Electricity Meter Number</label>
+          <input className="form-input" placeholder="e.g. EM-1101" value={electricMeter} onChange={(e) => setElectricMeter(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Water Meter Number</label>
+          <input className="form-input" placeholder="e.g. WM-2301" value={waterMeter} onChange={(e) => setWaterMeter(e.target.value)} />
+          <span className="form-hint">Both fill in automatically when this tenant is billed.</span>
+        </div>
+      </div>
       <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { setKeeperDrafts(next); setError(''); }} />
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
       <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}><button className="btn-outline" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={handleSubmit}>Add Tenant</button></div>
@@ -3659,8 +4148,14 @@ function RecordNote({ children }: { children: ReactNode }) {
   return <p className="record-note">{children}</p>;
 }
 
-function TenantDetailView({ tenant, bills, onEdit, onClose }: { tenant: Tenant; bills: UtilityBill[]; onEdit: () => void; onClose: () => void }) {
+function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { tenant: Tenant; bills: UtilityBill[]; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onEdit: () => void; onClose: () => void }) {
   const utilitiesBilled = bills.reduce((sum, b) => sum + b.amount, 0);
+  const period = currentPeriod();
+  const rentStatus = rentStatusOf(tenant, period);
+  const paid = rentStatus === 'Paid';
+  const payment = rentPaymentFor(tenant, period);
+  const late = rentDaysLate(tenant, period);
+  const collected = rentTotalPaid(tenant);
 
   return (<>
     <RecordSheet
@@ -3682,18 +4177,46 @@ function TenantDetailView({ tenant, bills, onEdit, onClose }: { tenant: Tenant; 
         <StallkeeperRecord keepers={tenant.keepers} emptyText="No stallkeeper has been registered for this tenant." />
       </RecordSection>
 
-      <RecordSection title="Account Summary" icon="payments">
+      <RecordSection title="Utility Meters" icon="speed">
+        <div className="record-grid">
+          <RecordRow label="Electricity Meter No." value={tenant.meters.Electricity} />
+          <RecordRow label="Water Meter No." value={tenant.meters.Water} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Rent Account" icon="payments">
         <div className="record-grid">
           <RecordRow label="Monthly Rent" value={money(tenant.rent)} />
+          <RecordRow label="Falls Due" value={`Day ${clampDueDay(tenant.rentDueDay)} of each month`} />
+          <RecordRow label={`${formatPeriod(period)} Rent`} node={<RentStatusBadge status={rentStatus} />} />
+          <RecordRow
+            label={paid ? 'Date Paid' : 'Due Date'}
+            value={paid ? (payment?.paidOn ? formatIsoDate(payment.paidOn) : '') : formatIsoDate(rentDueIso(tenant, period))}
+          />
+        </div>
+        {rentStatus === 'Overdue' && (
+          <RecordNote>Rent for {formatPeriod(period)} fell due on {formatIsoDate(rentDueIso(tenant, period))} and is {late} day{late === 1 ? '' : 's'} past due.</RecordNote>
+        )}
+        <RecordTotal label="Rent Collected to Date" value={money(collected)} />
+      </RecordSection>
+
+      <RecordSection title="Account Summary" icon="receipt_long">
+        <div className="record-grid">
+          <RecordRow label="Rent Collected" value={money(collected)} />
           <RecordRow label="Utilities Billed" value={money(utilitiesBilled)} />
         </div>
-        <RecordTotal label="Rent + Utilities (to date)" value={money(tenant.rent + utilitiesBilled)} />
+        <RecordTotal label="Rent + Utilities (to date)" value={money(collected + utilitiesBilled)} />
       </RecordSection>
     </RecordSheet>
 
+    <RentLedger tenant={tenant} />
     <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued to ${tenant.name} yet.`} />
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-outline" onClick={() => onSetRentPaid(tenant.id, period, !paid)}>
+        <span className="material-symbols-outlined">{paid ? 'undo' : 'payments'}</span>
+        {paid ? `Undo ${formatPeriodShort(period)} Rent` : `Record ${formatPeriodShort(period)} Rent Paid`}
+      </button>
       <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Details</button>
     </div>
   </>);
@@ -3706,8 +4229,11 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
   const [stallId, setStallId] = useState('');
   const [section, setSection] = useState('');
   const [rent, setRent] = useState('');
+  const [rentDueDay, setRentDueDay] = useState('');
   const [status, setStatus] = useState('');
   const [barangay, setBarangay] = useState('');
+  const [electricMeter, setElectricMeter] = useState('');
+  const [waterMeter, setWaterMeter] = useState('');
 
   /* One row per stallkeeper on record, each opening blank like every other
      field. Adding a row registers someone new; removing one takes them off the
@@ -3717,7 +4243,7 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
   const recordedPhone = current.phone === '—' ? '' : current.phone;
   const keepersChanged = JSON.stringify(resolveKeepers(keeperDrafts)) !== JSON.stringify(current.keepers)
     || keeperDraftsTouched(keeperDrafts);
-  const dirty = !!(name.trim() || phone.trim() || stallId || section || rent.trim() || status || barangay.trim() || keepersChanged);
+  const dirty = !!(name.trim() || phone.trim() || stallId || section || rent.trim() || rentDueDay || status || barangay.trim() || electricMeter.trim() || waterMeter.trim() || keepersChanged);
 
   const merged = (): Tenant => ({
     ...current,
@@ -3727,8 +4253,13 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
     stallId: stallId || current.stallId,
     section: section || current.section,
     rent: rent.trim() ? toAmount(rent) : current.rent,
+    rentDueDay: rentDueDay ? clampDueDay(rentDueDay) : clampDueDay(current.rentDueDay),
     status: status || current.status,
     keepers: resolveKeepers(keeperDrafts),
+    meters: {
+      Electricity: keepText(electricMeter, current.meters.Electricity),
+      Water: keepText(waterMeter, current.meters.Water),
+    },
   });
 
   const commit = () => {
@@ -3797,6 +4328,22 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
             <option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option>
           </select>
         </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Rent Due Day</label>
+          <RentDueDaySelect value={rentDueDay} keepLabel={`— Keep day ${clampDueDay(current.rentDueDay)}`} onChange={(v) => edit(setRentDueDay)(v)} />
+          <span className="form-hint">Rent unpaid after this day of the month is flagged overdue.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Electricity Meter Number</label>
+          <input className="form-input" value={electricMeter} placeholder={keepHint(current.meters.Electricity)} onChange={(e) => edit(setElectricMeter)(e.target.value)} />
+        </div>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Water Meter Number</label>
+        <input className="form-input" value={waterMeter} placeholder={keepHint(current.meters.Water)} onChange={(e) => edit(setWaterMeter)(e.target.value)} />
+        <span className="form-hint">Both meter numbers fill in automatically whenever this tenant is billed.</span>
       </div>
       <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { form.clearError(); setKeeperDrafts(next); }} />
     </div>
@@ -4241,7 +4788,7 @@ function ViolationDetailView({ violation, onEdit, onClose }: { violation: Violat
   </>);
 }
 
-function BillDetailView({ bill, onToggleStatus, onClose }: { bill: UtilityBill; onToggleStatus: (id: string) => void; onClose: () => void }) {
+function BillDetailView({ bill, onToggleStatus, onPrint, onClose }: { bill: UtilityBill; onToggleStatus: (id: string) => void; onPrint: (b: UtilityBill) => void; onClose: () => void }) {
   const preset = UTILITY_PRESETS[bill.type];
   return (<>
     <RecordSheet
@@ -4254,6 +4801,7 @@ function BillDetailView({ bill, onToggleStatus, onClose }: { bill: UtilityBill; 
           <RecordRow label="Stall Number" value={bill.stallId} />
           <RecordRow label="Tenant" value={bill.tenantName || 'Unassigned (charged to stall)'} />
           <RecordRow label="Market Section" value={bill.section} />
+          <RecordRow label={`${bill.type} Meter No.`} value={bill.meterNumber} />
           <RecordRow label="Period Covered" value={`${billPeriodText(bill)} (${periodDays(bill.periodStart, bill.periodEnd)} days)`} />
           <RecordRow label="Date Issued" value={formatIsoDate(bill.dateIssued)} />
           <RecordRow label="Due Date" value={formatIsoDate(bill.dueDate)} />
@@ -4282,6 +4830,7 @@ function BillDetailView({ bill, onToggleStatus, onClose }: { bill: UtilityBill; 
 
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-outline" onClick={() => onPrint(bill)}><span className="material-symbols-outlined">print</span>Print Receipt</button>
       <button className="btn-primary" onClick={() => { onToggleStatus(bill.id); onClose(); }}>{bill.status === 'Paid' ? 'Mark as Unpaid' : 'Mark as Paid'}</button>
     </div>
   </>);
@@ -4293,6 +4842,862 @@ function TenantStatusBadge({ status }: { status: string }) {
     'Active': 'badge badge-active', 'Expiring Soon': 'badge badge-expiring',
   };
   return <span className={map[status] || 'badge'}>{status}</span>;
+}
+
+/* The market office clock. It ticks every second, which is also what keeps the
+   register honest: rent falling due is a string comparison against today's
+   date, and re-rendering each second means a row turns red the moment midnight
+   passes in Tanauan, on a machine nobody has touched since yesterday. */
+function MarketClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  return (
+    <div className="market-clock" title={`Philippine Standard Time (${MARKET_TIME_ZONE})`}>
+      <span className="material-symbols-outlined" aria-hidden="true">schedule</span>
+      <span className="market-clock-text">
+        <span className="market-clock-time">{clockTimeFmt.format(now)}<abbr>PHT</abbr></span>
+        <span className="market-clock-date">{clockDateFmt.format(now)}</span>
+      </span>
+    </div>
+  );
+}
+
+function RentStatusBadge({ status }: { status: RentStatus }) {
+  const cls = status === 'Paid' ? 'badge-paid' : status === 'Overdue' ? 'badge-overdue' : 'badge-unpaid';
+  return <span className={`badge ${cls}`}>{status}</span>;
+}
+
+/* Days 1–28 only: a due day past the 28th would have to slip in February. */
+function RentDueDaySelect({ value, keepLabel, onChange }: { value: string; keepLabel?: string; onChange: (v: string) => void }) {
+  return (
+    <select className="form-select" value={value} onChange={(e) => onChange(e.target.value)}>
+      {keepLabel && <option value="">{keepLabel}</option>}
+      {Array.from({ length: MAX_RENT_DUE_DAY }, (_, i) => i + 1).map((d) => (
+        <option key={d} value={d}>Day {d} of the month</option>
+      ))}
+    </select>
+  );
+}
+
+/* The months this tenant has settled, newest first. */
+function RentLedger({ tenant }: { tenant: Tenant }) {
+  const payments = rentPaymentHistory(tenant);
+  const total = rentTotalPaid(tenant);
+  return (
+    <div className="bill-history">
+      <div className="bill-history-head">
+        <h4>Rent Payment Records</h4>
+        <span className={payments.length === 0 ? 'outstanding' : ''}>{payments.length === 0 ? 'No rent recorded as paid' : `${money(total)} collected over ${payments.length} month${payments.length === 1 ? '' : 's'}`}</span>
+      </div>
+      {payments.length === 0 ? (
+        <p className="bill-history-empty">No month has been marked paid for {tenant.name} yet.</p>
+      ) : (
+        <table className="mini-table">
+          <thead><tr><th>Month</th><th>Date Paid</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            {payments.slice(0, 12).map((p) => (
+              <tr key={p.period}>
+                <td>{formatPeriod(p.period)}</td>
+                <td>{p.paidOn ? formatIsoDate(p.paidOn) : '—'}</td>
+                <td><strong>{money(p.amount)}</strong></td>
+                <td><RentStatusBadge status="Paid" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   Printing — billing receipts, four to an A4 sheet
+   ============================================================ */
+
+/* Four receipts fill a sheet. The last sheet is padded with blank quarters so
+   its rules still line up when it is cut. */
+function chunkIntoSheets(receipts: PrintReceipt[]): PrintReceipt[][] {
+  const sheets: PrintReceipt[][] = [];
+  for (let i = 0; i < receipts.length; i += RECEIPTS_PER_SHEET) {
+    sheets.push(receipts.slice(i, i + RECEIPTS_PER_SHEET));
+  }
+  return sheets.length > 0 ? sheets : [[]];
+}
+
+/* What goes on paper, and what the preview shows — the same component both
+   times, so the preview cannot drift from the print. */
+function ReceiptSheets({ receipts, printedBy, printedAt }: { receipts: PrintReceipt[]; printedBy: string; printedAt: string }) {
+  return (<>
+    {chunkIntoSheets(receipts).map((sheet, sheetIndex) => (
+      <div className="receipt-sheet" key={sheetIndex}>
+        {sheet.map((r, i) => (
+          <BillReceipt key={`${r.bill.id || 'draft'}-${sheetIndex}-${i}`} bill={r.bill} label={r.label} printedBy={printedBy} printedAt={printedAt} />
+        ))}
+        {Array.from({ length: RECEIPTS_PER_SHEET - sheet.length }, (_, i) => (
+          <div className="receipt receipt-blank" key={`blank-${i}`} />
+        ))}
+      </div>
+    ))}
+  </>);
+}
+
+/* A receipt has to say who issued it, and the app has no signed-in identity to
+   take that from, so the name is asked for and remembered for the next print.
+   Nothing reaches the printer until the officer has seen the sheet. */
+function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRequest; onConfirm: (receipts: PrintReceipt[], printedBy: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState(() => { try { return localStorage.getItem(printedByKey) ?? ''; } catch { return ''; } });
+  const [copies, setCopies] = useState(2);
+  const [error, setError] = useState('');
+
+  /* One bill goes out in labelled copies; a batch goes out one receipt each. */
+  const receipts: PrintReceipt[] = request.single
+    ? Array.from({ length: copies }, (_, i) => ({ bill: request.bills[0], label: RECEIPT_COPY_LABELS[i] ?? '' }))
+    : request.bills.map((bill) => ({ bill, label: '' }));
+
+  const sheets = Math.ceil(Math.max(receipts.length, 1) / RECEIPTS_PER_SHEET);
+  const unsaved = receipts.filter((r) => !r.bill.id).length;
+
+  const submit = () => {
+    if (!name.trim()) { setError('Enter the name of the person printing these receipts.'); return; }
+    if (receipts.length === 0) { setError('There is nothing to print.'); return; }
+    onConfirm(receipts, name.trim());
+  };
+
+  return (
+    <Modal
+      title="Print Preview — Billing Receipt"
+      subtitle={`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} · ${sheets} A4 sheet${sheets === 1 ? '' : 's'} · four to a sheet`}
+      stacked wide onClose={onCancel}
+    >
+      <div className="print-setup">
+        <div className="form-group">
+          <label className="form-label">Printed By *</label>
+          <input
+            className="form-input" autoFocus value={name} placeholder="e.g. Juan Dela Cruz"
+            onChange={(e) => { setName(e.target.value); setError(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          />
+          <span className="form-hint">Printed on every receipt as the officer who issued it, and offered back next time.</span>
+        </div>
+        {request.single && (
+          <div className="form-group">
+            <label className="form-label">Copies on the Sheet</label>
+            <select className="form-select" value={copies} onChange={(e) => setCopies(Number(e.target.value))}>
+              <option value={1}>1 — {RECEIPT_COPY_LABELS[0]}</option>
+              <option value={2}>2 — tenant and market office</option>
+              <option value={4}>4 — fill the sheet</option>
+            </select>
+            <span className="form-hint">Every copy prints on the one sheet, to be cut apart.</span>
+          </div>
+        )}
+      </div>
+
+      {unsaved > 0 && (
+        <div className="dialog-note">
+          <span className="material-symbols-outlined">info</span>
+          <span>{unsaved === receipts.length ? 'This bill is not on record yet' : `${unsaved} of these bills are not on record yet`}, so {unsaved === 1 ? 'it prints' : 'they print'} without a bill number. Save to records first if the tenant needs one.</span>
+        </div>
+      )}
+      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+
+      <div className="print-preview" aria-label="Preview of the sheets that will print">
+        <div className="print-preview-scale">
+          <ReceiptSheets
+            receipts={receipts}
+            printedBy={name.trim() || '—'}
+            printedAt={manilaStamp()}
+          />
+        </div>
+      </div>
+
+      <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+        <button className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">print</span>Print {sheets} Sheet{sheets === 1 ? '' : 's'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* One quarter of an A4 sheet. Everything that identifies the charge as this
+   tenant's — stall, name, section, meter — sits in its own block above the
+   figures, so a quarter cut out on its own still says who owes what. */
+function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill; label: string; printedBy: string; printedAt: string }) {
+  const preset = UTILITY_PRESETS[bill.type];
+  return (
+    <div className="receipt">
+      <header className="receipt-masthead">
+        <img className="receipt-seal" src="./logo.jpg" alt="" aria-hidden="true" />
+        <div className="receipt-identity">
+          <span>Republic of the Philippines</span>
+          <span>Municipality of Tanauan, Leyte</span>
+          <strong>Public Market — Market Office</strong>
+        </div>
+        {label && <span className="receipt-copy">{label}</span>}
+      </header>
+
+      <h1 className="receipt-title">{bill.type} Billing Receipt</h1>
+
+      <div className="receipt-ref">
+        <span>Bill No. <strong>{bill.id || 'Not yet on record'}</strong></span>
+        <span>Issued <strong>{formatIsoDate(bill.dateIssued)}</strong></span>
+      </div>
+
+      <div className="receipt-party">
+        <div className="receipt-party-row"><span>Stall No.</span><strong>{bill.stallId || '—'}</strong></div>
+        <div className="receipt-party-row"><span>Tenant</span><strong>{bill.tenantName || 'Unassigned — charged to the stall'}</strong></div>
+        <div className="receipt-party-row"><span>Section</span><strong>{bill.section || '—'}</strong></div>
+        <div className="receipt-party-row"><span>{bill.type} Meter No.</span><strong>{bill.meterNumber || 'Not on record'}</strong></div>
+      </div>
+
+      <section className="receipt-block">
+        <div className="receipt-line"><span>Period Covered</span><strong>{billPeriodText(bill)}</strong></div>
+        <div className="receipt-line"><span>Due Date</span><strong>{formatIsoDate(bill.dueDate)}</strong></div>
+        <div className="receipt-line"><span>Previous Reading</span><strong>{bill.previousReading.toLocaleString()} {preset.unit}</strong></div>
+        <div className="receipt-line"><span>Current Reading</span><strong>{bill.currentReading.toLocaleString()} {preset.unit}</strong></div>
+        <div className="receipt-line"><span>Consumption</span><strong>{bill.consumption.toLocaleString()} {preset.unit}</strong></div>
+        <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.consumption * bill.rate)}</strong></div>
+        <div className="receipt-line"><span>Fixed / Service Charge</span><strong>{money(bill.fixedCharge)}</strong></div>
+      </section>
+
+      <div className="receipt-total"><span>Total Due</span><strong>{money(bill.amount)}</strong></div>
+      <div className="receipt-status">Status at printing: <strong>{(isOverdue(bill) ? 'Overdue' : bill.status).toUpperCase()}</strong></div>
+
+      {bill.notes && <p className="receipt-notes"><span>Notes:</span> {bill.notes}</p>}
+
+      <div className="receipt-signatures">
+        <div className="receipt-sign">
+          <span className="receipt-sign-name">{printedBy}</span>
+          <span className="receipt-sign-rule" />
+          <span className="receipt-sign-role">Market Office</span>
+        </div>
+        <div className="receipt-sign">
+          <span className="receipt-sign-name">&nbsp;</span>
+          <span className="receipt-sign-rule" />
+          <span className="receipt-sign-role">Received by (Tenant)</span>
+        </div>
+      </div>
+
+      <footer className="receipt-foot">
+        <span>Printed by <strong>{printedBy}</strong> · {printedAt}</span>
+      </footer>
+    </div>
+  );
+}
+
+/* ============================================================
+   Market Assistant — answers read off the records, never guessed
+   ============================================================ */
+
+/* The rule this whole section exists to enforce: a figure the office acts on
+   must be computed, not predicted. Every answer below is worked out here, by
+   the same functions the screens use, so the assistant and the register can
+   never disagree.
+
+   A language model, where one is installed, does two jobs and neither of them
+   is arithmetic: it decides which question was asked, and it puts the computed
+   answer into a sentence. Anything it writes is then checked digit by digit
+   against the figures that were actually computed — see `guardPhrasing`. A
+   sentence carrying a number nobody calculated is thrown away and the plain
+   answer shown instead, so a hallucinated peso can never reach the screen. */
+
+type FactAnswer = {
+  intent: string;
+  headline: string;
+  lines: string[];
+  navigate?: ModuleKey;
+};
+
+type AssistantMessage = {
+  id: string;
+  role: 'officer' | 'assistant';
+  text: string;
+  lines?: string[];
+  navigate?: ModuleKey;
+  /* How the wording was produced, so the officer can tell a computed sentence
+     from a model-written one. */
+  source?: 'records' | 'model' | 'model-rejected';
+};
+
+/* The bridge the desktop shell installs when a model file is present. In the
+   browser, or with no model on disk, this is simply absent and the assistant
+   runs on its own. */
+type AssistantBridge = {
+  ready: () => Promise<boolean>;
+  classify: (question: string, intents: Array<{ key: string; question: string }>) => Promise<string | null>;
+  phrase: (question: string, headline: string, lines: string[]) => Promise<string | null>;
+  modelName: () => Promise<string | null>;
+};
+
+declare global {
+  interface Window { marketAssistant?: AssistantBridge }
+}
+
+/* ---------- The figure guardrail ---------- */
+
+/* Every number in a piece of text, however it was punctuated. */
+function numericTokens(text: string): string[] {
+  return text.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
+}
+
+/* ₱3,500.00, ₱3500 and 3500 are the same figure written three ways; comparing
+   them loosely keeps the guardrail from rejecting a correct sentence merely
+   for reformatting what it was given. */
+function normalizeFigure(token: string): string {
+  const bare = token.replace(/,/g, '');
+  return bare.includes('.') ? bare.replace(/0+$/, '').replace(/\.$/, '') : bare;
+}
+
+/* Words the model may use freely: ordinary English, and the vocabulary the
+   answers themselves are built from. Anything else capitalised mid-sentence is
+   treated as a name it has introduced. */
+const PHRASING_ALLOWED_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'at', 'is', 'are', 'was', 'were',
+  'has', 'have', 'had', 'no', 'not', 'none', 'this', 'that', 'there', 'their', 'they', 'it',
+  'stall', 'stalls', 'tenant', 'tenants', 'rent', 'bill', 'bills', 'month', 'total', 'due',
+  'paid', 'unpaid', 'overdue', 'available', 'occupied', 'maintenance', 'market', 'office',
+  'collected', 'outstanding', 'violation', 'violations', 'applicant', 'applicants', 'meter',
+  'electricity', 'water', 'record', 'records', 'day', 'days', 'still', 'so', 'far', 'date',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july',
+  'august', 'september', 'october', 'november', 'december',
+]);
+
+/* Proper nouns the model used — names of people, stalls, sections. A reworded
+   answer must not introduce one that was not in the computed facts. */
+function properNouns(text: string): string[] {
+  // Skip the first word of each sentence: its capital says nothing.
+  const withoutSentenceStarts = text.replace(/(^|[.!?]\s+)([A-Z])/g, (_m, lead, letter) => `${lead}${letter.toLowerCase()}`);
+  return (withoutSentenceStarts.match(/\b[A-Z][\w'-]*\b/g) ?? [])
+    .map((w) => w.toLowerCase())
+    .filter((w) => !PHRASING_ALLOWED_WORDS.has(w));
+}
+
+/* True when the model's wording introduced neither a figure nor a name that
+   the computed answer did not already contain. Numbers were always the danger;
+   a name swapped onto the wrong tenant is the quieter one, and just as wrong
+   in a register the office acts on. */
+function guardPhrasing(phrasing: string, fact: FactAnswer): boolean {
+  const facts = [fact.headline, ...fact.lines].join(' ');
+
+  const allowedFigures = new Set(numericTokens(facts).map(normalizeFigure));
+  if (!numericTokens(phrasing).every((t) => allowedFigures.has(normalizeFigure(t)))) return false;
+
+  const allowedNames = new Set(properNouns(facts));
+  return properNouns(phrasing).every((w) => allowedNames.has(w));
+}
+
+/* ---------- The facts ---------- */
+
+type AssistantIntent = {
+  key: string;
+  /* The canonical phrasing, offered as a suggestion and given to the model as
+     the menu it is choosing from. */
+  question: string;
+  /* Terms that decide the question on their own — "overdue", "violation". */
+  strong: string[];
+  /* Terms that merely lean, and must never outvote a decisive one. "Who is
+     overdue on rent" is a rent question, not a request to look up a tenant. */
+  weak: string[];
+  /* For questions whose giveaway is split around a name: "has <someone> paid". */
+  patterns?: RegExp[];
+  answer: (state: AppState, asked: string) => FactAnswer;
+};
+
+/* Finds the tenant a question is about, by name or by record number. */
+function tenantFromQuestion(state: AppState, asked: string): Tenant | undefined {
+  const q = asked.toLowerCase();
+  const byId = state.tenants.find((t) => q.includes(t.id.toLowerCase()));
+  if (byId) return byId;
+  const named = state.tenants
+    .filter((t) => t.name && q.includes(t.name.toLowerCase()))
+    .sort((a, b) => b.name.length - a.name.length);
+  if (named.length > 0) return named[0];
+  /* A surname on its own is how anyone actually asks. */
+  return state.tenants.find((t) => t.name.toLowerCase().split(/\s+/).some((word) => word.length > 3 && q.includes(word)));
+}
+
+/* The month a question is about — "July", "last month", otherwise this one. */
+function periodFromQuestion(asked: string): string {
+  const q = asked.toLowerCase();
+  const now = currentPeriod();
+  if (/last month|previous month/.test(q)) {
+    const [y, m] = now.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const found = months.findIndex((name) => q.includes(name));
+  if (found >= 0) {
+    const year = /\b(20\d{2})\b/.exec(q)?.[1] ?? now.slice(0, 4);
+    return `${year}-${String(found + 1).padStart(2, '0')}`;
+  }
+  return now;
+}
+
+const ASSISTANT_INTENTS: AssistantIntent[] = [
+  {
+    key: 'rent.overdue',
+    question: 'Which tenants are overdue on rent?',
+    strong: ['overdue','past due','delinquent','behind on rent','behind on payment','behind on payments','lumampas na'],
+    weak: ['late', 'rent', 'not paid', 'hindi nagbayad'],
+    answer: (state, asked) => {
+      const period = periodFromQuestion(asked);
+      const late = state.tenants.filter((t) => rentStatusOf(t, period) === 'Overdue');
+      const owed = late.reduce((s, t) => s + t.rent, 0);
+      return {
+        intent: 'rent.overdue',
+        headline: late.length === 0
+          ? `No tenant is overdue on rent for ${formatPeriod(period)}.`
+          : `${late.length} tenant${late.length === 1 ? ' is' : 's are'} overdue on rent for ${formatPeriod(period)}, owing ${money(owed)} in total.`,
+        lines: late.map((t) => `${t.name} (${t.id}, stall ${t.stallId}) — ${money(t.rent)}, due ${formatIsoDate(rentDueIso(t, period))}, ${rentDaysLate(t, period)} day${rentDaysLate(t, period) === 1 ? '' : 's'} late`),
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'rent.unpaid',
+    question: 'Who has not paid rent this month?',
+    strong: ['has not paid','not yet paid','unpaid rent','wala pang bayad','still owe','who has not paid','hindi pa nagbabayad','hindi nagbabayad','hindi pa bayad','walang bayad'],
+    weak: ['unpaid','rent','outstanding','upa','bayad','nagbabayad'],
+    answer: (state, asked) => {
+      const period = periodFromQuestion(asked);
+      const unpaid = state.tenants.filter((t) => rentStatusOf(t, period) !== 'Paid');
+      const roll = rentRollFor(state.tenants, period);
+      return {
+        intent: 'rent.unpaid',
+        headline: unpaid.length === 0
+          ? `Every tenant has paid rent for ${formatPeriod(period)}.`
+          : `${unpaid.length} of ${state.tenants.length} tenants have not paid rent for ${formatPeriod(period)}. ${money(roll.outstanding)} is still outstanding.`,
+        lines: unpaid.map((t) => `${t.name} (stall ${t.stallId}) — ${money(t.rent)}, ${rentStatusOf(t, period)}`),
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'rent.collected',
+    question: 'How much rent have we collected this month?',
+    strong: ['collected','collection','nakolekta','rent income','naipon','take in','taken in'],
+    weak: ['rent','how much','total','upa','magkano'],
+    answer: (state, asked) => {
+      const period = periodFromQuestion(asked);
+      const roll = rentRollFor(state.tenants, period);
+      return {
+        intent: 'rent.collected',
+        headline: `${money(roll.collected)} of ${money(roll.due)} rent has been collected for ${formatPeriod(period)}.`,
+        lines: [
+          `${roll.paidCount} of ${state.tenants.length} tenants have paid`,
+          `${money(roll.outstanding)} still outstanding across ${roll.unpaidCount} tenant${roll.unpaidCount === 1 ? '' : 's'}`,
+          `${roll.overdueCount} tenant${roll.overdueCount === 1 ? ' is' : 's are'} past the due date`,
+        ],
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'rent.tenant',
+    question: 'Has a particular tenant paid their rent?',
+    strong: ['paid na ba', 'already paid'],
+    weak: ['paid', 'rent', 'status of', 'account of'],
+    patterns: [/\b(has|did)\s+[\w'\s.-]{2,40}\s+(paid|pay)\b/i],
+    answer: (state, asked) => {
+      const tenant = tenantFromQuestion(state, asked);
+      const period = periodFromQuestion(asked);
+      if (!tenant) {
+        return {
+          intent: 'rent.tenant',
+          headline: 'I could not tell which tenant you meant. Name them as they appear on the record, or give the tenant number.',
+          lines: state.tenants.slice(0, 6).map((t) => `${t.name} (${t.id})`),
+          navigate: 'tenants',
+        };
+      }
+      const status = rentStatusOf(tenant, period);
+      const payment = rentPaymentFor(tenant, period);
+      return {
+        intent: 'rent.tenant',
+        headline: status === 'Paid'
+          ? `${tenant.name} has paid rent for ${formatPeriod(period)}.`
+          : `${tenant.name} has not paid rent for ${formatPeriod(period)} — ${status}.`,
+        lines: [
+          `Stall ${tenant.stallId}, ${tenant.section}`,
+          `Monthly rent ${money(tenant.rent)}, falls due day ${clampDueDay(tenant.rentDueDay)}`,
+          status === 'Paid' && payment?.paidOn
+            ? `Paid ${formatIsoDate(payment.paidOn)}, ${money(payment.amount)}`
+            : `Due ${formatIsoDate(rentDueIso(tenant, period))}${status === 'Overdue' ? `, ${rentDaysLate(tenant, period)} days late` : ''}`,
+          `Rent collected from this tenant to date: ${money(rentTotalPaid(tenant))}`,
+        ],
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'earnings.total',
+    question: 'What are the market earnings?',
+    strong: ['earnings','revenue','income','kita','rent roll','total earning'],
+    weak: ['total','how much','money','earning','magkano'],
+    answer: (state) => {
+      const period = currentPeriod();
+      const roll = rentRollFor(state.tenants, period);
+      const rentToDate = rentCollectedToDate(state.tenants);
+      const utilitiesPaid = state.utilities.filter((b) => b.status === 'Paid').reduce((s, b) => s + b.amount, 0);
+      return {
+        intent: 'earnings.total',
+        headline: `Total market earnings to date are ${money(rentToDate + utilitiesPaid)}.`,
+        lines: [
+          `Rent collected to date: ${money(rentToDate)}`,
+          `Utilities collected to date: ${money(utilitiesPaid)}`,
+          `Monthly rent roll: ${money(roll.due)} contracted from ${state.tenants.length} tenancies`,
+          `Collected for ${formatPeriod(period)}: ${money(roll.collected)}`,
+        ],
+        navigate: 'dashboard',
+      };
+    },
+  },
+  {
+    key: 'stalls.vacant',
+    question: 'Which stalls are vacant?',
+    strong: ['vacant','available stall','empty stall','bakante','free stall','open stall','walang laman','walang tao','puwesto na bakante'],
+    weak: ['stall','available','empty','puwesto','ilan'],
+    answer: (state) => {
+      const vacant = state.stalls.filter((s) => s.status === 'Available');
+      return {
+        intent: 'stalls.vacant',
+        headline: vacant.length === 0
+          ? 'No stalls are available — every stall is occupied or under maintenance.'
+          : `${vacant.length} of ${state.stalls.length} stalls are available to let.`,
+        lines: vacant.map((s) => `Stall ${s.id} — ${s.section}`),
+        navigate: 'stalls',
+      };
+    },
+  },
+  {
+    key: 'stalls.status',
+    question: 'What is the stall occupancy?',
+    strong: ['occupancy', 'occupied', 'stall status', 'under maintenance'],
+    weak: ['stall', 'how many', 'maintenance'],
+    answer: (state) => {
+      const occupied = state.stalls.filter((s) => s.status === 'Occupied').length;
+      const available = state.stalls.filter((s) => s.status === 'Available').length;
+      const maintenance = state.stalls.filter((s) => s.status === 'Maintenance').length;
+      return {
+        intent: 'stalls.status',
+        headline: `${occupied} of ${state.stalls.length} stalls are occupied — ${percent(ratio(occupied, state.stalls.length))} occupancy.`,
+        lines: [
+          `Occupied: ${occupied}`,
+          `Available: ${available}`,
+          `Under maintenance: ${maintenance}`,
+        ],
+        navigate: 'stalls',
+      };
+    },
+  },
+  {
+    key: 'utilities.unpaid',
+    question: 'Which utility bills are unpaid or overdue?',
+    strong: ['utility', 'utilities', 'bill', 'bills', 'electricity', 'electric', 'water', 'kuryente', 'tubig'],
+    weak: ['unpaid', 'overdue', 'due'],
+    answer: (state) => {
+      const unpaid = state.utilities.filter((b) => b.status === 'Unpaid');
+      const overdue = state.utilities.filter(isOverdue);
+      const owed = unpaid.reduce((s, b) => s + b.amount, 0);
+      return {
+        intent: 'utilities.unpaid',
+        headline: unpaid.length === 0
+          ? 'Every utility bill on record has been paid.'
+          : `${unpaid.length} utility bill${unpaid.length === 1 ? ' is' : 's are'} unpaid, totalling ${money(owed)}. ${overdue.length} of them ${overdue.length === 1 ? 'is' : 'are'} past the due date.`,
+        lines: unpaid.map((b) => `${b.id} — ${b.type} for stall ${b.stallId}${b.tenantName ? ` (${b.tenantName})` : ''}, ${money(b.amount)}, due ${formatIsoDate(b.dueDate)}${isOverdue(b) ? ' — overdue' : ''}`),
+        navigate: 'utilities',
+      };
+    },
+  },
+  {
+    key: 'meter.lookup',
+    question: 'What is a tenant or stall meter number?',
+    strong: ['meter'],
+    weak: ['number', 'reading', 'metro'],
+    answer: (state, asked) => {
+      const tenant = tenantFromQuestion(state, asked);
+      if (tenant) {
+        return {
+          intent: 'meter.lookup',
+          headline: `${tenant.name} at stall ${tenant.stallId}:`,
+          lines: [
+            `Electricity meter — ${tenant.meters.Electricity || 'not on record'}`,
+            `Water meter — ${tenant.meters.Water || 'not on record'}`,
+          ],
+          navigate: 'tenants',
+        };
+      }
+      const onFile = state.tenants.filter((t) => t.meters.Electricity || t.meters.Water);
+      return {
+        intent: 'meter.lookup',
+        headline: `${onFile.length} of ${state.tenants.length} tenants have a meter number on record.`,
+        lines: onFile.map((t) => `${t.name} (stall ${t.stallId}) — electricity ${t.meters.Electricity || '—'}, water ${t.meters.Water || '—'}`),
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'tenant.lookup',
+    question: 'Tell me about a tenant.',
+    strong: [],
+    weak: ['who is', 'tenant', 'details of', 'record of', 'contact', 'sino', 'tell me about'],
+    answer: (state, asked) => {
+      const tenant = tenantFromQuestion(state, asked);
+      if (!tenant) {
+        return {
+          intent: 'tenant.lookup',
+          headline: `${state.tenants.length} tenants are on record.`,
+          lines: state.tenants.map((t) => `${t.name} (${t.id}) — stall ${t.stallId}, ${t.section}, ${money(t.rent)}`),
+          navigate: 'tenants',
+        };
+      }
+      return {
+        intent: 'tenant.lookup',
+        headline: `${tenant.name} — tenant record ${tenant.id}.`,
+        lines: [
+          `Stall ${tenant.stallId}, ${tenant.section}`,
+          `Contact ${formatPhone(tenant.phone) || 'not on record'}`,
+          `Monthly rent ${money(tenant.rent)}, status ${tenant.status}`,
+          `Rent for ${formatPeriod(currentPeriod())}: ${rentStatusOf(tenant, currentPeriod())}`,
+          `Stallkeepers on record: ${tenant.keepers.length}`,
+        ],
+        navigate: 'tenants',
+      };
+    },
+  },
+  {
+    key: 'applicants.pending',
+    question: 'How many applicants are waiting for review?',
+    strong: ['applicant', 'application', 'aplikante'],
+    weak: ['pending', 'waiting', 'review'],
+    answer: (state) => {
+      const pending = state.applicants.filter((a) => a.status === 'Pending Review');
+      const incomplete = state.applicants.filter((a) => a.status === 'Incomplete');
+      return {
+        intent: 'applicants.pending',
+        headline: `${pending.length} applicant${pending.length === 1 ? ' is' : 's are'} awaiting review, out of ${state.applicants.length} on file.`,
+        lines: [
+          ...pending.map((a) => `${a.name} (${a.id}) — ${a.stallType}, applied ${a.dateApplied}`),
+          `${incomplete.length} application${incomplete.length === 1 ? ' is' : 's are'} incomplete`,
+        ],
+        navigate: 'applicants',
+      };
+    },
+  },
+  {
+    key: 'violations.open',
+    question: 'Are there any open violations?',
+    strong: ['violation', 'citation', 'offence', 'offense', 'paglabag'],
+    weak: ['open'],
+    answer: (state) => {
+      const open = state.violations.filter((v) => v.status === 'Open');
+      const points = open.reduce((s, v) => s + v.points, 0);
+      return {
+        intent: 'violations.open',
+        headline: open.length === 0
+          ? 'There are no open violations on the register.'
+          : `${open.length} violation${open.length === 1 ? ' is' : 's are'} open, carrying ${points} demerit point${points === 1 ? '' : 's'}.`,
+        lines: open.map((v) => `${v.id} — ${v.tenant}: ${v.issue}, recorded ${v.dateRecorded ? formatIsoDate(v.dateRecorded) : 'undated'}`),
+        navigate: 'violations',
+      };
+    },
+  },
+];
+
+/* Scores the question against each intent. Deterministic and first — the model
+   is only consulted when the wording gives nothing away. */
+function matchIntent(asked: string): { intent: AssistantIntent; score: number } | null {
+  const q = asked.toLowerCase();
+  let best: { intent: AssistantIntent; score: number } | null = null;
+  for (const intent of ASSISTANT_INTENTS) {
+    let score = 0;
+    for (const term of intent.strong) if (q.includes(term)) score += 5;
+    for (const term of intent.weak) if (q.includes(term)) score += 1;
+    for (const pattern of intent.patterns ?? []) if (pattern.test(q)) score += 5;
+    if (score > 0 && (!best || score > best.score)) best = { intent, score };
+  }
+  return best;
+}
+
+function answerFor(key: string, state: AppState, asked: string): FactAnswer | null {
+  const intent = ASSISTANT_INTENTS.find((i) => i.key === key);
+  return intent ? intent.answer(state, asked) : null;
+}
+
+/* ---------- The panel ---------- */
+
+function AssistantPage({ state, onNavigate }: { state: AppState; onNavigate: (k: ModuleKey) => void }) {
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const [model, setModel] = useState<string | null>(null);
+  const seq = useRef(0);
+  const logEnd = useRef<HTMLDivElement | null>(null);
+
+  /* The shell only installs the bridge when a model file is actually on disk. */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!window.marketAssistant) return;
+        if (!(await window.marketAssistant.ready())) return;
+        const name = await window.marketAssistant.modelName();
+        if (!cancelled) setModel(name);
+      } catch { /* no model, no bridge — the assistant still answers */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => { logEnd.current?.scrollIntoView({ block: 'end' }); }, [messages, thinking]);
+
+  const push = (m: Omit<AssistantMessage, 'id'>) => {
+    seq.current += 1;
+    setMessages((prev) => [...prev, { ...m, id: `M${seq.current}` }]);
+  };
+
+  const ask = async (question: string) => {
+    const asked = question.trim();
+    if (!asked || thinking) return;
+    push({ role: 'officer', text: asked });
+    setDraft('');
+    setThinking(true);
+
+    try {
+      /* 1. Which question is this? Keywords first; the model only breaks a tie
+            it alone can break, and it may only pick from this list. */
+      let key = matchIntent(asked)?.intent.key ?? null;
+      if (!key && window.marketAssistant) {
+        try {
+          const picked = await window.marketAssistant.classify(
+            asked,
+            ASSISTANT_INTENTS.map((i) => ({ key: i.key, question: i.question })),
+          );
+          if (picked && ASSISTANT_INTENTS.some((i) => i.key === picked)) key = picked;
+        } catch { /* fall through to the plain reply below */ }
+      }
+
+      if (!key) {
+        push({
+          role: 'assistant',
+          source: 'records',
+          text: 'I can only answer from what is on record. Try one of these:',
+          lines: ASSISTANT_INTENTS.map((i) => i.question),
+        });
+        return;
+      }
+
+      /* 2. The answer itself, computed. */
+      const fact = answerFor(key, state, asked);
+      if (!fact) return;
+
+      /* 3. The model may rewrite it, but only within the figures it was given. */
+      let text = fact.headline;
+      let source: AssistantMessage['source'] = 'records';
+      if (window.marketAssistant && model) {
+        try {
+          const phrased = await window.marketAssistant.phrase(asked, fact.headline, fact.lines);
+          if (phrased && phrased.trim()) {
+            if (guardPhrasing(phrased, fact)) { text = phrased.trim(); source = 'model'; }
+            else source = 'model-rejected';
+          }
+        } catch { /* the computed sentence stands */ }
+      }
+
+      push({ role: 'assistant', text, lines: fact.lines, navigate: fact.navigate, source });
+    } finally {
+      setThinking(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Market Assistant</h2>
+          <p className="page-subtitle">Ask about tenants, rent, stalls, bills and violations. Every figure is read off the records.</p>
+        </div>
+        <div className="page-actions">
+          <span className={`assistant-model${model ? ' on' : ''}`} title={model ? `Language model in use: ${model}` : 'No language model installed — answers are computed and worded from the records'}>
+            <span className="material-symbols-outlined">{model ? 'neurology' : 'database'}</span>
+            {model ? model : 'Records only'}
+          </span>
+          {messages.length > 0 && <button className="btn-outline" onClick={() => setMessages([])}><span className="material-symbols-outlined">delete_sweep</span>Clear</button>}
+        </div>
+      </div>
+
+      <div className="panel assistant-panel">
+        <div className="assistant-log">
+          {messages.length === 0 && (
+            <div className="assistant-intro">
+              <span className="material-symbols-outlined">forum</span>
+              <h3>What would you like to know?</h3>
+              <p>Answers are computed from the records in this system. Nothing is sent anywhere — the assistant works offline.</p>
+              <div className="assistant-suggestions">
+                {ASSISTANT_INTENTS.slice(0, 6).map((i) => (
+                  <button key={i.key} className="assistant-chip" onClick={() => ask(i.question)}>{i.question}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((m) => (
+            <div className={`assistant-turn ${m.role}`} key={m.id}>
+              <div className="assistant-bubble">
+                <p className="assistant-text">{m.text}</p>
+                {m.lines && m.lines.length > 0 && (
+                  <ul className="assistant-lines">
+                    {m.lines.map((l, i) => <li key={i}>{l}</li>)}
+                  </ul>
+                )}
+                {m.role === 'assistant' && (
+                  <div className="assistant-meta">
+                    <span className="assistant-source" title={
+                      m.source === 'model' ? 'Worded by the local language model; every figure was checked against the records'
+                      : m.source === 'model-rejected' ? 'The model’s wording quoted a figure that was not in the records, so it was discarded and the computed answer shown'
+                      : 'Computed and worded directly from the records'
+                    }>
+                      <span className="material-symbols-outlined">{m.source === 'model' ? 'neurology' : m.source === 'model-rejected' ? 'shield' : 'database'}</span>
+                      {m.source === 'model' ? 'Worded by model · figures verified' : m.source === 'model-rejected' ? 'Model wording discarded — figures did not match' : 'From the records'}
+                    </span>
+                    {m.navigate && <button className="assistant-jump" onClick={() => onNavigate(m.navigate!)}>Open {navigation.find((n) => n.key === m.navigate)?.label ?? m.navigate}</button>}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {thinking && (
+            <div className="assistant-turn assistant">
+              <div className="assistant-bubble">
+                <p className="assistant-text assistant-working">Reading the records…</p>
+              </div>
+            </div>
+          )}
+          <div ref={logEnd} />
+        </div>
+
+        <form
+          className="assistant-composer"
+          onSubmit={(e) => { e.preventDefault(); ask(draft); }}
+        >
+          <input
+            className="assistant-input"
+            value={draft}
+            placeholder="e.g. Who is overdue on rent this month?"
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={thinking}
+          />
+          <button className="btn-primary" type="submit" disabled={thinking || !draft.trim()}>
+            <span className="material-symbols-outlined">send</span>Ask
+          </button>
+        </form>
+      </div>
+    </>
+  );
 }
 
 export default App;

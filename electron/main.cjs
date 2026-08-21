@@ -4,8 +4,9 @@
 // which Electron persists in the user-data directory (see DATA LOCATION below).
 // CommonJS (.cjs) because package.json declares "type": "module".
 
-const { app, BrowserWindow, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('node:path');
+const llm = require('./llm.cjs');
 
 // A dev server URL is passed in by `npm run electron:dev`; otherwise we load
 // the built files from dist/.
@@ -33,6 +34,8 @@ function createWindow() {
     autoHideMenuBar: !isDev,
     webPreferences: {
       // The renderer is trusted local content but has no need for Node access.
+      // The preload adds one bridge only: the local assistant model.
+      preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       spellcheck: false,
@@ -122,6 +125,14 @@ function buildMenu() {
           click: () => shell.openPath(app.getPath('userData')),
         },
         {
+          label: 'Assistant Model Folder',
+          click: () => {
+            const dir = require('node:path').join(app.getPath('userData'), 'models');
+            try { require('node:fs').mkdirSync(dir, { recursive: true }); } catch { /* shown below either way */ }
+            shell.openPath(dir);
+          },
+        },
+        {
           label: 'About',
           click: () => {
             dialog.showMessageBox(mainWindow, {
@@ -150,8 +161,19 @@ app.on('second-instance', () => {
   }
 });
 
+/* The assistant's model runs here in the main process, off the render thread,
+   so a slow answer never freezes the window. Every handler is local-only. */
+function registerAssistant() {
+  ipcMain.handle('assistant:ready', () => llm.ready(app));
+  ipcMain.handle('assistant:model-name', () => llm.modelName());
+  ipcMain.handle('assistant:classify', (_e, question, intents) => llm.classify(app, String(question || ''), Array.isArray(intents) ? intents : []));
+  ipcMain.handle('assistant:phrase', (_e, question, headline, lines) =>
+    llm.phrase(app, String(question || ''), String(headline || ''), Array.isArray(lines) ? lines.map(String) : []));
+}
+
 app.whenReady().then(() => {
   buildMenu();
+  registerAssistant();
   createWindow();
 
   app.on('activate', () => {
