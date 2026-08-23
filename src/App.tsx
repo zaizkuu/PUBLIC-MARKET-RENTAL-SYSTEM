@@ -2151,8 +2151,8 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
     `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
-    ['Stall ID', 'Section', 'Tenant', 'Status', 'Permit', 'Last Inspection', 'Note'],
-    filtered.map((s) => [s.id, s.section, s.tenant, s.status, s.permit === 'Not Recorded' ? '—' : s.permit, s.lastInspection, s.note || '']),
+    ['Stall ID', 'Section', 'Tenant', 'Status', 'Permit'],
+    filtered.map((s) => [s.id, s.section, s.tenant, s.status, s.permit === 'Not Recorded' ? '—' : s.permit]),
   );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -2239,8 +2239,8 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
   const printList = () => onPrintList(
     'Applicants',
     `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
-    ['Applicant ID', 'Name', 'Stall', 'Contact', 'Status', 'Date Applied', 'Requirements'],
-    filtered.map((a) => [a.id, a.name, a.stallId || '—', formatPhone(a.phone) || '—', a.status, a.dateApplied, `${a.requirements.length} of ${REQUIREMENTS.length}`]),
+    ['Applicant ID', 'Name', 'Stall', 'Status', 'Requirements'],
+    filtered.map((a) => [a.id, a.name, a.stallId || '—', a.status, `${a.requirements.length} of ${REQUIREMENTS.length}`]),
   );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -2349,8 +2349,8 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
     `Tenant register · rent for ${formatPeriodShort(period)}${search ? ` · matching “${search}”` : ''}`,
-    ['Tenant ID', 'Name', 'Stall ID', 'Section', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`, 'Status'],
-    filtered.map((t) => [t.id, t.name, t.stallId, t.section, money(t.rent), rentStatusOf(t, period), t.status]),
+    ['Tenant ID', 'Name', 'Stall ID', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`],
+    filtered.map((t) => [t.id, t.name, t.stallId, money(t.rent), rentStatusOf(t, period)]),
   );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -2487,8 +2487,8 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
   const printList = () => onPrintList(
     'Utility Billing',
     `${typeFilter || 'Electricity and water'} · ${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
-    ['Bill ID', 'Type', 'Stall', 'Tenant', 'Meter No.', 'Period', 'Consumption', 'Amount', 'Status', 'Due'],
-    filtered.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.meterNumber || '—', billPeriodText(b), String(b.consumption), money(b.amount), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dueDate)]),
+    ['Bill ID', 'Type', 'Stall', 'Tenant', 'Amount', 'Due', 'Status'],
+    filtered.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', money(b.amount), formatIsoDate(b.dueDate), isOverdue(b) ? 'Overdue' : b.status]),
   );
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -2939,8 +2939,8 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
   const printList = () => onPrintList(
     'Violations',
     `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
-    ['Violation ID', 'Tenant', 'Issue', 'Points', 'Status', 'Recorded', 'Resolved', 'Notes'],
-    ordered.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes || '']),
+    ['Violation ID', 'Tenant', 'Issue', 'Points', 'Status', 'Recorded'],
+    ordered.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—']),
   );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
