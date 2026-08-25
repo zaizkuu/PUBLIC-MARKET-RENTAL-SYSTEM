@@ -1,0 +1,489 @@
+<!-- ============================================================
+     PART I
+     ============================================================ -->
+<div class="break-before"></div>
+<div class="part">
+  <span class="part-no">Part I</span>
+  <span class="part-name">Getting Started</span>
+  <span class="part-desc">What the system is for, where your data lives, and how to move around the application.</span>
+</div>
+
+<!-- ============================ CHAPTER 1 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">info</span></div>
+  <div>
+    <span class="chapter-num">Chapter 1</span>
+    <span class="chapter-title">Introduction &amp; System Overview</span>
+  </div>
+  <div class="chapter-kicker">The purpose of the system, the records it keeps, and what you need to run it.</div>
+</div>
+
+<h3>1.1 What the system does</h3>
+<p>The <strong>Public Market Rental Monitoring System (PMRMS)</strong> is a desktop application built for the <strong>Market Office of the Municipality of Tanauan, Leyte</strong>. It is the single official record of everything that happens in the Tanauan Public Market: which stalls exist, who occupies them, what rent and utilities they owe, what they have paid, which applications are waiting, which citations are open, and who authorised each of those entries.</p>
+<p>Every figure the Market Office reports upward — occupancy, collection efficiency, arrears, compliance — is computed by the system from these records. Nothing is re-keyed into a separate spreadsheet, and no total is typed by hand.</p>
+
+<div class="callout callout-note"><span class="material-symbols-outlined">cloud_off</span><div><strong>Fully offline.</strong> The application makes no network requests at all. Fonts, icons, the optional language model and all of your data live on the workstation. It works during a brownout on a laptop battery, and it works with the LAN cable pulled out.</div></div>
+
+<h3>1.2 From ledger book to database</h3>
+<table class="compact">
+  <thead><tr><th style="width:30%">Task</th><th style="width:35%">On paper</th><th>In PMRMS</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Finding a tenant</strong></td><td>Leaf through the stall ledger by section.</td><td>Type any part of the name, stall ID or stallkeeper into the search bar.</td></tr>
+    <tr><td><strong>Rent discount</strong></td><td>Compute 20% by hand and hope the arithmetic holds.</td><td>Computed on the tick, stored as a separate discount figure (§5.4).</td></tr>
+    <tr><td><strong>Utility bill</strong></td><td>Subtract readings, multiply by rate, write the receipt.</td><td>Readings in, receipt out — with the previous reading carried forward (§7.2).</td></tr>
+    <tr><td><strong>Monthly report</strong></td><td>Tally the ledger by hand at month end.</td><td>Already compiled; open Analytics and print (Chapter 9).</td></tr>
+    <tr><td><strong>Who changed this?</strong></td><td>Often unanswerable.</td><td>Every change writes a timestamped logbook entry (Chapter 10).</td></tr>
+  </tbody>
+</table>
+
+<h3>1.3 Module map</h3>
+<p>The system is one application with ten navigable modules plus two utility screens. They are not independent programs — a record created in one appears immediately in the others. Figure 1.1 traces the path a single stallholder takes through the system, from the day they file an application to the month-end report their payments land in.</p>
+
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 224" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow diagram: an applicant becomes a tenant, generates rent, utility and violation records, which flow into the logbook and reports">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+        </marker>
+        <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#8b93a5"/>
+        </marker>
+      </defs>
+
+      <!-- band labels -->
+      <text x="6" y="38" font-family="Inter,sans-serif" font-size="9.5" font-weight="800" fill="#243B8F" letter-spacing="1.1">1 · INTAKE</text>
+      <text x="6" y="50" font-family="Inter,sans-serif" font-size="8" fill="#8b93a5">Chapter 6</text>
+      <text x="6" y="112" font-family="Inter,sans-serif" font-size="9.5" font-weight="800" fill="#243B8F" letter-spacing="1.1">2 · OPERATIONS</text>
+      <text x="6" y="124" font-family="Inter,sans-serif" font-size="8" fill="#8b93a5">Chapters 4, 5, 7, 8</text>
+      <text x="6" y="186" font-family="Inter,sans-serif" font-size="9.5" font-weight="800" fill="#243B8F" letter-spacing="1.1">3 · OVERSIGHT</text>
+      <text x="6" y="198" font-family="Inter,sans-serif" font-size="8" fill="#8b93a5">Chapters 3, 9, 10</text>
+
+      <!-- row 1 -->
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="96"  y="20" width="104" height="44" rx="7" fill="#eff5ff" stroke="#bfd3f7"/>
+        <text x="148" y="39" font-size="11" font-weight="700" fill="#16307e">Application</text>
+        <text x="148" y="52" font-size="8.6" fill="#4b5468">filed at the office</text>
+
+        <rect x="221" y="20" width="104" height="44" rx="7" fill="#eff5ff" stroke="#bfd3f7"/>
+        <text x="273" y="39" font-size="11" font-weight="700" fill="#16307e">6 documents</text>
+        <text x="273" y="52" font-size="8.6" fill="#4b5468">ticked off</text>
+
+        <rect x="346" y="20" width="104" height="44" rx="7" fill="#eff5ff" stroke="#bfd3f7"/>
+        <text x="398" y="39" font-size="11" font-weight="700" fill="#16307e">Reviewed</text>
+        <text x="398" y="52" font-size="8.6" fill="#4b5468">approve / reject</text>
+
+        <rect x="471" y="20" width="104" height="44" rx="7" fill="#eff5ff" stroke="#bfd3f7"/>
+        <text x="523" y="39" font-size="11" font-weight="700" fill="#16307e">Stall assigned</text>
+        <text x="523" y="52" font-size="8.6" fill="#4b5468">from vacant list</text>
+
+        <rect x="596" y="20" width="104" height="44" rx="7" fill="#243B8F" stroke="#243B8F"/>
+        <text x="648" y="39" font-size="11" font-weight="700" fill="#ffffff">Tenant</text>
+        <text x="648" y="52" font-size="8.6" fill="#c8d3f2">on record</text>
+      </g>
+      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar)">
+        <line x1="202" y1="42" x2="217" y2="42"/>
+        <line x1="327" y1="42" x2="342" y2="42"/>
+        <line x1="452" y1="42" x2="467" y2="42"/>
+        <line x1="577" y1="42" x2="592" y2="42"/>
+      </g>
+
+      <!-- bus from tenant down to operations -->
+      <path d="M648,64 V78 H191" stroke="#1d4ed8" stroke-width="1.4" fill="none"/>
+      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar)">
+        <line x1="191" y1="78" x2="191" y2="90"/>
+        <line x1="398" y1="78" x2="398" y2="90"/>
+        <line x1="605" y1="78" x2="605" y2="90"/>
+      </g>
+
+      <!-- row 2 -->
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="96"  y="94" width="190" height="44" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.3"/>
+        <text x="191" y="113" font-size="11" font-weight="700" fill="#16307e">Monthly rent</text>
+        <text x="191" y="126" font-size="8.6" fill="#4b5468">tick to collect · 20% early discount</text>
+
+        <rect x="303" y="94" width="190" height="44" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.3"/>
+        <text x="398" y="113" font-size="11" font-weight="700" fill="#16307e">Utility bills</text>
+        <text x="398" y="126" font-size="8.6" fill="#4b5468">meter readings · receipts</text>
+
+        <rect x="510" y="94" width="190" height="44" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.3"/>
+        <text x="605" y="113" font-size="11" font-weight="700" fill="#16307e">Violations</text>
+        <text x="605" y="126" font-size="8.6" fill="#4b5468">citations · demerit points</text>
+      </g>
+
+      <!-- bus to oversight -->
+      <path d="M191,138 V152 H605 M398,138 V152 M605,138 V152" stroke="#8b93a5" stroke-width="1.3" fill="none"/>
+      <g stroke="#8b93a5" stroke-width="1.3" fill="none" marker-end="url(#arg)">
+        <line x1="244" y1="152" x2="244" y2="166"/>
+        <line x1="552" y1="152" x2="552" y2="166"/>
+      </g>
+
+      <!-- row 3 -->
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="96"  y="170" width="296" height="46" rx="7" fill="#fdf6e7" stroke="#e2a63c"/>
+        <text x="244" y="190" font-size="11" font-weight="700" fill="#8a4a04">Logbook — the audit trail</text>
+        <text x="244" y="203" font-size="8.6" fill="#8a4a04">every action above writes one timestamped entry</text>
+
+        <rect x="404" y="170" width="296" height="46" rx="7" fill="#fdf6e7" stroke="#e2a63c"/>
+        <text x="552" y="190" font-size="11" font-weight="700" fill="#8a4a04">Dashboard &amp; Analytics</text>
+        <text x="552" y="203" font-size="8.6" fill="#8a4a04">live totals, occupancy, collection efficiency</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 1.1 — Life of a record.</b> Nothing in the lower bands can exist without the band above it: rent is collected against a tenant, a tenant exists because a stall was assigned, and a stall was assigned because an application was approved. This is why the system refuses some deletions — see §4.6.</div>
+</div>
+
+<h3>1.4 How your data is stored</h3>
+<p>All records are held in a single local data store on the workstation, written automatically every time you make a change. There is no server to connect to, no login queue, and no synchronisation step to remember.</p>
+
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 186" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram showing the application, business rules and local data store inside one workstation, with no connection to the internet">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+        </marker>
+      </defs>
+
+      <rect x="4" y="18" width="466" height="152" rx="12" fill="#f7f8fc" stroke="#243B8F" stroke-width="1.4" stroke-dasharray="5 4"/>
+      <text x="20" y="12" font-family="Inter,sans-serif" font-size="9.5" font-weight="800" fill="#243B8F" letter-spacing="1.4">THIS WORKSTATION — NOTHING LEAVES IT</text>
+
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="22" y="52" width="132" height="58" rx="8" fill="#ffffff" stroke="#bfd3f7"/>
+        <text x="88" y="74" font-size="11" font-weight="700" fill="#16307e">What you see</text>
+        <text x="88" y="88" font-size="8.4" fill="#4b5468">screens, forms, tables,</text>
+        <text x="88" y="99" font-size="8.4" fill="#4b5468">print previews</text>
+
+        <rect x="174" y="52" width="132" height="58" rx="8" fill="#243B8F"/>
+        <text x="240" y="74" font-size="11" font-weight="700" fill="#ffffff">Business rules</text>
+        <text x="240" y="88" font-size="8.4" fill="#c8d3f2">discounts, surcharges,</text>
+        <text x="240" y="99" font-size="8.4" fill="#c8d3f2">ID counters, validation</text>
+
+        <rect x="326" y="52" width="132" height="58" rx="8" fill="#ffffff" stroke="#bfd3f7"/>
+        <text x="392" y="74" font-size="11" font-weight="700" fill="#16307e">Local data store</text>
+        <text x="392" y="88" font-size="8.4" fill="#4b5468">stalls, tenants, bills,</text>
+        <text x="392" y="99" font-size="8.4" fill="#4b5468">logs, officers, slips</text>
+      </g>
+      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar2)">
+        <line x1="156" y1="72" x2="170" y2="72"/>
+        <line x1="308" y1="72" x2="322" y2="72"/>
+      </g>
+      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar2)">
+        <line x1="322" y1="92" x2="310" y2="92"/>
+        <line x1="170" y1="92" x2="158" y2="92"/>
+      </g>
+
+      <rect x="22" y="126" width="436" height="30" rx="6" fill="#eff5ff" stroke="#bfd3f7"/>
+      <text x="36" y="145" font-family="Inter,sans-serif" font-size="9.4" fill="#16307e">Saved automatically to <tspan font-weight="700">%APPDATA%\Tanauan Public Market System</tspan> — back it up weekly (§15.1)</text>
+
+      <!-- barrier -->
+      <line x1="496" y1="16" x2="496" y2="172" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="6 5"/>
+      <circle cx="496" cy="94" r="15" fill="#fee2e2" stroke="#dc2626" stroke-width="1.6"/>
+      <line x1="487" y1="85" x2="505" y2="103" stroke="#dc2626" stroke-width="2.2"/>
+      <text x="496" y="128" font-family="Inter,sans-serif" font-size="8.4" font-weight="700" fill="#8f1613" text-anchor="middle">no data</text>
+      <text x="496" y="139" font-family="Inter,sans-serif" font-size="8.4" font-weight="700" fill="#8f1613" text-anchor="middle">crosses</text>
+
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="530" y="52" width="182" height="84" rx="10" fill="#ffffff" stroke="#dfe3ec" stroke-dasharray="4 4"/>
+        <text x="621" y="76" font-size="11" font-weight="700" fill="#8b93a5">Internet</text>
+        <text x="621" y="92" font-size="8.6" fill="#8b93a5">cloud servers · analytics</text>
+        <text x="621" y="104" font-size="8.6" fill="#8b93a5">telemetry · online backup</text>
+        <text x="621" y="122" font-size="8.6" font-weight="700" fill="#8b93a5">never contacted</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 1.2 — Where the data lives.</b> Because the store is local, a lost or reimaged workstation loses the market&rsquo;s records unless a backup exists. Downloading a weekly backup (§15.1) is the single most important routine task in this manual.</div>
+</div>
+
+<h3>1.5 Key features at a glance</h3>
+<div class="grid-4">
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">dashboard</span> Dashboard</div><p>Live occupancy, earnings, collection progress and the last 50 actions.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">storefront</span> Stalls</div><p>Register of all 235 stalls with status, permit and inspection tracking.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">groups</span> Tenants</div><p>Lease terms, stallkeepers, meters and the monthly rent ledger.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">person_add</span> Applicants</div><p>Intake through document checks to approval and stall assignment.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">bolt</span> Utility Billing</div><p>Meter-based electricity and water billing with batch receipts.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">gavel</span> Violations</div><p>Citations, demerit points, resolution and repeat-offender ranking.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">analytics</span> Analytics</div><p>Seven-section executive report for the Mayor and Market Board.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">menu_book</span> Logbook</div><p>Automatic, timestamped audit trail of every recorded action.</p></div>
+  <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">forum</span> Assistant</div><p>Ask in plain language; figures come from the records, not from a model.</p></div>
+  <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">account_tree</span> Officers</div><p>Organisational board and directory of market officials.</p></div>
+  <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">fact_check</span> Verification</div><p>Numbered clearance slips for BPLO permit issuance and renewal.</p></div>
+  <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">backup</span> Backup</div><p>One-click export and restore of the entire database as a file.</p></div>
+</div>
+
+<h3>1.6 System requirements</h3>
+<div class="grid-2">
+  <table class="compact" style="margin:0">
+    <thead><tr><th style="width:38%">Requirement</th><th>Specification</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Operating system</strong></td><td>Windows 10 or later, 64-bit</td></tr>
+      <tr><td><strong>Memory</strong></td><td>4 GB minimum; 8 GB if the AI assistant model is installed</td></tr>
+      <tr><td><strong>Disk space</strong></td><td>~400 MB for the application; data grows a few MB per year</td></tr>
+      <tr><td><strong>Display</strong></td><td>1280 × 720 minimum; 1920 × 1080 recommended</td></tr>
+      <tr><td><strong>Printer</strong></td><td>Any A4-capable printer, portrait orientation</td></tr>
+      <tr><td><strong>Internet</strong></td><td>Not required at any point</td></tr>
+    </tbody>
+  </table>
+  <div>
+    <div class="ref-box" style="margin-top:8px">
+      <div class="ref-box-title"><span class="material-symbols-outlined">folder</span> Where things are kept</div>
+      <div style="font-size:8.8pt; line-height:1.55">
+        <div><strong>Records:</strong> <code>%APPDATA%\Tanauan Public Market System</code></div>
+        <div><strong>Backups you download:</strong> your Downloads folder, as <code>pmrms-backup-YYYY-MM-DD.json</code></div>
+        <div><strong>Optional AI model:</strong> <code>resources/models</code> beside the application</div>
+      </div>
+    </div>
+    <div class="callout callout-tip" style="margin-bottom:0"><span class="material-symbols-outlined">lightbulb</span><div>The system runs happily on the office&rsquo;s existing desktop. It is the <em>printer</em> that most often needs attention — set it to A4 portrait once and receipts will line up every time (§2.6).</div></div>
+  </div>
+</div>
+
+<h3>1.7 Installing and first launch</h3>
+<div class="steps">
+  <div class="step"><div class="step-title">Run the installer</div>Launch <code>TanauanPublicMarketSystem-Setup-1.0.0.exe</code> and accept the default installation folder. A desktop shortcut and Start Menu entry named <strong>Tanauan Public Market System</strong> are created. A portable build is also available if the workstation forbids installation.</div>
+  <div class="step"><div class="step-title">Open the application</div>The Dashboard appears immediately. There is no account to create and no password prompt — access control is the physical security of the office workstation.</div>
+  <div class="step"><div class="step-title">Confirm the seeded register</div>The system ships with the market&rsquo;s <strong>2026 occupancy survey</strong> already loaded: 235 stalls across four sections. Open <strong>Stall Management</strong> and confirm the count matches the office&rsquo;s own sheet before you begin entering new records.</div>
+  <div class="step"><div class="step-title">Set your printer</div>Print any list once and set the printer to <strong>A4, Portrait, default margins, scaling off</strong>. Windows remembers this for later print jobs.</div>
+  <div class="step"><div class="step-title">Take a first backup</div>Go to <strong>Support → Download Full Backup</strong>. Keep this untouched file as your known-good starting point.</div>
+</div>
+
+<!-- ============================ CHAPTER 2 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">web</span></div>
+  <div>
+    <span class="chapter-num">Chapter 2</span>
+    <span class="chapter-title">Interface &amp; Navigation</span>
+  </div>
+  <div class="chapter-kicker">Learn these six regions once and every module in Part II reads the same way.</div>
+</div>
+
+<h3>2.1 Application layout</h3>
+<p>Every screen in the system uses the same two-column frame: a fixed <strong>sidebar</strong> on the left that never changes, and a <strong>content area</strong> on the right that swaps as you navigate. A sticky <strong>top bar</strong> runs across the content area and stays visible while you scroll a long table.</p>
+
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 306" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Annotated wireframe of the application window showing sidebar, top bar and content area">
+      <!-- window -->
+      <rect x="2" y="2" width="716" height="302" rx="10" fill="#ffffff" stroke="#dfe3ec" stroke-width="1.5"/>
+
+      <!-- sidebar -->
+      <path d="M2,12 h176 v280 a10,10 0 0 1 -10,10 h-156 a10,10 0 0 1 -10,-10 z" fill="#2f3597"/>
+      <rect x="2" y="2" width="176" height="20" fill="#2f3597"/>
+      <rect x="2" y="2" width="176" height="12" rx="10" fill="#2f3597"/>
+
+      <!-- branding -->
+      <circle cx="30" cy="32" r="12" fill="#e2a63c"/>
+      <rect x="50" y="25" width="94" height="7" rx="3.5" fill="#ffffff" opacity="0.92"/>
+      <rect x="50" y="37" width="62" height="5" rx="2.5" fill="#ffffff" opacity="0.5"/>
+
+      <!-- nav items -->
+      <rect x="14" y="60" width="152" height="18" rx="6" fill="#e2a63c"/>
+      <circle cx="26" cy="69" r="4" fill="#243B8F"/>
+      <rect x="38" y="65.5" width="66" height="7" rx="3.5" fill="#243B8F"/>
+      <g fill="#ffffff" opacity="0.34">
+        <rect x="14" y="84"  width="152" height="14" rx="5"/>
+        <rect x="14" y="102" width="152" height="14" rx="5"/>
+        <rect x="14" y="120" width="152" height="14" rx="5"/>
+        <rect x="14" y="138" width="152" height="14" rx="5"/>
+        <rect x="14" y="156" width="152" height="14" rx="5"/>
+        <rect x="14" y="174" width="152" height="14" rx="5"/>
+        <rect x="14" y="192" width="152" height="14" rx="5"/>
+        <rect x="14" y="210" width="152" height="14" rx="5"/>
+        <rect x="14" y="228" width="152" height="14" rx="5"/>
+      </g>
+      <line x1="14" y1="252" x2="166" y2="252" stroke="#ffffff" stroke-opacity="0.28"/>
+      <g fill="#ffffff" opacity="0.5">
+        <rect x="14" y="260" width="152" height="12" rx="5"/>
+        <rect x="14" y="276" width="152" height="12" rx="5"/>
+      </g>
+
+      <!-- top bar -->
+      <rect x="188" y="12" width="520" height="40" rx="8" fill="#f7f8fc" stroke="#dfe3ec"/>
+      <rect x="200" y="24" width="196" height="17" rx="8.5" fill="#ffffff" stroke="#dfe3ec"/>
+      <circle cx="211" cy="32.5" r="3.6" fill="none" stroke="#8b93a5" stroke-width="1.3"/>
+      <rect x="222" y="29" width="104" height="6" rx="3" fill="#dfe3ec"/>
+      <rect x="408" y="24" width="74" height="17" rx="6" fill="#1d4ed8"/>
+      <rect x="418" y="30" width="54" height="5" rx="2.5" fill="#ffffff" opacity="0.85"/>
+      <rect x="556" y="26" width="72" height="7" rx="3.5" fill="#c9cfdd"/>
+      <rect x="566" y="36" width="52" height="4" rx="2" fill="#e4e8f0"/>
+      <circle cx="656" cy="32" r="8" fill="#eef1f6" stroke="#dfe3ec"/>
+      <circle cx="660" cy="27" r="3" fill="#dc2626"/>
+      <circle cx="688" cy="32" r="10" fill="#243B8F"/>
+      <text x="688" y="35.5" font-family="Inter,sans-serif" font-size="8" font-weight="800" fill="#ffffff" text-anchor="middle">AD</text>
+
+      <!-- content -->
+      <g>
+        <rect x="188" y="62" width="100" height="46" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <rect x="292" y="62" width="100" height="46" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <rect x="396" y="62" width="100" height="46" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <rect x="500" y="62" width="100" height="46" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <rect x="604" y="62" width="104" height="46" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <g fill="#1d4ed8">
+          <rect x="198" y="72" width="34" height="12" rx="3"/><rect x="302" y="72" width="34" height="12" rx="3"/>
+          <rect x="406" y="72" width="34" height="12" rx="3"/><rect x="510" y="72" width="34" height="12" rx="3"/>
+          <rect x="614" y="72" width="34" height="12" rx="3"/>
+        </g>
+        <g fill="#dfe3ec">
+          <rect x="198" y="90" width="70" height="5" rx="2.5"/><rect x="302" y="90" width="70" height="5" rx="2.5"/>
+          <rect x="406" y="90" width="70" height="5" rx="2.5"/><rect x="510" y="90" width="70" height="5" rx="2.5"/>
+          <rect x="614" y="90" width="70" height="5" rx="2.5"/>
+        </g>
+
+        <rect x="188" y="118" width="332" height="174" rx="8" fill="#ffffff" stroke="#dfe3ec"/>
+        <rect x="188" y="118" width="332" height="20" rx="8" fill="#243B8F"/>
+        <rect x="188" y="130" width="332" height="8" fill="#243B8F"/>
+        <g fill="#ffffff" opacity="0.75">
+          <rect x="200" y="125" width="44" height="6" rx="3"/><rect x="264" y="125" width="44" height="6" rx="3"/>
+          <rect x="328" y="125" width="44" height="6" rx="3"/><rect x="392" y="125" width="44" height="6" rx="3"/>
+          <rect x="456" y="125" width="44" height="6" rx="3"/>
+        </g>
+        <g fill="#e9edf5">
+          <rect x="200" y="148" width="300" height="8" rx="4"/><rect x="200" y="166" width="300" height="8" rx="4"/>
+          <rect x="200" y="184" width="300" height="8" rx="4"/><rect x="200" y="202" width="300" height="8" rx="4"/>
+          <rect x="200" y="220" width="300" height="8" rx="4"/><rect x="200" y="238" width="300" height="8" rx="4"/>
+          <rect x="200" y="256" width="300" height="8" rx="4"/><rect x="200" y="274" width="300" height="8" rx="4"/>
+        </g>
+
+        <rect x="528" y="118" width="180" height="174" rx="8" fill="#ffffff" stroke="#dfe3ec"/>
+        <g fill="#1d4ed8">
+          <rect x="544" y="216" width="18" height="56" rx="3"/>
+          <rect x="570" y="188" width="18" height="84" rx="3"/>
+          <rect x="596" y="232" width="18" height="40" rx="3"/>
+          <rect x="622" y="170" width="18" height="102" rx="3"/>
+          <rect x="648" y="206" width="18" height="66" rx="3"/>
+        </g>
+        <rect x="544" y="132" width="86" height="7" rx="3.5" fill="#c9cfdd"/>
+        <rect x="544" y="146" width="120" height="5" rx="2.5" fill="#e4e8f0"/>
+      </g>
+
+      <!-- callout markers -->
+      <g font-family="Inter,sans-serif" font-size="9.4" font-weight="800" text-anchor="middle">
+        <circle cx="164" cy="32"  r="9" fill="#dc2626"/><text x="164" y="35.4" fill="#ffffff">1</text>
+        <circle cx="164" cy="69"  r="9" fill="#dc2626"/><text x="164" y="72.4" fill="#ffffff">2</text>
+        <circle cx="164" cy="268" r="9" fill="#dc2626"/><text x="164" y="271.4" fill="#ffffff">3</text>
+        <circle cx="298" cy="32"  r="9" fill="#dc2626"/><text x="298" y="35.4" fill="#ffffff">4</text>
+        <circle cx="628" cy="14"  r="9" fill="#dc2626"/><text x="628" y="17.4" fill="#ffffff">5</text>
+        <circle cx="700" cy="118" r="9" fill="#dc2626"/><text x="700" y="121.4" fill="#ffffff">6</text>
+      </g>
+    </svg>
+    <div class="kv" style="margin:10px 0 0; font-size:8.5pt">
+      <div><b>1 · Branding</b> Municipal seal, application name, &ldquo;Market Office&rdquo;.</div>
+      <div><b>4 · Context search</b> Placeholder changes per module; global on Dashboard.</div>
+      <div><b>2 · Navigation</b> Ten modules; the active one wears the gold pill.</div>
+      <div><b>5 · Status cluster</b> PHT clock, notification bell, admin avatar.</div>
+      <div><b>3 · Utility actions</b> Settings, Support and Log Out.</div>
+      <div><b>6 · Content area</b> Stat cards, tables and charts for the open module.</div>
+    </div>
+  </div>
+  <div class="figure-cap"><b>Figure 2.1 — The application frame.</b> Regions 1–3 are fixed for the life of the session; regions 4–6 re-render as you switch modules. The frame is 240&nbsp;px of sidebar and a 64&nbsp;px top bar at the application&rsquo;s native scale.</div>
+</div>
+
+<h3>2.2 Sidebar navigation</h3>
+<p>The sidebar carries the deep royal-blue-to-violet gradient and is divided into three fixed sections. The module you are currently in is highlighted with a <span class="badge badge-gold">warm gold pill</span>; every other item sits in translucent white.</p>
+
+<table class="compact">
+  <thead><tr><th style="width:20%">Module</th><th style="width:8%">Icon</th><th style="width:34%">What it is for</th><th>Go here when you need to…</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Dashboard</strong></td><td><span class="material-symbols-outlined icon-inline">dashboard</span></td><td>Command centre and global search</td><td>see today&rsquo;s standing, or find any record from one box</td></tr>
+    <tr><td><strong>Stall Management</strong></td><td><span class="material-symbols-outlined icon-inline">storefront</span></td><td>Register of physical stalls</td><td>change a stall&rsquo;s status, record an inspection, issue a slip</td></tr>
+    <tr><td><strong>Tenant Records</strong></td><td><span class="material-symbols-outlined icon-inline">groups</span></td><td>Stallholders and the rent ledger</td><td>collect rent, edit lease terms, add a stallkeeper</td></tr>
+    <tr><td><strong>Applicants</strong></td><td><span class="material-symbols-outlined icon-inline">person_add</span></td><td>Application pipeline</td><td>tick requirements, approve, assign a vacant stall</td></tr>
+    <tr><td><strong>Utility Billing</strong></td><td><span class="material-symbols-outlined icon-inline">bolt</span></td><td>Electricity and water billing</td><td>enter meter readings, print or batch-print receipts</td></tr>
+    <tr><td><strong>Violations</strong></td><td><span class="material-symbols-outlined icon-inline">gavel</span></td><td>Citation register</td><td>record an offence, resolve a case, check repeat offenders</td></tr>
+    <tr><td><strong>Analytics</strong></td><td><span class="material-symbols-outlined icon-inline">analytics</span></td><td>Executive operations report</td><td>prepare the report for the Mayor or the Market Board</td></tr>
+    <tr><td><strong>Logbook</strong></td><td><span class="material-symbols-outlined icon-inline">menu_book</span></td><td>Audit trail and daily ledger</td><td>prove what was done, when, and log an inspection by hand</td></tr>
+    <tr><td><strong>Officers</strong></td><td><span class="material-symbols-outlined icon-inline">account_tree</span></td><td>Organisational board</td><td>appoint, transfer or retire a market official</td></tr>
+    <tr><td><strong>Assistant</strong></td><td><span class="material-symbols-outlined icon-inline">forum</span></td><td>Offline querying assistant</td><td>ask a question instead of building a filter</td></tr>
+  </tbody>
+</table>
+
+<div class="grid-3">
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">settings</span> Settings</div><p>System information, record counts, export, import and reset to defaults (Chapter 14).</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">help</span> Support</div><p>Full backup and restore, the built-in FAQ and developer contacts (Chapter 15).</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">logout</span> Log Out</div><p>Opens a confirmation dialog. Records are already saved, so nothing is lost.</p></div>
+</div>
+
+<h3>2.3 Top bar &amp; search</h3>
+<div class="figure">
+  <div class="figure-body plain">
+    <svg viewBox="0 0 720 116" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Anatomy of the top bar with search, quick action, clock, notification bell and avatar">
+      <rect x="2" y="8" width="716" height="46" rx="9" fill="#f7f8fc" stroke="#dfe3ec"/>
+      <rect x="16" y="20" width="250" height="22" rx="11" fill="#ffffff" stroke="#dfe3ec"/>
+      <circle cx="30" cy="31" r="4.6" fill="none" stroke="#8b93a5" stroke-width="1.4"/>
+      <line x1="33.4" y1="34.4" x2="36.5" y2="37.5" stroke="#8b93a5" stroke-width="1.4"/>
+      <text x="44" y="34.6" font-family="Inter,sans-serif" font-size="9.6" fill="#8b93a5">Search stalls by ID, tenant, section…</text>
+
+      <rect x="286" y="20" width="112" height="22" rx="7" fill="#1d4ed8"/>
+      <text x="342" y="34.8" font-family="Inter,sans-serif" font-size="9.4" font-weight="700" fill="#ffffff" text-anchor="middle">+ New Log Entry</text>
+
+      <text x="540" y="28" font-family="Inter,sans-serif" font-size="10.6" font-weight="800" fill="#14192e" text-anchor="middle">02:47:11 PM PHT</text>
+      <text x="540" y="41" font-family="Inter,sans-serif" font-size="8.4" fill="#8b93a5" text-anchor="middle">Wednesday, 26 August 2026</text>
+
+      <circle cx="642" cy="31" r="12" fill="#ffffff" stroke="#dfe3ec"/>
+      <path d="M642,25 a5,5 0 0 1 5,5 v3 l1.6,2.4 h-13.2 L637,33 v-3 a5,5 0 0 1 5,-5 z" fill="#4b5468"/>
+      <circle cx="649" cy="24" r="3.6" fill="#dc2626"/>
+      <circle cx="686" cy="31" r="13" fill="#243B8F"/>
+      <text x="686" y="35" font-family="Inter,sans-serif" font-size="9.6" font-weight="800" fill="#ffffff" text-anchor="middle">AD</text>
+
+      <g stroke="#8b93a5" stroke-width="1" stroke-dasharray="3 3">
+        <line x1="120" y1="54" x2="120" y2="70"/><line x1="342" y1="54" x2="342" y2="70"/>
+        <line x1="540" y1="54" x2="540" y2="70"/><line x1="642" y1="54" x2="642" y2="78"/>
+        <line x1="686" y1="54" x2="686" y2="90"/>
+      </g>
+      <g font-family="Inter,sans-serif" font-size="8.8" fill="#4b5468">
+        <text x="120" y="80" text-anchor="middle"><tspan font-weight="700" fill="#16307e">Context search</tspan> — global on the Dashboard</text>
+        <text x="342" y="80" text-anchor="middle"><tspan font-weight="700" fill="#16307e">Quick action</tspan> — varies by module</text>
+        <text x="540" y="80" text-anchor="middle"><tspan font-weight="700" fill="#16307e">PHT clock</tspan> — ticks every second</text>
+        <text x="642" y="90" text-anchor="middle"><tspan font-weight="700" fill="#16307e">Alerts</tspan> — red dot means action is waiting</text>
+        <text x="686" y="102" text-anchor="end"><tspan font-weight="700" fill="#16307e">Administrator</tspan></text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 2.2 — Top bar anatomy.</b> The clock is Philippine Standard Time and is the timestamp used on every logbook entry, receipt and verification slip issued from this workstation.</div>
+</div>
+
+<h3>2.4 Notifications panel</h3>
+<p>The bell <span class="material-symbols-outlined icon-inline">notifications</span> carries a red dot whenever something needs an officer&rsquo;s attention. Notifications are not stored messages — they are recomputed from live records each time you open the panel, so clearing an underlying problem clears the alert.</p>
+
+<table class="compact">
+  <thead><tr><th style="width:22%">Alert</th><th style="width:40%">Raised when</th><th>Clear it by</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-red">Overdue Rent</span></td><td>A tenant&rsquo;s rent for the current period is past the due day and untick</td><td>Collecting the rent in Tenant Records (§5.3)</td></tr>
+    <tr><td><span class="badge badge-amber">Unpaid Utilities</span></td><td>An electricity or water bill is unpaid, or past its due date</td><td>Marking the bill paid in Utility Billing (§7.4)</td></tr>
+    <tr><td><span class="badge badge-blue">Pending Applicants</span></td><td>An application has all six documents and is awaiting review</td><td>Approving or rejecting the application (§6.3)</td></tr>
+    <tr><td><span class="badge badge-amber">Expiring Leases</span></td><td>A tenant is flagged <em>Expiring Soon</em></td><td>Renewing the lease terms on the tenant record</td></tr>
+    <tr><td><span class="badge badge-gray">Maintenance</span></td><td>A stall is currently set to <em>Maintenance</em></td><td>Returning the stall to <em>Available</em> once work is done</td></tr>
+    <tr><td><span class="badge badge-red">Open Violations</span></td><td>A citation is still unresolved</td><td>Setting the citation to <em>Resolved</em> (§8.3)</td></tr>
+  </tbody>
+</table>
+
+<h3>2.5 Patterns you will meet everywhere</h3>
+<div class="grid-2">
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">filter_alt</span> Filter bars</div><p>Every register has one. Filters combine — a section filter and a status filter narrow together. <code>Clear Filters</code> resets all of them at once, and always resets the search box too.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">edit</span> &ldquo;Blank keeps on-record&rdquo; edit forms</div><p>Edit forms open <em>empty</em>, with the stored value shown as grey placeholder text (<em>&ldquo;On record: Meat &amp; Poultry&rdquo;</em>). Only fields you actually type into are changed — so you can never blank a field by accident.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">visibility</span> Record sheets</div><p>The eye icon opens a formal, printable record sheet rather than a form. Use it when a tenant or an auditor asks to see the file.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">warning</span> Confirmation dialogs</div><p>Anything destructive or hard to reverse asks first, and names the record it is about to change. Read the record name in the dialog, not just the button.</p></div>
+</div>
+
+<h3>2.6 Printing conventions</h3>
+<p>Everything the system prints — registers, receipts, verification slips and the operations report — is laid out for <strong>A4 portrait</strong> with the printer&rsquo;s own margins. Configure this once:</p>
+<div class="grid-2">
+  <div class="ref-box" style="margin:0">
+    <div class="ref-box-title"><span class="material-symbols-outlined">print</span> Printer settings to use</div>
+    <ul>
+      <li><strong>Paper size:</strong> A4 &nbsp;·&nbsp; <strong>Orientation:</strong> Portrait</li>
+      <li><strong>Margins:</strong> Default (or None for receipt tiling)</li>
+      <li><strong>Scale:</strong> 100% — turn <em>Fit to page</em> off</li>
+      <li><strong>Background graphics:</strong> On, so seals and status colours print</li>
+    </ul>
+  </div>
+  <div class="ref-box" style="margin:0">
+    <div class="ref-box-title"><span class="material-symbols-outlined">description</span> What each print job produces</div>
+    <ul>
+      <li><code>Print List</code> — the <em>filtered</em> table as a formal register sheet</li>
+      <li><code>Print Receipt</code> — 1, 2 or 4 copies of one utility bill</li>
+      <li>Batch print — up to 4 different receipts tiled per sheet (§7.5)</li>
+      <li>Verification slips — 1, 2 or 4 slips per sheet (§13.2)</li>
+    </ul>
+  </div>
+</div>
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Print what you filtered.</strong> <code>Print List</code> prints exactly the rows on screen. Filter to one section, or to <em>Overdue</em> only, and the printed register is already the working list your inspector needs — no manual highlighting.</div></div>

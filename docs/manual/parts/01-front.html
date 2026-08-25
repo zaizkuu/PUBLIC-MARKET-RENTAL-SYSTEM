@@ -1,0 +1,196 @@
+<!-- ============================================================
+     COVER
+     ============================================================ -->
+<div class="cover">
+  <img src="../public/logo.jpg" alt="Municipal Seal of Tanauan, Leyte" class="cover-seal">
+  <div class="cover-rp">Republic of the Philippines</div>
+  <div class="cover-muni">Municipality of Tanauan, Leyte</div>
+  <div class="cover-rule"></div>
+  <div class="cover-title">Public Market Rental<br>Monitoring System</div>
+  <div class="cover-sub">Market Office &nbsp;·&nbsp; Municipal Government</div>
+  <div><span class="cover-badge"><span class="material-symbols-outlined">menu_book</span> Operator&rsquo;s User Manual</span></div>
+
+  <div class="cover-strip">
+    <div class="cover-stat"><b>235</b><span>Stalls on record</span></div>
+    <div class="cover-stat"><b>4</b><span>Market sections</span></div>
+    <div class="cover-stat"><b>15</b><span>Chapters</span></div>
+    <div class="cover-stat"><b>100%</b><span>Offline operation</span></div>
+  </div>
+
+  <div class="cover-foot">
+    <span>Document&nbsp;No. PMRMS&#8209;UM&#8209;001 &nbsp;·&nbsp; Version 1.0</span>
+    <span>August 2026 &nbsp;·&nbsp; Controlled Copy</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     DOCUMENT CONTROL / HOW TO USE THIS MANUAL
+     ============================================================ -->
+<div class="plate-title">
+  <span class="material-symbols-outlined">description</span>
+  <h2>About This Manual</h2>
+</div>
+
+<p class="lead">This manual is the complete operating reference for the <strong>Public Market Rental Monitoring System (PMRMS)</strong> installed at the Market Office of the Municipality of Tanauan, Leyte. It documents every screen, every field and every business rule the system enforces, so that any officer assigned to the Market Office can run the market&rsquo;s records without prior training.</p>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title"><span class="material-symbols-outlined">groups</span> Who this manual is for</div>
+    <ul>
+      <li><strong>Market Supervisor</strong> — approvals, officer board, verification slips</li>
+      <li><strong>Market Collector</strong> — rent collection, utility billing, receipts</li>
+      <li><strong>Market Inspector</strong> — stall inspections, violations, logbook</li>
+      <li><strong>Records Officer</strong> — tenant and applicant records, backups</li>
+    </ul>
+  </div>
+  <div class="card gold">
+    <div class="card-title"><span class="material-symbols-outlined">route</span> How to find what you need</div>
+    <ul>
+      <li><strong>New to the system?</strong> Read Part I in full (Chapters 1–2).</li>
+      <li><strong>Daily counter work?</strong> Chapters 5 and 7 cover rent and billing.</li>
+      <li><strong>Need a rule or figure?</strong> Go straight to Appendix A.</li>
+      <li><strong>Something is wrong?</strong> Appendix B lists fixes by symptom.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Conventions used in this document</h3>
+<table class="compact">
+  <thead><tr><th style="width:26%">Convention</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>Save to Records</code></td><td>Text in this style is a button, menu item or on-screen control you click.</td></tr>
+    <tr><td><strong>Monthly Rent</strong></td><td>Bold text names a data field you type into, or a term defined in Appendix C.</td></tr>
+    <tr><td><span class="material-symbols-outlined icon-inline">visibility</span> icon</td><td>Icons shown inline are the exact icons that appear on screen in the application.</td></tr>
+    <tr><td><span class="badge badge-green">Paid</span> <span class="badge badge-amber">Unpaid</span></td><td>Coloured pills are status badges reproduced from the application. See Appendix D.</td></tr>
+    <tr><td><em>Figure 7.2</em></td><td>Numbered diagrams. The first number is the chapter, the second the figure order.</td></tr>
+  </tbody>
+</table>
+
+<h3>Signal boxes</h3>
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Note</strong> — background information or a behaviour of the system that is easy to miss.</div></div>
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Tip</strong> — a faster or safer way to complete the task at hand.</div></div>
+<div class="callout callout-warning"><span class="material-symbols-outlined">warning</span><div><strong>Caution</strong> — an action that changes records in a way you should verify before confirming.</div></div>
+<div class="callout callout-danger"><span class="material-symbols-outlined">error</span><div><strong>Warning</strong> — an action that destroys or overwrites data, or that the system will refuse to perform.</div></div>
+
+<h3>Document control</h3>
+<table class="compact">
+  <thead><tr><th>Version</th><th>Date</th><th>Prepared by</th><th>Summary of change</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1.0</strong></td><td>August 2026</td><td>System Development Team</td><td>First controlled release. Covers all fifteen modules, the four appendices and the seeded 2026 stall register.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-warning"><span class="material-symbols-outlined">shield</span><div><strong>Controlled document.</strong> This manual describes an internal municipal records system. Distribution is limited to Market Office personnel and the offices named in Chapter 12. Record any local amendment in the table above before reissuing.</div></div>
+
+<!-- ============================================================
+     TABLE OF CONTENTS
+     ============================================================ -->
+<div class="break-before"></div>
+<div class="plate-title">
+  <span class="material-symbols-outlined">toc</span>
+  <h2>Table of Contents</h2>
+</div>
+
+<div class="toc-cols">
+  <div class="toc-part">Part I — Getting Started</div>
+  <div class="toc-item"><span class="toc-num">1</span><span class="toc-label">Introduction &amp; System Overview</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.1</span><span class="toc-label">What the system does</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.2</span><span class="toc-label">From ledger book to database</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.3</span><span class="toc-label">Module map</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.4</span><span class="toc-label">How your data is stored</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.5</span><span class="toc-label">Key features at a glance</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.6</span><span class="toc-label">System requirements</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.7</span><span class="toc-label">Installing and first launch</span></div>
+  <div class="toc-item"><span class="toc-num">2</span><span class="toc-label">Interface &amp; Navigation</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">2.1</span><span class="toc-label">Application layout</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">2.2</span><span class="toc-label">Sidebar navigation</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">2.3</span><span class="toc-label">Top bar &amp; search</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">2.4</span><span class="toc-label">Notifications panel</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">2.5</span><span class="toc-label">Patterns you will meet everywhere</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">2.6</span><span class="toc-label">Printing conventions</span></div>
+
+  <div class="toc-part">Part II — Core Modules</div>
+  <div class="toc-item"><span class="toc-num">3</span><span class="toc-label">Dashboard</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">3.1</span><span class="toc-label">Statistics cards</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">3.2</span><span class="toc-label">Market earnings panel</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">3.3</span><span class="toc-label">Stall occupancy chart</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">3.4</span><span class="toc-label">Recent activity &amp; global search</span></div>
+  <div class="toc-item"><span class="toc-num">4</span><span class="toc-label">Stall Management</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">4.1</span><span class="toc-label">How stalls are identified</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">4.2</span><span class="toc-label">Stall statuses &amp; lifecycle</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">4.3</span><span class="toc-label">Viewing &amp; filtering stalls</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">4.4</span><span class="toc-label">Adding a new stall</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">4.5</span><span class="toc-label">Stall details &amp; editing</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">4.6</span><span class="toc-label">Releasing &amp; deleting a stall</span></div>
+  <div class="toc-item"><span class="toc-num">5</span><span class="toc-label">Tenant Records &amp; Rent</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">5.1</span><span class="toc-label">The tenant register</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">5.2</span><span class="toc-label">Adding &amp; editing a tenant</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">5.3</span><span class="toc-label">Monthly rent collection</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">5.4</span><span class="toc-label">The 20% early-payment discount</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">5.5</span><span class="toc-label">Stallkeepers</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">5.6</span><span class="toc-label">The tenant record sheet</span></div>
+  <div class="toc-item"><span class="toc-num">6</span><span class="toc-label">Applicant Management</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">6.1</span><span class="toc-label">The application pipeline</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">6.2</span><span class="toc-label">Documentary requirements</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">6.3</span><span class="toc-label">Approval &amp; stall assignment</span></div>
+  <div class="toc-item"><span class="toc-num">7</span><span class="toc-label">Utility Billing</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">7.1</span><span class="toc-label">Rates &amp; the billing formula</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">7.2</span><span class="toc-label">Issuing a bill, step by step</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">7.3</span><span class="toc-label">Worked examples</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">7.4</span><span class="toc-label">Billing records &amp; management</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">7.5</span><span class="toc-label">Receipts &amp; batch printing</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">7.6</span><span class="toc-label">Late surcharges</span></div>
+  <div class="toc-item"><span class="toc-num">8</span><span class="toc-label">Violations Register</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">8.1</span><span class="toc-label">Overview &amp; demerit points</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">8.2</span><span class="toc-label">Standard citation issues</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">8.3</span><span class="toc-label">Recording &amp; resolving a citation</span></div>
+
+  <div class="toc-part">Part III — Reporting &amp; Intelligence</div>
+  <div class="toc-item"><span class="toc-num">9</span><span class="toc-label">Analytics &amp; Operations Report</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">9.1</span><span class="toc-label">Anatomy of the report</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">9.2</span><span class="toc-label">Reading each section</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">9.3</span><span class="toc-label">Exporting &amp; presenting</span></div>
+  <div class="toc-item"><span class="toc-num">10</span><span class="toc-label">Logbook (Audit Trail)</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">10.1</span><span class="toc-label">Log types</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">10.2</span><span class="toc-label">What the system logs by itself</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">10.3</span><span class="toc-label">Manual entries, filtering &amp; export</span></div>
+  <div class="toc-item"><span class="toc-num">11</span><span class="toc-label">Market Assistant (AI)</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.1</span><span class="toc-label">How the two-tier engine works</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.2</span><span class="toc-label">What you can ask</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.3</span><span class="toc-label">Reading an answer</span></div>
+
+  <div class="toc-part">Part IV — Administration</div>
+  <div class="toc-item"><span class="toc-num">12</span><span class="toc-label">Officers &amp; Organizational Board</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">12.1</span><span class="toc-label">The board at a glance</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">12.2</span><span class="toc-label">Board view &amp; directory view</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">12.3</span><span class="toc-label">Adding &amp; editing officers</span></div>
+  <div class="toc-item"><span class="toc-num">13</span><span class="toc-label">Verification Slips</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">13.1</span><span class="toc-label">When a slip is issued</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">13.2</span><span class="toc-label">Issuing a slip</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">13.3</span><span class="toc-label">Anatomy of a printed slip</span></div>
+  <div class="toc-item"><span class="toc-num">14</span><span class="toc-label">Settings &amp; Data Management</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">14.1</span><span class="toc-label">System information</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">14.2</span><span class="toc-label">Export, import &amp; reset</span></div>
+  <div class="toc-item"><span class="toc-num">15</span><span class="toc-label">Support &amp; Help Center</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">15.1</span><span class="toc-label">Backup &amp; restore</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">15.2</span><span class="toc-label">Built-in FAQ &amp; contacts</span></div>
+
+  <div class="toc-part">Appendices</div>
+  <div class="toc-item"><span class="toc-num">A</span><span class="toc-label">Business Rules Quick Reference</span></div>
+  <div class="toc-item"><span class="toc-num">B</span><span class="toc-label">Troubleshooting by Symptom</span></div>
+  <div class="toc-item"><span class="toc-num">C</span><span class="toc-label">Data Dictionary &amp; ID Prefixes</span></div>
+  <div class="toc-item"><span class="toc-num">D</span><span class="toc-label">Icon, Badge &amp; Colour Glossary</span></div>
+  <div class="toc-item"><span class="toc-num">E</span><span class="toc-label">Contacts &amp; Document Sign-off</span></div>
+</div>
+
+<div class="ref-box gold" style="margin-top:14px;">
+  <div class="ref-box-title"><span class="material-symbols-outlined">bolt</span> The five things an officer does most</div>
+  <div class="kv">
+    <div><b>Collect rent</b> Tenant Records → tick the month checkbox — §5.3</div>
+    <div><b>Issue a utility bill</b> Utility Billing → Bill Calculator — §7.2</div>
+    <div><b>Print receipts</b> Utility Billing → select rows → Print — §7.5</div>
+    <div><b>Approve an applicant</b> Applicants → Approve → Assign Stall — §6.3</div>
+    <div><b>Issue a verification slip</b> Stall Management → Verification — §13.2</div>
+    <div><b>Back up the database</b> Support → Download Full Backup — §15.1</div>
+  </div>
+</div>
