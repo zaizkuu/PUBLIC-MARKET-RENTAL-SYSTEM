@@ -1,0 +1,469 @@
+<!-- ============================ CHAPTER 6 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">person_add</span></div>
+  <div>
+    <span class="chapter-num">Chapter 6</span>
+    <span class="chapter-title">Applicant Management</span>
+  </div>
+  <div class="chapter-kicker">From the day a folder is filed to the day a stall key changes hands.</div>
+</div>
+
+<p>Applicant Management is the intake end of the market. It tracks each application from filing, through the six documentary requirements, to approval or rejection — and then hands the approved applicant straight to the stall assignment form, which creates the tenant record for you.</p>
+
+<h3>6.1 The application pipeline</h3>
+<div class="stat-row">
+  <div class="stat"><b>Total</b><span>Applicants</span></div>
+  <div class="stat"><b>Pending</b><span>Awaiting review</span></div>
+  <div class="stat"><b>Incomplete</b><span>Documents missing</span></div>
+  <div class="stat"><b>No BP</b><span>Compliance flag</span></div>
+  <div class="stat"><b>Approved</b><span>This month</span></div>
+</div>
+
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flowchart of the applicant pipeline from filing through requirement checks and review to stall assignment or rejection">
+      <defs>
+        <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+        </marker>
+        <marker id="ar4r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+        </marker>
+      </defs>
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <!-- filed -->
+        <rect x="4" y="86" width="104" height="42" rx="8" fill="#eef1f6" stroke="#c9cfdd"/>
+        <text x="56" y="105" font-size="10.4" font-weight="800" fill="#3f4a5f">Filed</text>
+        <text x="56" y="118" font-size="8" fill="#3f4a5f">at the counter</text>
+
+        <!-- incomplete -->
+        <rect x="146" y="86" width="132" height="42" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.4"/>
+        <text x="212" y="103" font-size="10.4" font-weight="800" fill="#8a4a04">Incomplete</text>
+        <text x="212" y="117" font-size="8" fill="#8a4a04">fewer than 6 documents</text>
+
+        <!-- decision -->
+        <path d="M394,72 L462,107 L394,142 L326,107 Z" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.4"/>
+        <text x="394" y="103" font-size="9.4" font-weight="800" fill="#16307e">All 6 in?</text>
+        <text x="394" y="116" font-size="7.8" fill="#4b5468">checked by system</text>
+
+        <!-- pending review -->
+        <rect x="504" y="86" width="132" height="42" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.4"/>
+        <text x="570" y="103" font-size="10.4" font-weight="800" fill="#16307e">Pending Review</text>
+        <text x="570" y="117" font-size="8" fill="#16307e">officer decides</text>
+
+        <!-- approved -->
+        <rect x="504" y="12" width="132" height="40" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.4"/>
+        <text x="570" y="30" font-size="10.4" font-weight="800" fill="#0b5030">Approved</text>
+        <text x="570" y="43" font-size="8" fill="#0b5030">assign a stall next</text>
+
+        <!-- rejected -->
+        <rect x="504" y="162" width="132" height="40" rx="8" fill="#fee2e2" stroke="#dc2626" stroke-width="1.4"/>
+        <text x="570" y="180" font-size="10.4" font-weight="800" fill="#8f1613">Rejected</text>
+        <text x="570" y="193" font-size="8" fill="#8f1613">reason kept on file</text>
+
+        <!-- tenant -->
+        <rect x="664" y="8" width="52" height="48" rx="8" fill="#243B8F"/>
+        <text x="690" y="28" font-size="9" font-weight="800" fill="#ffffff">Tenant</text>
+        <text x="690" y="40" font-size="7.6" fill="#c8d3f2">created</text>
+        <text x="690" y="50" font-size="7.6" fill="#c8d3f2">Ch. 5</text>
+      </g>
+
+      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar4)">
+        <line x1="110" y1="107" x2="142" y2="107"/>
+        <line x1="280" y1="107" x2="322" y2="107"/>
+        <line x1="464" y1="107" x2="500" y2="107"/>
+        <path d="M570,86 V56"/>
+        <path d="M636,32 H660"/>
+      </g>
+      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar4)">
+        <path d="M394,142 V196 H286 V128" stroke-dasharray="4 3"/>
+      </g>
+      <g stroke="#dc2626" stroke-width="1.4" fill="none" marker-end="url(#ar4r)">
+        <path d="M570,128 V158"/>
+      </g>
+
+      <g font-family="Inter,sans-serif" font-size="8" fill="#4b5468">
+        <text x="490" y="103" text-anchor="end">yes</text>
+        <text x="400" y="156">no — stays incomplete until the missing document arrives</text>
+        <text x="578" y="146" fill="#8f1613">reject</text>
+        <text x="578" y="76" fill="#0b5030">approve</text>
+      </g>
+      <text x="4" y="232" font-family="Inter,sans-serif" font-size="8" fill="#8b93a5">Status advances by itself as requirements are ticked — no officer sets &ldquo;Pending Review&rdquo; by hand.</text>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 6.1 — The application pipeline.</b> The only two decisions an officer makes are ticking a requirement and choosing approve or reject. Everything between those points is the system moving the application along.</div>
+</div>
+
+<div class="callout callout-note"><span class="material-symbols-outlined">published_with_changes</span><div><strong>Automatic status advancement.</strong> When the sixth documentary requirement is ticked, the application moves itself from <em>Incomplete</em> to <em>Pending Review</em> and appears in the notification bell. Untick one and it drops back.</div></div>
+
+<h3>6.2 Documentary requirements</h3>
+<p>Six documents are required, in this order. The register&rsquo;s <strong>Requirements</strong> column shows progress as coloured dots with a running count such as <code>4/6</code>; hovering a dot names the specific document.</p>
+
+<table class="compact">
+  <thead><tr><th style="width:5%">#</th><th style="width:32%">Requirement</th><th>What the office is checking for</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><strong>Business Permit</strong></td><td>A valid permit from the Business Permit &amp; Licensing Office</td></tr>
+    <tr><td>2</td><td><strong>Barangay Clearance</strong></td><td>Clearance from the applicant&rsquo;s own barangay</td></tr>
+    <tr><td>3</td><td><strong>Community Tax Certificate (Cedula)</strong></td><td>Current year&rsquo;s cedula</td></tr>
+    <tr><td>4</td><td><strong>Health / Sanitary Permit</strong></td><td>Health certificate — indispensable for meat, poultry and fish stalls</td></tr>
+    <tr><td>5</td><td><strong>2×2 ID Photo</strong></td><td>A recent photograph for the stall record sheet</td></tr>
+    <tr><td>6</td><td><strong>Signed Contract of Lease</strong></td><td>The lease executed with the Market Office</td></tr>
+  </tbody>
+</table>
+
+<div class="chips">
+  <span class="chip"><span class="material-symbols-outlined">check_circle</span> Business Permit</span>
+  <span class="chip"><span class="material-symbols-outlined">check_circle</span> Barangay Clearance</span>
+  <span class="chip"><span class="material-symbols-outlined">check_circle</span> Cedula</span>
+  <span class="chip"><span class="material-symbols-outlined">check_circle</span> Health / Sanitary Permit</span>
+  <span class="chip"><span class="material-symbols-outlined">check_circle</span> 2×2 ID Photo</span>
+  <span class="chip"><span class="material-symbols-outlined">check_circle</span> Contract of Lease</span>
+</div>
+
+<div class="callout callout-tip"><span class="material-symbols-outlined">sync</span><div><strong>Business permits sync both ways.</strong> If an applicant who already holds a stall later submits their Business Permit, the linked stall&rsquo;s permit badge flips from <span class="badge badge-red">No BP</span> to <span class="badge badge-green">With BP</span> on its own. You never have to remember to update the stall register as well.</div></div>
+
+<h3>6.3 Approval &amp; stall assignment</h3>
+<div class="steps">
+  <div class="step"><div class="step-title">Open the review form</div>Click the applicant&rsquo;s row, or the review action button. Here you can correct the applicant&rsquo;s details and tick or untick each requirement as documents are presented.</div>
+  <div class="step"><div class="step-title">Approve</div>With the requirements satisfied, click <code>Approve</code>. The <strong>Assign Stall</strong> form opens immediately — approval and assignment are one continuous action.</div>
+  <div class="step"><div class="step-title">Assign a stall</div>The form lists only <strong>genuinely vacant</strong> stalls. If the applicant named a preferred stall and it is still free, it is pre-selected for you. Set:
+    <ul>
+      <li><strong>Stall</strong> — from the vacancy list</li>
+      <li><strong>Monthly Rent</strong> — the contracted amount for this stall</li>
+      <li><strong>Section</strong> — filled in from the stall</li>
+    </ul>
+    The applicant&rsquo;s name and mobile number carry over automatically.
+  </div>
+  <div class="step"><div class="step-title">Confirm</div>Click <code>Assign &amp; Create Tenant</code>. In one step the system creates the tenant record, marks the stall <em>Occupied</em>, links the applicant record to the new tenant, and writes the logbook entry.</div>
+</div>
+
+<div class="grid-2">
+  <div class="callout callout-note" style="margin:0"><span class="material-symbols-outlined">schedule</span><div><strong>Approving without assigning.</strong> Click <code>Skip for now</code> to approve an applicant while no suitable stall is free. The approval stands and the stall can be assigned later from the same record.</div></div>
+  <div class="callout callout-warning" style="margin:0"><span class="material-symbols-outlined">warning</span><div><strong>Check the rent before confirming.</strong> The <strong>Monthly Rent</strong> you enter here becomes the basis for every future rent collection and every 20% discount. Correcting it later does not restate months already collected.</div></div>
+</div>
+
+<!-- ============================ CHAPTER 7 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">bolt</span></div>
+  <div>
+    <span class="chapter-num">Chapter 7</span>
+    <span class="chapter-title">Utility Billing</span>
+  </div>
+  <div class="chapter-kicker">Meter readings in, receipts out — for electricity and water across every stall.</div>
+</div>
+
+<p>Utility Billing is the meter-reading and billing engine. It computes consumption from two readings, applies the municipal rate, issues a numbered bill, and prints the receipt — one at a time, or four to a sheet for a whole section.</p>
+
+<h3>7.1 Rates &amp; the billing formula</h3>
+<div class="grid-2">
+  <table class="compact" style="margin:0">
+    <thead><tr><th>Utility</th><th class="num">Rate</th><th>Unit</th><th class="num">Late surcharge</th></tr></thead>
+    <tbody>
+      <tr><td><span class="material-symbols-outlined icon-inline">bolt</span> <strong>Electricity</strong></td><td class="num">&#8369;11.50</td><td>per kWh</td><td class="num">3.35%</td></tr>
+      <tr><td><span class="material-symbols-outlined icon-inline">water_drop</span> <strong>Water</strong></td><td class="num">&#8369;25.00</td><td>per cu.m</td><td class="num">10.00%</td></tr>
+    </tbody>
+  </table>
+  <div class="ref-box" style="margin:0">
+    <div class="ref-box-title"><span class="material-symbols-outlined">calculate</span> The formula</div>
+    <p style="margin:0"><strong>Consumption</strong> = Current Reading − Previous Reading &nbsp;<em>(never below zero)</em><br>
+    <strong>Amount Due</strong> = Consumption × Rate per Unit<br>
+    <strong>Total if late</strong> = Amount Due × (1 + surcharge rate)</p>
+  </div>
+</div>
+
+<div class="figure">
+  <div class="figure-body plain">
+    <svg viewBox="0 0 720 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram of the billing formula from meter readings to amount due and optional surcharge">
+      <defs>
+        <marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+        </marker>
+      </defs>
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="0" y="14" width="126" height="48" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <text x="63" y="33" font-size="9" fill="#4b5468">Current reading</text>
+        <text x="63" y="51" font-size="13" font-weight="800" fill="#16307e">1,248</text>
+
+        <text x="146" y="45" font-size="17" font-weight="800" fill="#1d4ed8">−</text>
+
+        <rect x="166" y="14" width="126" height="48" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <text x="229" y="33" font-size="9" fill="#4b5468">Previous reading</text>
+        <text x="229" y="51" font-size="13" font-weight="800" fill="#16307e">1,162</text>
+
+        <text x="312" y="45" font-size="17" font-weight="800" fill="#1d4ed8">=</text>
+
+        <rect x="332" y="14" width="126" height="48" rx="7" fill="#eff5ff" stroke="#1d4ed8" stroke-width="1.3"/>
+        <text x="395" y="33" font-size="9" fill="#16307e">Consumption</text>
+        <text x="395" y="51" font-size="13" font-weight="800" fill="#16307e">86 kWh</text>
+
+        <text x="478" y="45" font-size="17" font-weight="800" fill="#1d4ed8">×</text>
+
+        <rect x="498" y="14" width="96" height="48" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <text x="546" y="33" font-size="9" fill="#4b5468">Rate</text>
+        <text x="546" y="51" font-size="13" font-weight="800" fill="#16307e">&#8369;11.50</text>
+
+        <text x="612" y="45" font-size="17" font-weight="800" fill="#1d4ed8">=</text>
+
+        <rect x="630" y="14" width="90" height="48" rx="7" fill="#243B8F"/>
+        <text x="675" y="33" font-size="9" fill="#c8d3f2">Amount due</text>
+        <text x="675" y="51" font-size="13" font-weight="800" fill="#ffffff">&#8369;989.00</text>
+      </g>
+      <g stroke="#1d4ed8" stroke-width="1.3" fill="none" marker-end="url(#ar5)">
+        <path d="M675,62 V78 H360"/>
+      </g>
+      <g font-family="Inter,sans-serif">
+        <rect x="0" y="86" width="352" height="34" rx="6" fill="#fef3c7" stroke="#d97706"/>
+        <text x="14" y="100" font-size="8.8" font-weight="800" fill="#8a4a04">If the due date has passed at printing time</text>
+        <text x="14" y="113" font-size="8.4" fill="#8a4a04">&#8369;989.00 × 3.35% = &#8369;33.13 surcharge → &#8369;1,022.13 payable</text>
+
+        <rect x="366" y="86" width="354" height="34" rx="6" fill="#dcfce7" stroke="#16a34a"/>
+        <text x="380" y="100" font-size="8.8" font-weight="800" fill="#0b5030">The ledger figure never changes</text>
+        <text x="380" y="113" font-size="8.4" fill="#0b5030">&#8369;989.00 stays the billed amount; the surcharge is computed at print time only</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 7.1 — How a bill is computed.</b> Surcharge is never written into the bill record. It is recalculated whenever the receipt is printed, so a receipt always shows what is owed <em>today</em> while the ledger keeps what was originally billed.</div>
+</div>
+
+<h3>7.2 Issuing a bill, step by step</h3>
+<div class="steps">
+  <div class="step"><div class="step-title">Choose the utility</div>Toggle <strong>Electricity</strong> or <strong>Water</strong>. The rate, the unit label (kWh or cu.m) and the icon all change with it.</div>
+  <div class="step"><div class="step-title">Choose the stall or the tenant</div>Pick a stall and the occupant, last recorded reading and meter number fill themselves in. Picking a tenant instead selects their stall.</div>
+  <div class="step"><div class="step-title">Set the period covered</div>Enter <strong>Period From</strong> and <strong>Period To</strong>, or press <code>Cover all of [Month]</code> to snap to the first and last day of the current month.</div>
+  <div class="step"><div class="step-title">Set the due date</div>Defaults to <strong>15 days after</strong> the period end. Adjust it if the office is billing on a different cycle.</div>
+  <div class="step"><div class="step-title">Enter the readings</div><strong>Previous Reading</strong> is carried forward from the last bill on record. Type the <strong>Current Reading</strong>. The system rejects negative readings and warns if the current reading is below the previous one.</div>
+  <div class="step"><div class="step-title">Check the live summary</div>A summary card shows stall, tenant, meter number, period, both readings, consumption, rate and amount due — and warns you with the computed surcharge if the due date has already passed.</div>
+  <div class="step"><div class="step-title">Save or print</div>
+    <ul>
+      <li><code>Save to Records</code> — posts the bill, writes the logbook entry, and records the meter number against the stall if it was not already stored</li>
+      <li><code>Print Receipt</code> — opens the print preview straight away</li>
+      <li><code>Clear</code> — empties the calculator without saving</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout callout-warning"><span class="material-symbols-outlined">content_copy</span><div><strong>Duplicate detection.</strong> If a bill already exists for the same stall, utility and billing period, the system stops and asks whether you meant to issue a second one. This catches the most common billing error — the same section read twice in a month.</div></div>
+
+<h3>7.3 Worked examples</h3>
+<div class="grid-2">
+  <div class="example" style="margin:0">
+    <div class="example-head"><span class="material-symbols-outlined" style="font-size:15px">bolt</span> Electricity — paid on time</div>
+    <div class="example-body">
+      <div class="calc-line"><span>Stall / meter</span><b>FV-07 · EM-4412</b></div>
+      <div class="calc-line"><span>Period covered</span><b>1–31 August 2026</b></div>
+      <div class="calc-line"><span>Previous reading</span><b>1,162 kWh</b></div>
+      <div class="calc-line"><span>Current reading</span><b>1,248 kWh</b></div>
+      <div class="calc-line"><span>Consumption</span><b>86 kWh</b></div>
+      <div class="calc-line"><span>Rate</span><b>&#8369;11.50 / kWh</b></div>
+      <div class="calc-line"><span>Due date</span><b>15 September 2026</b></div>
+      <div class="calc-line total"><span>Amount due</span><b>&#8369;989.00</b></div>
+    </div>
+  </div>
+  <div class="example" style="margin:0">
+    <div class="example-head"><span class="material-symbols-outlined" style="font-size:15px">water_drop</span> Water — printed after the due date</div>
+    <div class="example-body">
+      <div class="calc-line"><span>Stall / meter</span><b>FS-22 · WM-0188</b></div>
+      <div class="calc-line"><span>Period covered</span><b>1–31 July 2026</b></div>
+      <div class="calc-line"><span>Previous / current</span><b>318 → 336 cu.m</b></div>
+      <div class="calc-line"><span>Consumption</span><b>18 cu.m</b></div>
+      <div class="calc-line"><span>Rate</span><b>&#8369;25.00 / cu.m</b></div>
+      <div class="calc-line"><span>Amount billed (ledger)</span><b>&#8369;450.00</b></div>
+      <div class="calc-line"><span>Late surcharge 10.00%</span><b>+&#8369;45.00</b></div>
+      <div class="calc-line total"><span>Payable on the receipt</span><b>&#8369;495.00</b></div>
+    </div>
+  </div>
+</div>
+
+<h3>7.4 Billing records &amp; management</h3>
+<p>Below the calculator sits the register of every bill ever issued, filtered by <strong>Utility Type</strong> (Electricity / Water), <strong>Status</strong> (Unpaid / Paid / Overdue) and a free-text <strong>Search</strong> across bill ID, stall number, tenant name and meter number.</p>
+<table class="compact">
+  <thead><tr><th style="width:14%">Column</th><th>Shows</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Select</strong></td><td>Checkbox for batch printing. The header checkbox selects every visible row.</td></tr>
+    <tr><td><strong>Bill ID</strong></td><td>Sequential identifier, e.g. <code>UTL-001</code> — never reused</td></tr>
+    <tr><td><strong>Utility / Stall / Meter</strong></td><td>What was billed, where, and off which meter</td></tr>
+    <tr><td><strong>Tenant</strong></td><td>Who was billed</td></tr>
+    <tr><td><strong>Period</strong></td><td>The billing period covered</td></tr>
+    <tr><td><strong>Consumption</strong></td><td>kWh or cu.m computed from the readings</td></tr>
+    <tr><td><strong>Amount</strong></td><td>The billed figure — never altered by surcharge</td></tr>
+    <tr><td><strong>Status</strong></td><td><span class="badge badge-green">Paid</span> <span class="badge badge-amber">Unpaid</span> <span class="badge badge-red">Overdue</span> — overdue is derived from the due date, not set by hand</td></tr>
+    <tr><td><strong>Actions</strong></td><td><span class="material-symbols-outlined icon-inline">visibility</span> View &nbsp; <span class="material-symbols-outlined icon-inline">task_alt</span> Mark paid / unpaid &nbsp; <span class="material-symbols-outlined icon-inline">print</span> Print &nbsp; <span class="material-symbols-outlined icon-inline" style="color:#dc2626">delete</span> Delete</td></tr>
+  </tbody>
+</table>
+<p>Use <code>Export CSV</code> to take the filtered register into a spreadsheet. The export carries the full detail — both readings, the rate, the surcharge percentage, the surcharge as of today and the total payable today — not just what is on screen.</p>
+
+<h3>7.5 Receipts &amp; batch printing</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">print</span>Printing one bill</h4>
+    <p>The <span class="material-symbols-outlined icon-inline">print</span> icon opens the print preview:</p>
+    <ul>
+      <li><strong>Copies:</strong> 1, 2 (<em>Tenant&rsquo;s Copy</em> + <em>Market Office Copy</em>) or 4 (adding <em>Treasurer&rsquo;s Copy</em> + <em>File Copy</em>)</li>
+      <li><strong>Zoom:</strong> slider from 35% to 200%, plus <code>Fit</code> and <code>Actual Size (100%)</code></li>
+      <li><strong>Fullscreen:</strong> for checking small print — press <code>Esc</code> to leave</li>
+    </ul>
+    <h4><span class="material-symbols-outlined">edit_note</span>&ldquo;Printed by&rdquo;</h4>
+    <p>The issuing officer&rsquo;s name is remembered from the last print, so it is typed once a shift rather than once a bill.</p>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">grid_view</span>Batch printing a section</h4>
+    <div class="steps" style="margin-top:4px">
+      <div class="step"><div class="step-title">Select the bills</div>Tick individual rows, or use the header checkbox to take every row currently visible after filtering.</div>
+      <div class="step"><div class="step-title">Read the batch bar</div>A floating bar reports <em>&ldquo;X bills selected · Y A4 sheets, 4 receipts to a sheet&rdquo;</em>.</div>
+      <div class="step"><div class="step-title">Print</div>Click <code>Print X Receipts</code>. Four <em>different</em> stalls&rsquo; receipts are tiled 2×2 per sheet with dotted cut guides.</div>
+    </div>
+  </div>
+</div>
+
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 194" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Left: the anatomy of a printed receipt. Right: four receipts tiled two by two on an A4 sheet with cut guides">
+      <g font-family="Inter,sans-serif">
+        <text x="0" y="10" font-size="8.4" font-weight="800" fill="#8b93a5" letter-spacing="1.2">ONE RECEIPT</text>
+        <rect x="0" y="18" width="248" height="168" rx="5" fill="#ffffff" stroke="#c9cfdd"/>
+        <circle cx="26" cy="42" r="11" fill="#e2a63c"/>
+        <text x="44" y="38" font-size="7.6" font-weight="700" fill="#14192e">Republic of the Philippines</text>
+        <text x="44" y="48" font-size="7.6" fill="#4b5468">Municipality of Tanauan, Leyte</text>
+        <line x1="12" y1="58" x2="236" y2="58" stroke="#dfe3ec"/>
+        <text x="12" y="72" font-size="8.6" font-weight="800" fill="#16307e">ELECTRICITY BILL — UTL-014</text>
+        <g font-size="7.4" fill="#4b5468">
+          <text x="12" y="86">Stall FV-07 · Vegetables &amp; Fruits</text>
+          <text x="12" y="97">Tenant: SANTOS, MARIA</text>
+          <text x="12" y="108">Meter EM-4412 · Period 1–31 Aug 2026</text>
+        </g>
+        <line x1="12" y1="114" x2="236" y2="114" stroke="#eef0f6"/>
+        <g font-size="7.4" fill="#4b5468">
+          <text x="12" y="127">Previous 1,162 → Current 1,248</text>
+          <text x="12" y="138">86 kWh × &#8369;11.50</text>
+        </g>
+        <rect x="12" y="144" width="224" height="18" rx="4" fill="#eff5ff"/>
+        <text x="20" y="156" font-size="8" font-weight="700" fill="#16307e">AMOUNT DUE</text>
+        <text x="228" y="156" font-size="9.4" font-weight="800" fill="#16307e" text-anchor="end">&#8369;989.00</text>
+        <text x="12" y="174" font-size="7" fill="#8b93a5">Due 15 Sep 2026 · surcharge shown here if past due</text>
+        <text x="12" y="182" font-size="7" fill="#8b93a5">Printed by: ____________________  Tenant&rsquo;s Copy</text>
+
+        <text x="286" y="10" font-size="8.4" font-weight="800" fill="#8b93a5" letter-spacing="1.2">BATCH SHEET — A4, FOUR TO A SHEET</text>
+        <rect x="286" y="18" width="286" height="168" rx="4" fill="#f7f8fc" stroke="#c9cfdd"/>
+        <line x1="429" y1="22" x2="429" y2="182" stroke="#8b93a5" stroke-dasharray="4 4"/>
+        <line x1="290" y1="102" x2="568" y2="102" stroke="#8b93a5" stroke-dasharray="4 4"/>
+        <g>
+          <rect x="296" y="28" width="126" height="66" rx="4" fill="#ffffff" stroke="#dfe3ec"/>
+          <rect x="436" y="28" width="126" height="66" rx="4" fill="#ffffff" stroke="#dfe3ec"/>
+          <rect x="296" y="110" width="126" height="66" rx="4" fill="#ffffff" stroke="#dfe3ec"/>
+          <rect x="436" y="110" width="126" height="66" rx="4" fill="#ffffff" stroke="#dfe3ec"/>
+        </g>
+        <g font-size="7.6" font-weight="700" fill="#16307e" text-anchor="middle">
+          <text x="359" y="58">FV-07</text><text x="499" y="58">FV-08</text>
+          <text x="359" y="140">FS-22</text><text x="499" y="140">KK-03</text>
+        </g>
+        <g font-size="6.8" fill="#8b93a5" text-anchor="middle">
+          <text x="359" y="70">&#8369;989.00</text><text x="499" y="70">&#8369;746.50</text>
+          <text x="359" y="152">&#8369;450.00</text><text x="499" y="152">&#8369;213.75</text>
+        </g>
+        <text x="429" y="192" font-size="7.2" fill="#8b93a5" text-anchor="middle">dotted lines are cut guides</text>
+
+        <text x="592" y="10" font-size="8.4" font-weight="800" fill="#8b93a5" letter-spacing="1.2">COPIES</text>
+        <g font-size="7.8">
+          <rect x="592" y="20" width="128" height="24" rx="4" fill="#dbeafe"/><text x="600" y="36" fill="#16307e" font-weight="700">1 · Tenant&rsquo;s Copy</text>
+          <rect x="592" y="48" width="128" height="24" rx="4" fill="#eef1f6"/><text x="600" y="64" fill="#3f4a5f" font-weight="700">2 · Market Office Copy</text>
+          <rect x="592" y="76" width="128" height="24" rx="4" fill="#eef1f6"/><text x="600" y="92" fill="#3f4a5f" font-weight="700">3 · Treasurer&rsquo;s Copy</text>
+          <rect x="592" y="104" width="128" height="24" rx="4" fill="#eef1f6"/><text x="600" y="120" fill="#3f4a5f" font-weight="700">4 · File Copy</text>
+        </g>
+        <text x="592" y="144" font-size="7.4" fill="#8b93a5">Choosing 2 copies prints 1 and 2;</text>
+        <text x="592" y="154" font-size="7.4" fill="#8b93a5">choosing 4 prints all of them.</text>
+        <text x="592" y="172" font-size="7.4" fill="#8b93a5">A batch prints four <tspan font-weight="700">different</tspan></text>
+        <text x="592" y="182" font-size="7.4" fill="#8b93a5">stalls, not four copies of one.</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 7.2 — Receipt anatomy, batch sheet and copy set.</b> Each receipt carries the municipal seal, the stall and tenant particulars, both meter readings, the consumption arithmetic, the amount due, the due date, any surcharge, and the name of the officer who printed it.</div>
+</div>
+
+<h3>7.6 Late surcharges</h3>
+<div class="ref-box gold">
+  <div class="ref-box-title"><span class="material-symbols-outlined">warning</span> Surcharge rules</div>
+  <ul>
+    <li><strong>Electricity:</strong> 3.35% of the billed amount, once the due date has passed.</li>
+    <li><strong>Water:</strong> 10.00% of the billed amount, once the due date has passed.</li>
+    <li>Surcharge is computed <strong>dynamically, at print time</strong>. It appears on the receipt only if the bill is past due on the day you print.</li>
+    <li>The stored ledger amount is <strong>never</strong> changed. Historic records stay exactly as billed, while the receipt in the tenant&rsquo;s hand shows what is owed today.</li>
+    <li>A bill turns <span class="badge badge-red">Overdue</span> by itself the day after its due date — no month-end process is run.</li>
+  </ul>
+</div>
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Why the two figures differ.</strong> Officers sometimes ask why the register shows &#8369;450.00 while the receipt says &#8369;495.00. The register is the <em>bill</em>; the receipt is the <em>demand as of today</em>. Both are correct, and Appendix&nbsp;A records the rule.</div></div>
+
+<!-- ============================ CHAPTER 8 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">gavel</span></div>
+  <div>
+    <span class="chapter-num">Chapter 8</span>
+    <span class="chapter-title">Violations Register</span>
+  </div>
+  <div class="chapter-kicker">Citations, demerit points and the record of who keeps offending.</div>
+</div>
+
+<p>The Violations Register records offences committed by tenants and by non-tenants trading in the market, assigns demerit points as a measure of severity, and tracks each case through to resolution.</p>
+
+<h3>8.1 Overview &amp; demerit points</h3>
+<div class="stat-row four">
+  <div class="stat"><b>Total</b><span>Citations recorded</span></div>
+  <div class="stat"><b>Open</b><span>Still unresolved</span></div>
+  <div class="stat"><b>Resolved</b><span>Cases closed</span></div>
+  <div class="stat"><b>Points</b><span>Open demerits</span></div>
+</div>
+<p>A dedicated <strong>Repeat Offenders</strong> panel ranks tenants by their total <em>unresolved</em> demerit points. Points from resolved citations drop out of the ranking, so the list is always a picture of live compliance risk rather than a permanent black mark.</p>
+
+<div class="workflow">
+  <span class="workflow-step">Offence observed</span>
+  <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
+  <span class="workflow-step">Citation recorded · points assigned</span>
+  <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
+  <span class="workflow-step"><span class="badge badge-red">Open</span> · counts toward the ranking</span>
+  <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
+  <span class="workflow-step"><span class="badge badge-green">Resolved</span> · date stamped automatically</span>
+</div>
+
+<h3>8.2 Standard citation issues</h3>
+<p>Eight standard issues are offered from a dropdown; any other wording can be typed in free text when the standard list does not fit.</p>
+<div class="grid-2">
+  <table class="compact" style="margin:0">
+    <thead><tr><th style="width:8%">#</th><th>Violation issue</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Late document submission</td></tr>
+      <tr><td>2</td><td>Improper stall cleanup</td></tr>
+      <tr><td>3</td><td>Health code violation</td></tr>
+      <tr><td>4</td><td>Unpaid rent or utilities</td></tr>
+    </tbody>
+  </table>
+  <table class="compact" style="margin:0">
+    <thead><tr><th style="width:8%">#</th><th>Violation issue</th></tr></thead>
+    <tbody>
+      <tr><td>5</td><td>Operating beyond stall boundary</td></tr>
+      <tr><td>6</td><td>Unauthorized subleasing</td></tr>
+      <tr><td>7</td><td>Fire safety non-compliance</td></tr>
+      <tr><td>8</td><td>Obstruction of walkway</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>8.3 Recording &amp; resolving a citation</h3>
+<div class="steps">
+  <div class="step"><div class="step-title">Click <code>+ Record Violation</code></div>Opens the citation form.</div>
+  <div class="step"><div class="step-title">Fill in the citation</div>
+    <ul>
+      <li><strong>Party Cited</strong> — pick from the tenant list, or type any name for a non-tenant</li>
+      <li><strong>Demerit Points</strong> — the severity, as a number</li>
+      <li><strong>Violation Issue</strong> — one of the eight standard issues, or your own wording</li>
+      <li><strong>Status</strong> — Open, or Resolved if it was settled on the spot</li>
+      <li><strong>Date Recorded</strong> / <strong>Date Resolved</strong></li>
+      <li><strong>Officer Notes</strong> — free text; this is where the account of what happened belongs</li>
+    </ul>
+  </div>
+  <div class="step"><div class="step-title">Save</div>The citation is recorded and a logbook entry written.</div>
+</div>
+
+<div class="grid-2">
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">task_alt</span> Resolving</div><p>Open <strong>Edit Violation</strong> and set the status to <span class="badge badge-green">Resolved</span>. The resolution date is stamped for you. Reopening a case clears that date again. Demerit points and notes can be amended at any time.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">sort</span> Sorting &amp; export</div><p>The register lists open cases first, then newest recorded date. <code>Export CSV</code> downloads every citation; <code>Print List</code> prints the filtered table for the inspector&rsquo;s rounds.</p></div>
+</div>
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Write the notes as if for a hearing.</strong> Officer Notes are the only free-text account of the offence. Record what was seen, when, and who was present — the badge and the points will not carry a case on their own.</div></div>

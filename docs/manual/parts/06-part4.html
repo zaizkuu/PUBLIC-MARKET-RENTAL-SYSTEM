@@ -1,0 +1,662 @@
+<!-- ============================================================
+     PART IV
+     ============================================================ -->
+<div class="part">
+  <span class="part-no">Part IV</span>
+  <span class="part-name">Administration</span>
+  <span class="part-desc">The people who run the market, the slips that prove a stall is theirs, and the controls that keep the data safe.</span>
+</div>
+
+<!-- ============================ CHAPTER 12 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">groups</span></div>
+  <div>
+    <span class="chapter-num">Chapter 12</span>
+    <span class="chapter-title">Officers &amp; Organizational Board</span>
+  </div>
+  <div class="chapter-kicker">The municipal seats that govern the market, rendered as a board the Mayor can read at a glance.</div>
+</div>
+
+<p>The Officers module maintains the <strong>organizational chart</strong> of the market&rsquo;s governing structure. It does not control login access &mdash; the system has no sign-in &mdash; it records <em>who holds which post</em>, so that verification slips carry the right name and the board of officers is always current for an inspection or an audit.</p>
+
+<h3>12.1 The board at a glance</h3>
+<div class="stat-row" style="grid-template-columns: repeat(5, 1fr)">
+  <div class="stat"><b>10</b><span>Seats on the board</span></div>
+  <div class="stat"><b>8</b><span>Municipal offices</span></div>
+  <div class="stat"><b>3</b><span>Status levels</span></div>
+  <div class="stat"><b>&infin;</b><span>Reporting depth</span></div>
+  <div class="stat"><b>OFC-</b><span>ID prefix</span></div>
+</div>
+
+<p>The system ships with ten pre-configured seats that mirror the Tanauan market governance structure. New seats can be added at any time; existing seats are never truly deleted &mdash; they revert to <strong>Vacant</strong>.</p>
+
+<div class="ref-box">
+  <div class="ref-box-title"><span class="material-symbols-outlined">account_tree</span> Seeded officer seats</div>
+  <table class="compact">
+    <thead><tr><th>ID</th><th>Position</th><th>Office</th><th>Reports to</th></tr></thead>
+    <tbody>
+      <tr><td><strong>OFC-001</strong></td><td>Municipal Mayor</td><td>Office of the Municipal Mayor</td><td>&mdash; (head of board)</td></tr>
+      <tr><td><strong>OFC-002</strong></td><td>Market Board Chairperson</td><td>Market Board</td><td>OFC-001</td></tr>
+      <tr><td><strong>OFC-003</strong></td><td>Market Supervisor</td><td>Market Office</td><td>OFC-001</td></tr>
+      <tr><td><strong>OFC-004</strong></td><td>Assistant Market Supervisor</td><td>Market Office</td><td>OFC-003</td></tr>
+      <tr><td><strong>OFC-005</strong></td><td>Market Collector</td><td>Market Office</td><td>OFC-003</td></tr>
+      <tr><td><strong>OFC-006</strong></td><td>Market Inspector</td><td>Market Office</td><td>OFC-003</td></tr>
+      <tr><td><strong>OFC-007</strong></td><td>Records Officer</td><td>Market Office</td><td>OFC-003</td></tr>
+      <tr><td><strong>OFC-008</strong></td><td>Sanitary Inspector</td><td>Municipal Health Office</td><td>OFC-003</td></tr>
+      <tr><td><strong>OFC-009</strong></td><td>Licensing Officer</td><td>Business Permit &amp; Licensing Office</td><td>OFC-001</td></tr>
+      <tr><td><strong>OFC-010</strong></td><td>Market Treasurer / Cashier</td><td>Municipal Treasurer&rsquo;s Office</td><td>OFC-001</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>12.2 Board view &amp; directory view</h3>
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title"><span class="material-symbols-outlined">account_tree</span> Organizational Board</div>
+    <p>An interactive <strong>tree diagram</strong> starting from the root (Mayor). Each card shows the appointee&rsquo;s initials, name, position, office unit, and status badge. Vacant seats display a dash instead of initials and read &ldquo;Vacant seat&rdquo;. Click any card to view or edit the seat.</p>
+    <ul>
+      <li>Child nodes are indented with tree-line connectors</li>
+      <li>The tree expands to any depth &mdash; there is no hard limit on reporting layers</li>
+      <li><span class="badge badge-amber">On Leave</span> badges are shown inline</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="material-symbols-outlined">table_rows</span> Directory (Table) View</div>
+    <p>A flat, paginated table with columns for <strong>Officer</strong> (avatar, name, position), <strong>Office</strong>, <strong>Reports To</strong>, <strong>Contact</strong>, <strong>Appointed</strong>, <strong>Status</strong>, and <strong>Actions</strong> (View, Edit, Delete).</p>
+    <ul>
+      <li>Filter by office unit dropdown</li>
+      <li>Full-text search across name, position, and office</li>
+      <li><code>Export CSV</code> downloads <code>market-office-board.csv</code></li>
+      <li><code>Print List</code> prints the filtered directory as a register sheet</li>
+    </ul>
+  </div>
+</div>
+
+<h3>12.3 Adding &amp; editing officers</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">person_add</span>The officer form</h4>
+    <table class="compact field-table">
+      <thead><tr><th style="width:30%">Field</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Name</strong></td><td>Full name of the appointee. Leave blank for a vacant seat &mdash; the status toggles to <em>Vacant</em> automatically.</td></tr>
+        <tr><td><strong>Position</strong> *</td><td>Official title, e.g. Market Supervisor.</td></tr>
+        <tr><td><strong>Office</strong> *</td><td>Selected from the eight municipal units.</td></tr>
+        <tr><td><strong>Reports To</strong></td><td>Tree-indented dropdown of all other seats. The system prevents circular references: you cannot select yourself or any of your own subordinates.</td></tr>
+        <tr><td><strong>Phone</strong></td><td>11-digit mobile number, formatted automatically.</td></tr>
+        <tr><td><strong>Email</strong></td><td>Contact email address.</td></tr>
+        <tr><td><strong>Status</strong></td><td><span class="badge badge-green">Active</span> <span class="badge badge-amber">On Leave</span> <span class="badge badge-gray">Vacant</span></td></tr>
+        <tr><td><strong>Date Appointed</strong></td><td>Date picker, recorded as ISO YYYY-MM-DD.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">security</span>Integrity rules</h4>
+    <div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>No circular chains.</strong> If Officer A reports to B, and B reports to C, you cannot set C to report to A. The dropdown disables every seat that would create a loop.</div></div>
+    <div class="callout callout-warning"><span class="material-symbols-outlined">warning</span><div><strong>Deleting lifts subordinates.</strong> When you delete a seat, every officer who reported to it is automatically reassigned to the deleted seat&rsquo;s own superior. The chain is never broken.</div></div>
+    <div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Dangling superiors are repaired on load.</strong> If a backup references a superior ID that no longer exists, the seat is lifted to the board root on the next open.</div></div>
+  </div>
+</div>
+
+<div class="ref-box">
+  <div class="ref-box-title"><span class="material-symbols-outlined">domain</span> Municipal office units</div>
+  <div class="chips">
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Office of the Municipal Mayor</span>
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Market Office</span>
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Market Board</span>
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Municipal Treasurer&rsquo;s Office</span>
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Business Permit &amp; Licensing Office</span>
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Municipal Health Office</span>
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Municipal Engineering Office</span>
+    <span class="chip"><span class="material-symbols-outlined">check_circle</span>Sangguniang Bayan</span>
+  </div>
+</div>
+
+<!-- ============================ CHAPTER 13 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">receipt_long</span></div>
+  <div>
+    <span class="chapter-num">Chapter 13</span>
+    <span class="chapter-title">Verification Slips</span>
+  </div>
+  <div class="chapter-kicker">The receipt a tenant holds up to prove they paid, and the register the office files.</div>
+</div>
+
+<p>The system produces two kinds of printable output that serve as verification: <strong>utility billing receipts</strong> (the slip a tenant keeps) and <strong>register sheets</strong> (the list the office files). Both are laid out for A4 paper and print directly from the browser.</p>
+
+<h3>13.1 When a slip is issued</h3>
+<div class="grid-2">
+  <div class="card gold">
+    <div class="card-title"><span class="material-symbols-outlined">receipt</span> Billing receipt</div>
+    <p>Issued when a utility bill (electricity or water) is computed and the officer prints it. A receipt is a <strong>quarter of an A4 sheet</strong>, so four receipts tile onto one page. A single bill can be printed in up to four labelled copies:</p>
+    <ul>
+      <li><strong>Tenant&rsquo;s Copy</strong></li>
+      <li><strong>Market Office Copy</strong></li>
+      <li><strong>Treasurer&rsquo;s Copy</strong></li>
+      <li><strong>File Copy</strong></li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="material-symbols-outlined">list_alt</span> Register sheet</div>
+    <p>Available from every list page (stalls, tenants, applicants, billing, violations, logbook, officers). Prints the <strong>current filtered view</strong> as a numbered table with the municipal seal, a title, the active filters, and a timestamp. A &ldquo;Checked by&rdquo; sign-off line is printed at the bottom.</p>
+  </div>
+</div>
+
+<h3>13.2 Issuing a slip</h3>
+<div class="steps">
+  <div class="step"><div class="step-title">Compute or select the bill</div>In Utility Billing, either use the Bill Calculator (§7.2) to compute a new bill, or select an existing bill from Billing Records.</div>
+  <div class="step"><div class="step-title">Click <code>Print</code></div>Opens the Print Preview dialog. A full-size preview of the sheet appears, exactly as it will print.</div>
+  <div class="step"><div class="step-title">Enter &ldquo;Printed By&rdquo;</div>The name of the officer issuing the receipt. This is remembered for the next print so you only type it once per shift.</div>
+  <div class="step"><div class="step-title">Choose copies</div>For a single bill: 1 copy (tenant only), 2 copies (tenant + office), or 4 copies (fill the sheet). For a batch: one receipt per bill, tiled four to a page.</div>
+  <div class="step"><div class="step-title">Review and print</div>Verify the preview, then click <code>Print</code>. The browser&rsquo;s print dialog opens with the sheet ready to send to the printer.</div>
+</div>
+
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Unsaved bills print without a bill number.</strong> If you print a bill that has not been saved to records yet, it prints with &ldquo;Not yet on record&rdquo; where the bill number would be. Save the bill first if the tenant needs the reference number.</div></div>
+
+<h3>13.3 Anatomy of a printed slip</h3>
+<div class="figure">
+  <div class="figure-body plain">
+    <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram showing the layout of a printed billing receipt with labelled zones for masthead, reference, tenant, consumption, total, and signatures">
+      <defs>
+        <linearGradient id="rcpt-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f8fafc"/><stop offset="100%" stop-color="#eef1f6"/></linearGradient>
+      </defs>
+      <g font-family="Inter,sans-serif">
+        <!-- Receipt border -->
+        <rect x="140" y="4" width="440" height="332" rx="8" fill="url(#rcpt-bg)" stroke="#c9cfdd"/>
+
+        <!-- Masthead -->
+        <rect x="150" y="12" width="420" height="42" rx="4" fill="#243B8F"/>
+        <circle cx="173" cy="33" r="14" fill="#e2a63c"/>
+        <text x="195" y="28" font-size="7.4" fill="#c8d3f2">Republic of the Philippines</text>
+        <text x="195" y="38" font-size="8" font-weight="700" fill="#ffffff">Municipality of Tanauan, Leyte</text>
+        <text x="195" y="48" font-size="7.4" font-weight="600" fill="#c8d3f2">Public Market — Market Office</text>
+        <rect x="510" y="18" width="52" height="16" rx="3" fill="rgba(255,255,255,0.15)"/>
+        <text x="536" y="30" text-anchor="middle" font-size="6.6" font-weight="700" fill="#ffffff">COPY LABEL</text>
+
+        <!-- Title -->
+        <text x="360" y="72" text-anchor="middle" font-size="11" font-weight="800" fill="#16307e">Electricity Billing Receipt</text>
+
+        <!-- Reference row -->
+        <rect x="150" y="80" width="420" height="18" rx="3" fill="#dbeafe"/>
+        <text x="160" y="93" font-size="7.6" fill="#16307e">Bill No. <tspan font-weight="800">BILL-0042</tspan></text>
+        <text x="560" y="93" text-anchor="end" font-size="7.6" fill="#16307e">Issued <tspan font-weight="800">26 Aug 2026</tspan></text>
+
+        <!-- Tenant block -->
+        <g font-size="7.6">
+          <text x="160" y="114" fill="#4b5468">Stall No.</text><text x="270" y="114" font-weight="700" fill="#14192e">MS-01</text>
+          <text x="160" y="126" fill="#4b5468">Tenant</text><text x="270" y="126" font-weight="700" fill="#14192e">DELA CRUZ, JUAN</text>
+          <text x="160" y="138" fill="#4b5468">Section</text><text x="270" y="138" font-weight="700" fill="#14192e">Meat Section</text>
+          <text x="160" y="150" fill="#4b5468">Electricity Meter No.</text><text x="270" y="150" font-weight="700" fill="#14192e">EM-2026-0087</text>
+        </g>
+
+        <!-- Consumption block -->
+        <line x1="150" y1="158" x2="570" y2="158" stroke="#dfe3ec"/>
+        <g font-size="7.6">
+          <text x="160" y="172" fill="#4b5468">Period Covered</text><text x="560" y="172" text-anchor="end" font-weight="700" fill="#14192e">1 Jul – 31 Jul 2026 (31 days)</text>
+          <text x="160" y="184" fill="#4b5468">Due Date</text><text x="560" y="184" text-anchor="end" font-weight="700" fill="#14192e">15 Aug 2026</text>
+          <text x="160" y="196" fill="#4b5468">Previous Reading</text><text x="560" y="196" text-anchor="end" font-weight="700" fill="#14192e">4,520 kWh</text>
+          <text x="160" y="208" fill="#4b5468">Current Reading</text><text x="560" y="208" text-anchor="end" font-weight="700" fill="#14192e">4,670 kWh</text>
+          <text x="160" y="220" fill="#4b5468">Consumption</text><text x="560" y="220" text-anchor="end" font-weight="700" fill="#14192e">150 kWh</text>
+          <text x="160" y="232" fill="#4b5468">150 kWh × ₱14.50</text><text x="560" y="232" text-anchor="end" font-weight="700" fill="#14192e">₱2,175.00</text>
+          <text x="160" y="244" fill="#4b5468">Fixed / Service Charge</text><text x="560" y="244" text-anchor="end" font-weight="700" fill="#14192e">₱100.00</text>
+        </g>
+
+        <!-- Total -->
+        <rect x="150" y="252" width="420" height="22" rx="3" fill="#243B8F"/>
+        <text x="160" y="267" font-size="9" font-weight="700" fill="#ffffff">Total Due</text>
+        <text x="560" y="267" text-anchor="end" font-size="10.5" font-weight="800" fill="#e2a63c">₱2,275.00</text>
+
+        <!-- Status -->
+        <text x="360" y="288" text-anchor="middle" font-size="7.6" fill="#4b5468">Status at printing: <tspan font-weight="800" fill="#dc2626">UNPAID</tspan></text>
+
+        <!-- Signatures -->
+        <line x1="170" y1="310" x2="310" y2="310" stroke="#14192e" stroke-width="1"/>
+        <text x="240" y="322" text-anchor="middle" font-size="7" fill="#4b5468">Market Office</text>
+        <line x1="400" y1="310" x2="550" y2="310" stroke="#14192e" stroke-width="1"/>
+        <text x="475" y="322" text-anchor="middle" font-size="7" fill="#4b5468">Received by (Tenant)</text>
+
+        <!-- Footer -->
+        <text x="360" y="336" text-anchor="middle" font-size="6.4" fill="#8b93a5">Printed by Juan Dela Cruz · 26 Aug 2026, 02:47 PM PHT</text>
+      </g>
+
+      <!-- Zone labels -->
+      <g font-family="Inter,sans-serif" font-size="7.2" font-weight="700">
+        <rect x="4" y="18" width="120" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8"/>
+        <text x="64" y="30" text-anchor="middle" fill="#16307e">① Masthead &amp; seal</text>
+        <line x1="124" y1="26" x2="148" y2="33" stroke="#1d4ed8" stroke-width="0.8"/>
+
+        <rect x="4" y="78" width="120" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8"/>
+        <text x="64" y="90" text-anchor="middle" fill="#16307e">② Bill reference</text>
+        <line x1="124" y1="86" x2="148" y2="89" stroke="#1d4ed8" stroke-width="0.8"/>
+
+        <rect x="4" y="124" width="120" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8"/>
+        <text x="64" y="136" text-anchor="middle" fill="#16307e">③ Tenant &amp; stall</text>
+        <line x1="124" y1="132" x2="148" y2="132" stroke="#1d4ed8" stroke-width="0.8"/>
+
+        <rect x="4" y="198" width="120" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8"/>
+        <text x="64" y="210" text-anchor="middle" fill="#16307e">④ Consumption</text>
+        <line x1="124" y1="206" x2="148" y2="206" stroke="#1d4ed8" stroke-width="0.8"/>
+
+        <rect x="586" y="252" width="120" height="16" rx="3" fill="#243B8F"/>
+        <text x="646" y="264" text-anchor="middle" fill="#ffffff">⑤ Total due</text>
+        <line x1="586" y1="260" x2="572" y2="263" stroke="#243B8F" stroke-width="0.8"/>
+
+        <rect x="586" y="300" width="120" height="16" rx="3" fill="#dbeafe" stroke="#1d4ed8"/>
+        <text x="646" y="312" text-anchor="middle" fill="#16307e">⑥ Signatures</text>
+        <line x1="586" y1="308" x2="552" y2="310" stroke="#1d4ed8" stroke-width="0.8"/>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 13.1 &mdash; Receipt anatomy.</b> Each receipt is one quarter of an A4 sheet. Cut along the guides to separate copies. The masthead, reference, and tenant block together identify the charge; the consumption block shows how the figure was calculated.</div>
+</div>
+
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Late surcharges print automatically.</strong> If a bill is both unpaid and past its due date, the receipt adds a surcharge section showing the applicable percentage (3.35% for electricity, 10% for water), the surcharge amount, and the revised total due. No officer action is needed &mdash; the surcharge is computed at the moment of printing.</div></div>
+
+<!-- ============================ CHAPTER 14 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">settings</span></div>
+  <div>
+    <span class="chapter-num">Chapter 14</span>
+    <span class="chapter-title">Settings &amp; Data Management</span>
+  </div>
+  <div class="chapter-kicker">System information, record counts, and the three actions that move or destroy the database.</div>
+</div>
+
+<p>Settings is a read-and-act page: it shows the system&rsquo;s vital signs and offers three data management actions. There are no toggles or preferences to configure &mdash; every business rule in the system is fixed by ordinance and enforced in code.</p>
+
+<h3>14.1 System information</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">info</span>Identity panel</h4>
+    <table class="compact field-table">
+      <thead><tr><th style="width:36%">Field</th><th>Shows</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Application</strong></td><td>Tanauan Public Market v1.0</td></tr>
+        <tr><td><strong>Storage</strong></td><td>Local Browser Storage</td></tr>
+        <tr><td><strong>Total Records</strong></td><td>Sum of stalls + tenants + applicants + bills + violations + logs</td></tr>
+        <tr><td><strong>Last Saved</strong></td><td>Philippine Standard Time timestamp of the last write to storage</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">monitoring</span>Quick stats</h4>
+    <table class="compact field-table">
+      <thead><tr><th style="width:36%">Counter</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Total Stalls</strong></td><td>Stall register count</td></tr>
+        <tr><td><strong>Active Tenants</strong></td><td>Tenants with status <em>Active</em></td></tr>
+        <tr><td><strong>Pending Applicants</strong></td><td>Applications in <em>Pending Review</em></td></tr>
+        <tr><td><strong>Utility Bills Issued</strong></td><td>Total bills on record</td></tr>
+        <tr><td><strong>Open Violations</strong></td><td>Citations with status <em>Open</em></td></tr>
+        <tr><td><strong>Unpaid Utilities</strong></td><td>Peso total of all unpaid bills</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h3>14.2 Export, import &amp; reset</h3>
+<div class="grid-3">
+  <div class="card green">
+    <div class="card-title"><span class="material-symbols-outlined">download</span> Export All Data</div>
+    <p>Downloads <code>civic-market-core-report.json</code> containing every record on this workstation: stalls, tenants, applicants, utility bills, violations, logbook entries, officer seats, and a generation timestamp.</p>
+    <p>Use it to <strong>archive the month</strong>, hand data to another office, or move records to a second workstation.</p>
+  </div>
+  <div class="card gold">
+    <div class="card-title"><span class="material-symbols-outlined">upload</span> Import Data</div>
+    <p>Reads a JSON file previously exported from this system. Before anything is overwritten, a confirmation dialog shows the incoming record counts compared to what is currently held.</p>
+    <p><strong>Importing replaces everything.</strong> Export the current data first if it has not been filed elsewhere.</p>
+  </div>
+  <div class="card red">
+    <div class="card-title"><span class="material-symbols-outlined">delete_forever</span> Reset to Defaults</div>
+    <p>Erases every record and returns the system to its factory state: the seeded stall register, the ten officer seats, and empty tenant, billing, and logbook tables.</p>
+    <p>A confirmation dialog names the action and warns that it cannot be undone.</p>
+  </div>
+</div>
+
+<div class="callout callout-danger"><span class="material-symbols-outlined">error</span><div><strong>Reset is irreversible.</strong> The system clears <code>localStorage</code> and resets all sequential ID counters (APP-, TEN-, STL-, OFC-, VIO-, LOG-, BILL-). Any data not previously exported is permanently lost.</div></div>
+
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>End-of-month routine.</strong> Before closing the books, open Settings and click <code>Export All Data</code>. File the download in a folder named for the month. If anything goes wrong, you can import it back.</div></div>
+
+<!-- ============================ CHAPTER 15 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">help</span></div>
+  <div>
+    <span class="chapter-num">Chapter 15</span>
+    <span class="chapter-title">Support &amp; Help Center</span>
+  </div>
+  <div class="chapter-kicker">Backup and restore, the FAQ, and a direct line to the development team.</div>
+</div>
+
+<p>The Support page is the officer&rsquo;s first stop when something needs explaining. It groups four information cards, a contact directory, the backup facility, and an accordion FAQ.</p>
+
+<h3>15.1 Backup &amp; restore</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">cloud_download</span>Download Full Backup</h4>
+    <div class="steps" style="margin-top:4px">
+      <div class="step"><div class="step-title">Open Support</div>The backup panel shows the current record breakdown: stalls, tenants, applicants, utility bills, violations, and logbook entries.</div>
+      <div class="step"><div class="step-title">Click <code>Download Full Backup</code></div>The system writes a file named <code>pmrms-backup-YYYY-MM-DD.json</code> containing the complete application snapshot.</div>
+      <div class="step"><div class="step-title">File the download</div>Copy the file to a USB drive, a shared folder, or any safe location. This is your recovery point.</div>
+    </div>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">cloud_upload</span>Upload Backup</h4>
+    <div class="steps" style="margin-top:4px">
+      <div class="step"><div class="step-title">Click <code>Upload Backup File</code></div>A file picker opens. Select a <code>.json</code> backup previously downloaded from this system.</div>
+      <div class="step"><div class="step-title">The system validates the file</div>It checks for the required record keys (applicants, tenants, stalls, logs, activities). If any are missing, an error message appears and nothing is changed.</div>
+      <div class="step"><div class="step-title">Data is restored immediately</div>A green <span class="badge badge-green">Data restored successfully</span> banner confirms the operation. All records are replaced with the backup contents.</div>
+    </div>
+    <div class="callout callout-warning" style="margin-bottom:0"><span class="material-symbols-outlined">warning</span><div>Restoring <strong>replaces all current data</strong>. Export the present state first if it contains anything not already saved elsewhere.</div></div>
+  </div>
+</div>
+
+<h3>15.2 Built-in FAQ &amp; contacts</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">quiz</span>Frequently Asked Questions</h4>
+    <p>An accordion with eleven operational questions and answers, covering:</p>
+    <ul>
+      <li>Adding stalls, managing applicants, recording requirements</li>
+      <li>Computing and locating utility bills</li>
+      <li>Recording and resolving violations</li>
+      <li>Viewing analytics and exporting reports</li>
+      <li>Where data is stored (locally, not on a server)</li>
+      <li>Moving records between computers</li>
+      <li>Backup and restoration steps</li>
+    </ul>
+    <p>Click any question to expand its answer; click again to collapse it.</p>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">contact_phone</span>Contact directory</h4>
+    <p>Three development team contacts are displayed with avatar badges, email links, and phone numbers:</p>
+    <table class="compact">
+      <thead><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Jon Jon Albao</strong></td><td>jonjonalbao65@gmail.com</td><td>+63 919 845 1397</td></tr>
+        <tr><td><strong>Kyra Joyce Tondo</strong></td><td>kyrajoycet@gmail.com</td><td>+63 916 425 8038</td></tr>
+        <tr><td><strong>Shila Mae Marteja</strong></td><td>shilamaemarteja18@gmail.com</td><td>+63 985 452 8964</td></tr>
+      </tbody>
+    </table>
+    <div class="callout callout-note" style="margin-bottom:0"><span class="material-symbols-outlined">info</span><div>The four information cards at the top of the Support page &mdash; <strong>User Guide</strong>, <strong>Contact Support</strong>, <strong>System Updates</strong>, and <strong>Data Privacy</strong> &mdash; summarise the system&rsquo;s current state. The Data Privacy card confirms: &ldquo;All data is stored locally. No information is transmitted to external servers.&rdquo;</div></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     APPENDICES
+     ============================================================ -->
+<div class="part">
+  <span class="part-no">Appendices</span>
+  <span class="part-name">Reference Tables</span>
+  <span class="part-desc">Business rules, troubleshooting, data dictionary, badge glossary, and the document sign-off.</span>
+</div>
+
+<!-- ============================ APPENDIX A ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">rule</span></div>
+  <div>
+    <span class="chapter-num">Appendix A</span>
+    <span class="chapter-title">Business Rules Quick Reference</span>
+  </div>
+  <div class="chapter-kicker">Every formula and threshold the system enforces, on one page.</div>
+</div>
+
+<table class="compact">
+  <thead><tr><th style="width:28%">Rule</th><th style="width:36%">Formula / Value</th><th>Reference</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Early-payment rent discount</strong></td><td>20% off monthly rent if paid on or before the tenant&rsquo;s due day</td><td>§5.4</td></tr>
+    <tr><td><strong>Rent due day</strong></td><td>Day 1–28 of each month, set per tenant (clamped to 28 to avoid February problems)</td><td>§5.3</td></tr>
+    <tr><td><strong>Overdue rent</strong></td><td>Unpaid status becomes Overdue once the due day of the current month has passed</td><td>§5.3</td></tr>
+    <tr><td><strong>Electricity billing</strong></td><td>(Current &minus; Previous) &times; Rate + Fixed Charge</td><td>§7.1</td></tr>
+    <tr><td><strong>Water billing</strong></td><td>(Current &minus; Previous) &times; Rate + Fixed Charge</td><td>§7.1</td></tr>
+    <tr><td><strong>Default electricity rate</strong></td><td>₱14.50 / kWh + ₱100.00 fixed charge</td><td>§7.1</td></tr>
+    <tr><td><strong>Default water rate</strong></td><td>₱25.00 / cu.m + ₱50.00 fixed charge</td><td>§7.1</td></tr>
+    <tr><td><strong>Electricity late surcharge</strong></td><td>3.35% of bill amount, applied when unpaid past due date</td><td>§7.6</td></tr>
+    <tr><td><strong>Water late surcharge</strong></td><td>10.0% of bill amount, applied when unpaid past due date</td><td>§7.6</td></tr>
+    <tr><td><strong>Bill due date default</strong></td><td>15 days after the last day of the billing period</td><td>§7.2</td></tr>
+    <tr><td><strong>Receipts per sheet</strong></td><td>4 receipts per A4 page (2 &times; 2 grid)</td><td>§13.2</td></tr>
+    <tr><td><strong>Stall statuses</strong></td><td>Occupied · Available · Maintenance · Temporarily Closed · Closed · Abandoned</td><td>§4.2</td></tr>
+    <tr><td><strong>Applicant statuses</strong></td><td>Pending Review · Incomplete · No BP · Approved · Rejected</td><td>§6.1</td></tr>
+    <tr><td><strong>Violation points</strong></td><td>Configurable per citation; tracked cumulatively per tenant</td><td>§8.1</td></tr>
+    <tr><td><strong>Items per page</strong></td><td>10 rows in every paginated list</td><td>§2.5</td></tr>
+    <tr><td><strong>Officer ID circular link prevention</strong></td><td>A seat cannot report to itself or to any of its own subordinates</td><td>§12.3</td></tr>
+    <tr><td><strong>Data storage</strong></td><td>Browser <code>localStorage</code> under key <code>pmrms-storage</code></td><td>§14.1</td></tr>
+    <tr><td><strong>Timezone</strong></td><td>All timestamps in Philippine Standard Time (UTC+8)</td><td>§1.4</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================ APPENDIX B ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">build</span></div>
+  <div>
+    <span class="chapter-num">Appendix B</span>
+    <span class="chapter-title">Troubleshooting by Symptom</span>
+  </div>
+  <div class="chapter-kicker">When something looks wrong, find the symptom here.</div>
+</div>
+
+<table class="compact">
+  <thead><tr><th style="width:32%">Symptom</th><th style="width:36%">Likely cause</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td>All data is gone after reopening</td><td>Browser storage was cleared (cache wipe, privacy mode, or a different browser)</td><td>Import the last backup from Support → Upload Backup. Always use the same browser.</td></tr>
+    <tr><td>Rent shows &ldquo;Overdue&rdquo; for a tenant who paid</td><td>The payment was recorded under a different period, or the month checkbox was not ticked</td><td>Open Tenant Records, find the tenant, and tick the correct month&rsquo;s checkbox.</td></tr>
+    <tr><td>Cannot assign a stall to an approved applicant</td><td>The stall&rsquo;s status is not &ldquo;Available&rdquo;</td><td>Change the stall to Available in Stall Management before assigning.</td></tr>
+    <tr><td>Utility bill shows ₱0.00</td><td>Previous and current readings are the same, or the rate is zero</td><td>Check the meter readings and the rate in the Bill Calculator.</td></tr>
+    <tr><td>Import fails with an error</td><td>The file is not a valid export from this system, or it is corrupted</td><td>Use only <code>.json</code> files produced by Export All Data or Download Full Backup.</td></tr>
+    <tr><td>Print preview is blank</td><td>No bills are selected, or no records match the current filter</td><td>Clear filters or select at least one bill before printing.</td></tr>
+    <tr><td>Officer tree shows a seat at root level unexpectedly</td><td>Its superior was deleted and the seat was lifted to root automatically</td><td>Edit the seat and select a new superior from the dropdown.</td></tr>
+    <tr><td>Application status does not change after ticking requirements</td><td>The application was already Approved or Rejected — manual decisions override the checklist</td><td>This is by design. Only Pending Review and Incomplete respond to the checklist automatically.</td></tr>
+    <tr><td>Search returns no results</td><td>Search matches ID, name, and primary fields only — it does not search inside notes</td><td>Check that the search term matches a name, stall ID, or record number.</td></tr>
+    <tr><td>Late surcharge does not appear on the receipt</td><td>The bill is either already paid, or the due date has not yet passed</td><td>Surcharges compute dynamically. They appear only when the bill is unpaid <em>and</em> past due.</td></tr>
+    <tr><td>&ldquo;Could not save to browser storage&rdquo; toast</td><td><code>localStorage</code> is full (typically 5–10 MB limit)</td><td>Export a backup, clear old data, or use a browser with a larger storage quota.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================ APPENDIX C ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">data_object</span></div>
+  <div>
+    <span class="chapter-num">Appendix C</span>
+    <span class="chapter-title">Data Dictionary &amp; ID Prefixes</span>
+  </div>
+  <div class="chapter-kicker">What every record type holds, and how its identifier is built.</div>
+</div>
+
+<h3>C.1 ID prefixes</h3>
+<table class="compact">
+  <thead><tr><th style="width:14%">Prefix</th><th style="width:22%">Entity</th><th style="width:20%">Example</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>STL-</code></td><td>Stall</td><td>STL-001</td><td>Also uses section-based IDs like MS-01, FS-40, DS-12, GMS-05</td></tr>
+    <tr><td><code>TEN-</code></td><td>Tenant</td><td>TEN-001</td><td>Sequential, never reused</td></tr>
+    <tr><td><code>APP-</code></td><td>Applicant</td><td>APP-001</td><td>Sequential, never reused</td></tr>
+    <tr><td><code>BILL-</code></td><td>Utility Bill</td><td>BILL-0001</td><td>4-digit zero-padded</td></tr>
+    <tr><td><code>VIO-</code></td><td>Violation</td><td>VIO-001</td><td>Sequential, never reused</td></tr>
+    <tr><td><code>LOG-</code></td><td>Logbook Entry</td><td>LOG-001</td><td>Sequential, never reused</td></tr>
+    <tr><td><code>OFC-</code></td><td>Officer Seat</td><td>OFC-001</td><td>Sequential, represents the seat not the person</td></tr>
+  </tbody>
+</table>
+
+<h3>C.2 Stall section prefixes</h3>
+<table class="compact">
+  <thead><tr><th style="width:14%">Prefix</th><th style="width:30%">Section</th><th>Example stalls</th></tr></thead>
+  <tbody>
+    <tr><td><code>MS-</code></td><td>Meat Section</td><td>MS-01 through MS-46</td></tr>
+    <tr><td><code>FS-</code></td><td>Fish &amp; Seafood</td><td>FS-01 through FS-65</td></tr>
+    <tr><td><code>DS-</code></td><td>Dry Goods Section</td><td>DS-01 through DS-76</td></tr>
+    <tr><td><code>GMS-</code></td><td>General Merchandise</td><td>GMS-01 through GMS-48</td></tr>
+  </tbody>
+</table>
+
+<h3>C.3 Core record fields</h3>
+<div class="grid-2">
+  <div>
+    <h4>Stall</h4>
+    <table class="compact field-table">
+      <tbody>
+        <tr><td><strong>id</strong></td><td>Section-prefixed stall number</td></tr>
+        <tr><td><strong>section</strong></td><td>Market section name</td></tr>
+        <tr><td><strong>tenant</strong></td><td>Name of current occupant</td></tr>
+        <tr><td><strong>status</strong></td><td>Occupied, Available, etc.</td></tr>
+        <tr><td><strong>permitStatus</strong></td><td>With BP · No BP · Not Recorded</td></tr>
+        <tr><td><strong>businessType</strong></td><td>What is sold or traded</td></tr>
+        <tr><td><strong>notes</strong></td><td>Free-text remarks</td></tr>
+      </tbody>
+    </table>
+    <h4>Tenant</h4>
+    <table class="compact field-table">
+      <tbody>
+        <tr><td><strong>id</strong></td><td>TEN-nnn sequential</td></tr>
+        <tr><td><strong>name</strong></td><td>Full name (SURNAME, GIVEN)</td></tr>
+        <tr><td><strong>phone</strong></td><td>11-digit mobile</td></tr>
+        <tr><td><strong>stallId</strong></td><td>The stall they occupy</td></tr>
+        <tr><td><strong>section</strong></td><td>Market section</td></tr>
+        <tr><td><strong>rent</strong></td><td>Monthly rent (₱)</td></tr>
+        <tr><td><strong>rentDueDay</strong></td><td>Day of month (1–28)</td></tr>
+        <tr><td><strong>meters</strong></td><td>Electricity &amp; water meter nos.</td></tr>
+        <tr><td><strong>keepers[]</strong></td><td>Stallkeeper records</td></tr>
+        <tr><td><strong>payments[]</strong></td><td>Monthly rent payments</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h4>Utility Bill</h4>
+    <table class="compact field-table">
+      <tbody>
+        <tr><td><strong>id</strong></td><td>BILL-nnnn sequential</td></tr>
+        <tr><td><strong>type</strong></td><td>Electricity or Water</td></tr>
+        <tr><td><strong>stallId</strong></td><td>Stall charged</td></tr>
+        <tr><td><strong>tenantName</strong></td><td>Tenant at time of billing</td></tr>
+        <tr><td><strong>previousReading</strong></td><td>Last meter reading</td></tr>
+        <tr><td><strong>currentReading</strong></td><td>New meter reading</td></tr>
+        <tr><td><strong>consumption</strong></td><td>Difference in kWh or cu.m</td></tr>
+        <tr><td><strong>rate</strong></td><td>Per-unit rate used</td></tr>
+        <tr><td><strong>fixedCharge</strong></td><td>Service charge</td></tr>
+        <tr><td><strong>amount</strong></td><td>Total billed</td></tr>
+        <tr><td><strong>status</strong></td><td>Paid or Unpaid</td></tr>
+        <tr><td><strong>dueDate</strong></td><td>ISO date</td></tr>
+      </tbody>
+    </table>
+    <h4>Violation</h4>
+    <table class="compact field-table">
+      <tbody>
+        <tr><td><strong>id</strong></td><td>VIO-nnn sequential</td></tr>
+        <tr><td><strong>tenant</strong></td><td>Named party</td></tr>
+        <tr><td><strong>issue</strong></td><td>Description of offence</td></tr>
+        <tr><td><strong>points</strong></td><td>Demerit points assigned</td></tr>
+        <tr><td><strong>status</strong></td><td>Open or Resolved</td></tr>
+        <tr><td><strong>dateRecorded</strong></td><td>ISO date</td></tr>
+        <tr><td><strong>dateResolved</strong></td><td>ISO date, if resolved</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================ APPENDIX D ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">palette</span></div>
+  <div>
+    <span class="chapter-num">Appendix D</span>
+    <span class="chapter-title">Icon, Badge &amp; Colour Glossary</span>
+  </div>
+  <div class="chapter-kicker">What every colour and icon in the interface means.</div>
+</div>
+
+<h3>D.1 Status badges</h3>
+<table class="compact">
+  <thead><tr><th style="width:22%">Badge</th><th style="width:22%">Where it appears</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-green">Occupied</span></td><td>Stalls</td><td>Stall has a tenant and is in active use</td></tr>
+    <tr><td><span class="badge badge-blue">Available</span></td><td>Stalls</td><td>Stall is vacant and ready to assign</td></tr>
+    <tr><td><span class="badge badge-amber">Maintenance</span></td><td>Stalls</td><td>Stall is undergoing repair or renovation</td></tr>
+    <tr><td><span class="badge badge-gray">Temporarily Closed</span></td><td>Stalls</td><td>Tenant holds the stall but is not currently trading</td></tr>
+    <tr><td><span class="badge badge-red">Closed</span></td><td>Stalls</td><td>Stall is permanently shut</td></tr>
+    <tr><td><span class="badge badge-red">Abandoned</span></td><td>Stalls</td><td>Occupant left without releasing the stall</td></tr>
+    <tr><td><span class="badge badge-green">Paid</span></td><td>Rent, Utility Bills</td><td>Payment has been received and recorded</td></tr>
+    <tr><td><span class="badge badge-amber">Unpaid</span></td><td>Rent, Utility Bills</td><td>Payment has not yet been received</td></tr>
+    <tr><td><span class="badge badge-red">Overdue</span></td><td>Rent, Utility Bills</td><td>Unpaid and past the due date</td></tr>
+    <tr><td><span class="badge badge-blue">Pending Review</span></td><td>Applicants</td><td>Requirements complete, awaiting officer decision</td></tr>
+    <tr><td><span class="badge badge-amber">Incomplete</span></td><td>Applicants</td><td>Not all documentary requirements have been submitted</td></tr>
+    <tr><td><span class="badge badge-gray">No BP</span></td><td>Applicants</td><td>Trading without a business permit</td></tr>
+    <tr><td><span class="badge badge-green">Approved</span></td><td>Applicants</td><td>Application approved, stall can be assigned</td></tr>
+    <tr><td><span class="badge badge-red">Rejected</span></td><td>Applicants</td><td>Application denied</td></tr>
+    <tr><td><span class="badge badge-red">Open</span></td><td>Violations</td><td>Citation is unresolved</td></tr>
+    <tr><td><span class="badge badge-green">Resolved</span></td><td>Violations</td><td>Citation has been settled</td></tr>
+    <tr><td><span class="badge badge-green">Active</span></td><td>Officers, Tenants</td><td>Person is currently in post / lease is current</td></tr>
+    <tr><td><span class="badge badge-amber">On Leave</span></td><td>Officers</td><td>Temporarily away from the post</td></tr>
+    <tr><td><span class="badge badge-gray">Vacant</span></td><td>Officers</td><td>Seat exists but no appointee holds it</td></tr>
+  </tbody>
+</table>
+
+<h3>D.2 Logbook entry colours</h3>
+<table class="compact">
+  <thead><tr><th style="width:22%">Type</th><th style="width:14%">Colour</th><th>Icon</th><th>Usage</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Inspection</strong></td><td><span class="badge badge-blue">Blue</span></td><td><span class="material-symbols-outlined icon-inline">search</span></td><td>Stall inspections and permit checks</td></tr>
+    <tr><td><strong>Incident</strong></td><td><span class="badge badge-red">Red</span></td><td><span class="material-symbols-outlined icon-inline">warning</span></td><td>Security incidents, complaints, disturbances</td></tr>
+    <tr><td><strong>Maintenance</strong></td><td><span class="badge badge-amber">Amber</span></td><td><span class="material-symbols-outlined icon-inline">build</span></td><td>Repairs, cleaning, facility works</td></tr>
+    <tr><td><strong>Collection</strong></td><td><span class="badge badge-green">Green</span></td><td><span class="material-symbols-outlined icon-inline">payments</span></td><td>Rent and utility collection records</td></tr>
+    <tr><td><strong>Announcement</strong></td><td><span class="badge badge-gray">Gray</span></td><td><span class="material-symbols-outlined icon-inline">campaign</span></td><td>Notices, schedule changes, advisories</td></tr>
+  </tbody>
+</table>
+
+<h3>D.3 Assistant source indicators</h3>
+<table class="compact">
+  <thead><tr><th style="width:30%">Badge</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-green">From the records</span></td><td>Answer was computed and worded directly from the database. No model was involved.</td></tr>
+    <tr><td><span class="badge badge-blue">Worded by model · figures verified</span></td><td>A local language model rephrased the answer. Every number and name passed the verification gate.</td></tr>
+    <tr><td><span class="badge badge-amber">Model wording discarded</span></td><td>The model&rsquo;s phrasing contained a figure or name not in the computed facts, so it was thrown away and the raw answer shown instead.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================ APPENDIX E ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">signature</span></div>
+  <div>
+    <span class="chapter-num">Appendix E</span>
+    <span class="chapter-title">Contacts &amp; Document Sign-off</span>
+  </div>
+  <div class="chapter-kicker">The people who built, reviewed, and approved this manual.</div>
+</div>
+
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">engineering</span>System development team</h4>
+    <table class="compact">
+      <thead><tr><th>Name</th><th>Contact</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Jon Jon Albao</strong></td><td>jonjonalbao65@gmail.com<br>+63 919 845 1397</td></tr>
+        <tr><td><strong>Kyra Joyce Tondo</strong></td><td>kyrajoycet@gmail.com<br>+63 916 425 8038</td></tr>
+        <tr><td><strong>Shila Mae Marteja</strong></td><td>shilamaemarteja18@gmail.com<br>+63 985 452 8964</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">verified</span>Manual control record</h4>
+    <table class="compact field-table">
+      <tbody>
+        <tr><td><strong>Document No.</strong></td><td>PMRMS-UM-001</td></tr>
+        <tr><td><strong>Version</strong></td><td>1.0</td></tr>
+        <tr><td><strong>Date</strong></td><td>August 2026</td></tr>
+        <tr><td><strong>Classification</strong></td><td>Controlled Copy</td></tr>
+        <tr><td><strong>Distribution</strong></td><td>Market Office personnel and named offices (Chapter 12)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="signoff">
+  <div class="sign-line"><b>&nbsp;</b>Prepared by</div>
+  <div class="sign-line"><b>&nbsp;</b>Reviewed and approved by</div>
+</div>
+
+<!-- ============================================================
+     COLOPHON
+     ============================================================ -->
+<div class="colophon" style="margin-top: 28px;">
+  <div style="font-size:9.5pt; font-weight:800; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px;">Tanauan Public Market Rental Monitoring System</div>
+  <div style="font-size:8pt; color:rgba(255,255,255,0.7);">Operator&rsquo;s User Manual &middot; Version 1.0 &middot; August 2026</div>
+  <div style="font-size:7.5pt; color:rgba(255,255,255,0.5); margin-top:6px;">Municipality of Tanauan, Leyte &middot; Market Office &middot; Republic of the Philippines</div>
+</div>
+
+</body>
+</html>

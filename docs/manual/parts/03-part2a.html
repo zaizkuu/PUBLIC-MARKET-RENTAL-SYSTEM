@@ -1,0 +1,575 @@
+<!-- ============================================================
+     PART II
+     ============================================================ -->
+<div class="part">
+  <span class="part-no">Part II</span>
+  <span class="part-name">Core Modules</span>
+  <span class="part-desc">The six registers the Market Office works in every day — stalls, tenants, applicants, billing and compliance.</span>
+</div>
+
+<!-- ============================ CHAPTER 3 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">dashboard</span></div>
+  <div>
+    <span class="chapter-num">Chapter 3</span>
+    <span class="chapter-title">Dashboard</span>
+  </div>
+  <div class="chapter-kicker">The first screen after launch: where the market stands this morning, in one page.</div>
+</div>
+
+<p>The Dashboard answers four questions without a single click: <em>how full is the market</em>, <em>how much has been collected</em>, <em>what is waiting for an officer</em>, and <em>what happened recently</em>. Everything on it is recomputed from live records each time it is opened — there is no refresh button because there is nothing to refresh.</p>
+
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 244" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schematic of the dashboard showing five statistic cards, the earnings panel, the occupancy chart and the activity feed">
+      <g font-family="Inter,sans-serif">
+        <!-- stat cards -->
+        <g text-anchor="middle">
+          <rect x="2"   y="14" width="140" height="48" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.2"/>
+          <text x="72"  y="34" font-size="12" font-weight="800" fill="#16307e">235</text>
+          <text x="72"  y="48" font-size="8.2" fill="#4b5468">Total Stalls</text>
+          <text x="72"  y="58" font-size="7.4" fill="#8b93a5">by status breakdown</text>
+
+          <rect x="146" y="14" width="140" height="48" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.2"/>
+          <text x="216" y="34" font-size="12" font-weight="800" fill="#16307e">66.4%</text>
+          <text x="216" y="48" font-size="8.2" fill="#4b5468">Occupancy</text>
+          <text x="216" y="58" font-size="7.4" fill="#8b93a5">with progress bar</text>
+
+          <rect x="290" y="14" width="140" height="48" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.2"/>
+          <text x="360" y="34" font-size="12" font-weight="800" fill="#16307e">156</text>
+          <text x="360" y="48" font-size="8.2" fill="#4b5468">Active Tenants</text>
+          <text x="360" y="58" font-size="7.4" fill="#8b93a5">+ expiring soon</text>
+
+          <rect x="434" y="14" width="140" height="48" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.2"/>
+          <text x="504" y="34" font-size="12" font-weight="800" fill="#16307e">5</text>
+          <text x="504" y="48" font-size="8.2" fill="#4b5468">Pending Applicants</text>
+          <text x="504" y="58" font-size="7.4" fill="#8b93a5">+ incomplete docs</text>
+
+          <rect x="578" y="14" width="140" height="48" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.2"/>
+          <text x="648" y="34" font-size="12" font-weight="800" fill="#16307e">&#8369;12,500</text>
+          <text x="648" y="48" font-size="8.2" fill="#4b5468">Unpaid Utilities</text>
+          <text x="648" y="58" font-size="7.4" fill="#8b93a5">unpaid + overdue count</text>
+        </g>
+        <text x="2" y="8" font-size="8" font-weight="800" fill="#8b93a5" letter-spacing="1.2">ROW 1 — FIVE STATISTIC CARDS</text>
+
+        <!-- earnings + chart -->
+        <text x="2" y="78" font-size="8" font-weight="800" fill="#8b93a5" letter-spacing="1.2">ROW 2 — MONEY AND UTILISATION</text>
+        <rect x="2" y="84" width="352" height="96" rx="7" fill="#eff5ff" stroke="#bfd3f7"/>
+        <text x="16" y="102" font-size="10.5" font-weight="800" fill="#16307e">Market Earnings — this month</text>
+        <text x="16" y="118" font-size="8.4" fill="#4b5468">Rent roll · outstanding · discounts given</text>
+        <text x="16" y="130" font-size="8.4" fill="#4b5468">Rent collected · utilities collected · total earnings</text>
+        <rect x="16" y="140" width="324" height="12" rx="6" fill="#ffffff" stroke="#bfd3f7"/>
+        <rect x="16" y="140" width="196" height="12" rx="6" fill="#16a34a"/>
+        <text x="16" y="166" font-size="8.2" fill="#4b5468">Collection meter — turns red when bills are overdue</text>
+        <rect x="248" y="158" width="92" height="15" rx="5" fill="#1d4ed8"/>
+        <text x="294" y="169" font-size="8" font-weight="700" fill="#ffffff" text-anchor="middle">Open Rent Register</text>
+
+        <rect x="362" y="84" width="356" height="96" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <text x="376" y="102" font-size="10.5" font-weight="800" fill="#16307e">Stall Occupancy by Section</text>
+        <g>
+          <rect x="386" y="118" width="26" height="46" rx="3" fill="#1d4ed8"/><rect x="386" y="112" width="26" height="6" rx="3" fill="#d97706"/>
+          <rect x="428" y="126" width="26" height="38" rx="3" fill="#1d4ed8"/><rect x="428" y="114" width="26" height="12" fill="#d97706"/><rect x="428" y="108" width="26" height="6" rx="3" fill="#16a34a"/>
+          <rect x="470" y="120" width="26" height="44" rx="3" fill="#1d4ed8"/><rect x="470" y="112" width="26" height="8" rx="3" fill="#16a34a"/>
+          <rect x="512" y="140" width="26" height="24" rx="3" fill="#1d4ed8"/><rect x="512" y="134" width="26" height="6" rx="3" fill="#d97706"/>
+          <line x1="380" y1="164" x2="600" y2="164" stroke="#dfe3ec"/>
+        </g>
+        <g font-size="7.6" fill="#4b5468" text-anchor="middle">
+          <text x="399" y="173">Meat</text><text x="441" y="173">Veg</text><text x="483" y="173">Fish</text><text x="525" y="173">Dry</text>
+        </g>
+        <rect x="620" y="158" width="86" height="15" rx="5" fill="#1d4ed8"/>
+        <text x="663" y="169" font-size="8" font-weight="700" fill="#ffffff" text-anchor="middle">Full Report</text>
+
+        <!-- activity -->
+        <text x="2" y="196" font-size="8" font-weight="800" fill="#8b93a5" letter-spacing="1.2">ROW 3 — RECENT ACTIVITY (LAST 50 ACTIONS)</text>
+        <rect x="2" y="202" width="716" height="40" rx="7" fill="#ffffff" stroke="#dfe3ec"/>
+        <circle cx="20" cy="215" r="5" fill="#16a34a"/><rect x="32" y="212" width="300" height="6" rx="3" fill="#e9edf5"/><text x="640" y="218" font-size="7.6" fill="#8b93a5">Just now</text>
+        <circle cx="20" cy="231" r="5" fill="#1d4ed8"/><rect x="32" y="228" width="380" height="6" rx="3" fill="#e9edf5"/><text x="640" y="234" font-size="7.6" fill="#8b93a5">5 minutes ago</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 3.1 — Dashboard regions.</b> Figures shown are the seeded 2026 register. Each card and panel carries its own shortcut button, so the Dashboard is a launcher as well as a summary.</div>
+</div>
+
+<h3>3.1 Statistics cards</h3>
+<table class="compact">
+  <thead><tr><th style="width:20%">Card</th><th style="width:26%">Primary value</th><th style="width:34%">Breakdown shown beneath</th><th>Shortcut</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Total Stalls</strong></td><td>Every registered stall</td><td>Occupied · Available · Temporarily Closed · Closed · Abandoned · Maintenance</td><td>—</td></tr>
+    <tr><td><strong>Occupancy</strong></td><td>Occupied ÷ total, as a percentage</td><td>Progress bar filled to the same percentage</td><td>—</td></tr>
+    <tr><td><strong>Active Tenants</strong></td><td>Tenant records marked Active</td><td>How many leases are flagged <em>Expiring Soon</em></td><td><code>View Tenants</code></td></tr>
+    <tr><td><strong>Pending Applicants</strong></td><td>Applications awaiting review</td><td>How many are still short of documents</td><td><code>Review Now</code></td></tr>
+    <tr><td><strong>Unpaid Utilities</strong></td><td>Total pesos outstanding</td><td>Count of unpaid bills, and how many are overdue</td><td><code>Utilities</code></td></tr>
+  </tbody>
+</table>
+
+<h3>3.2 Market earnings panel</h3>
+<p>This panel is the month&rsquo;s financial standing in six figures. Read them top to bottom — each line explains the one below it.</p>
+<div class="grid-2">
+  <table class="compact" style="margin:0">
+    <thead><tr><th style="width:44%">Figure</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Monthly Rent Roll</strong></td><td>The contracted rent of every active tenant, added up. The ceiling for the month.</td></tr>
+      <tr><td><strong>Rent Outstanding</strong></td><td>What is still uncollected for the current period.</td></tr>
+      <tr><td><strong>Early-Payment Discounts</strong></td><td>The 20% given away for on-time settlement — this is why collected sits below the roll.</td></tr>
+      <tr><td><strong>Rent Collected to Date</strong></td><td>Actually received this month, net of discounts.</td></tr>
+      <tr><td><strong>Utilities Collected</strong></td><td>Electricity and water payments received.</td></tr>
+      <tr><td><strong>Total Market Earnings</strong></td><td>Rent collected plus utilities collected.</td></tr>
+    </tbody>
+  </table>
+  <div>
+    <div class="callout callout-note" style="margin-top:0"><span class="material-symbols-outlined">info</span><div><strong>Why collected never equals the roll.</strong> Roll − outstanding − discounts = collected. If the three do not reconcile on the printed report, a tenant was almost certainly ticked for the wrong month — check the Rent Month picker (§5.3).</div></div>
+    <div class="callout callout-warning" style="margin-bottom:0"><span class="material-symbols-outlined">warning</span><div>The collection meter turns <strong>red</strong> as soon as any utility bill is overdue, even if rent collection is running well. Red means &ldquo;something is past due&rdquo;, not &ldquo;collection is behind&rdquo;.</div></div>
+  </div>
+</div>
+
+<h3>3.3 Stall occupancy chart</h3>
+<p>A stacked bar chart breaks the register down by <strong>market section</strong> and colours each bar by stall status. Figure 3.2 reproduces it from the seeded 2026 survey, which is what you will see before any new records are entered.</p>
+
+<div class="figure">
+  <div class="figure-body plain">
+    <svg viewBox="0 0 720 214" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stacked bar chart of stall status by market section for the 2026 register">
+      <g font-family="Inter,sans-serif">
+        <!-- legend -->
+        <g font-size="8.6" fill="#4b5468">
+          <rect x="0"   y="6" width="9" height="9" rx="2" fill="#1d4ed8"/><text x="13"  y="14">Occupied · 156</text>
+          <rect x="100" y="6" width="9" height="9" rx="2" fill="#d97706"/><text x="113" y="14">Temporarily Closed · 47</text>
+          <rect x="248" y="6" width="9" height="9" rx="2" fill="#16a34a"/><text x="261" y="14">Available · 24</text>
+          <rect x="348" y="6" width="9" height="9" rx="2" fill="#dc2626"/><text x="361" y="14">Closed · 7</text>
+          <rect x="422" y="6" width="9" height="9" rx="2" fill="#64748b"/><text x="435" y="14">Abandoned · 1</text>
+        </g>
+        <text x="718" y="14" font-size="9.6" font-weight="800" fill="#16307e" text-anchor="end">235 stalls · 66.4% occupied</text>
+        <line x1="0" y1="24" x2="718" y2="24" stroke="#dfe3ec"/>
+
+        <!-- row 1 : Vegetables & Fruits (89) -->
+        <text x="124" y="48" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Vegetables &amp; Fruits</text>
+        <text x="124" y="60" font-size="8.2" fill="#8b93a5" text-anchor="end">89 stalls · FV</text>
+        <rect x="136"   y="34" width="345.4" height="30" fill="#1d4ed8"/>
+        <rect x="481.4" y="34" width="118.9" height="30" fill="#d97706"/>
+        <rect x="600.3" y="34" width="39.7"  height="30" fill="#dc2626"/>
+        <text x="308"   y="53" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">61</text>
+        <text x="540"   y="53" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">21</text>
+        <text x="620"   y="53" font-size="9" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
+        <text x="650"   y="53" font-size="10.4" font-weight="800" fill="#16307e">68.5%</text>
+
+        <!-- row 2 : Meat & Poultry (68) -->
+        <text x="124" y="92" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Meat &amp; Poultry</text>
+        <text x="124" y="104" font-size="8.2" fill="#8b93a5" text-anchor="end">68 stalls · MS, CS</text>
+        <rect x="136"   y="78" width="186.9" height="30" fill="#1d4ed8"/>
+        <rect x="322.9" y="78" width="101.9" height="30" fill="#d97706"/>
+        <rect x="424.8" y="78" width="90.6"  height="30" fill="#16a34a"/>
+        <rect x="515.4" y="78" width="5.7"   height="30" fill="#64748b"/>
+        <text x="229"   y="97" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">33</text>
+        <text x="374"   y="97" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">18</text>
+        <text x="470"   y="97" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">16</text>
+        <text x="650"   y="97" font-size="10.4" font-weight="800" fill="#16307e">48.5%</text>
+
+        <!-- row 3 : Fish & Seafood (63) -->
+        <text x="124" y="136" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Fish &amp; Seafood</text>
+        <text x="124" y="148" font-size="8.2" fill="#8b93a5" text-anchor="end">63 stalls · FS</text>
+        <rect x="136"   y="122" width="277.5" height="30" fill="#1d4ed8"/>
+        <rect x="413.5" y="122" width="34.0"  height="30" fill="#d97706"/>
+        <rect x="447.5" y="122" width="45.3"  height="30" fill="#16a34a"/>
+        <text x="274"   y="141" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">49</text>
+        <text x="430"   y="141" font-size="8.6" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+        <text x="470"   y="141" font-size="9" font-weight="700" fill="#ffffff" text-anchor="middle">8</text>
+        <text x="650"   y="141" font-size="10.4" font-weight="800" fill="#16307e">77.8%</text>
+
+        <!-- row 4 : Dry Goods (15) -->
+        <text x="124" y="180" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Dry Goods</text>
+        <text x="124" y="192" font-size="8.2" fill="#8b93a5" text-anchor="end">15 stalls · KK</text>
+        <rect x="136"   y="166" width="73.6" height="30" fill="#1d4ed8"/>
+        <rect x="209.6" y="166" width="11.3" height="30" fill="#d97706"/>
+        <text x="172"   y="185" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">13</text>
+        <text x="650"   y="185" font-size="10.4" font-weight="800" fill="#16307e">86.7%</text>
+
+        <line x1="136" y1="204" x2="718" y2="204" stroke="#dfe3ec"/>
+        <text x="136" y="212" font-size="7.8" fill="#8b93a5">Bar length is the section&rsquo;s share of the largest section. Percentage at right is occupied ÷ section total.</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 3.2 — Occupancy by section, 2026 register.</b> Meat &amp; Poultry is the office&rsquo;s standing problem: 16 outright vacancies and 18 stalls temporarily closed against only 33 occupied. Dry Goods, by contrast, is effectively full.</div>
+</div>
+
+<h3>3.4 Recent activity &amp; global search</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">history</span>Recent activity feed</h4>
+    <p>The last <strong>50</strong> system operations, newest first. Each row carries a colour-coded action icon, a plain-language description (&ldquo;Rent collected from Maria Santos for Stall MS-01&rdquo;) and a relative timestamp (&ldquo;Just now&rdquo;, &ldquo;5 minutes ago&rdquo;). The full history lives in the Logbook (Chapter 10) — this feed is only the recent tail of it.</p>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">search</span>Global search</h4>
+    <p>Typing in the search bar <em>while on the Dashboard</em> searches everything at once and returns up to <strong>24</strong> results across <strong>Tenants · Stalls · Applicants · Utility Bills · Violations · Officers</strong>. Results are grouped by type, and clicking one jumps straight to that record in its own module. On any other module the same box filters only that module&rsquo;s table.</p>
+  </div>
+</div>
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>When you do not know where a record lives,</strong> go to the Dashboard first and search from there. A stallkeeper&rsquo;s name, a meter number and a bill ID all resolve from the same box.</div></div>
+
+<!-- ============================ CHAPTER 4 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">storefront</span></div>
+  <div>
+    <span class="chapter-num">Chapter 4</span>
+    <span class="chapter-title">Stall Management</span>
+  </div>
+  <div class="chapter-kicker">The register of physical stalls — the foundation every tenant and bill hangs from.</div>
+</div>
+
+<p>A stall is a physical space in the market. It exists whether or not anyone occupies it, and it keeps its identity when tenants come and go. Tenants, bills and verification slips all point back to a stall, which is why this register is maintained first.</p>
+
+<h3>4.1 How stalls are identified</h3>
+<div class="figure">
+  <div class="figure-body plain">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Anatomy of a stall ID and the prefix table for each market section">
+      <g font-family="Inter,sans-serif">
+        <text x="30" y="56" font-size="38" font-weight="800" fill="#243B8F" letter-spacing="2">FV-07</text>
+        <path d="M30,66 v7 h60 v-7" fill="none" stroke="#1d4ed8" stroke-width="1.3"/>
+        <path d="M60,73 v9" stroke="#1d4ed8" stroke-width="1.3"/>
+        <path d="M104,66 v7 h56 v-7" fill="none" stroke="#1d4ed8" stroke-width="1.3"/>
+        <path d="M132,73 v9" stroke="#1d4ed8" stroke-width="1.3"/>
+        <text x="60"  y="95" font-size="9.4" font-weight="700" fill="#16307e" text-anchor="middle">Section prefix</text>
+        <text x="60"  y="107" font-size="8.2" fill="#4b5468" text-anchor="middle">two letters</text>
+        <text x="136" y="95" font-size="9.4" font-weight="700" fill="#16307e" text-anchor="middle">Sequence</text>
+        <text x="136" y="107" font-size="8.2" fill="#4b5468" text-anchor="middle">never reused</text>
+        <text x="30"  y="132" font-size="8.6" fill="#4b5468">Leave <tspan font-weight="700" fill="#16307e">Stall ID</tspan> blank when adding and the next free number is assigned for you.</text>
+
+        <line x1="336" y1="8" x2="336" y2="142" stroke="#dfe3ec"/>
+        <text x="356" y="16" font-size="8.4" font-weight="800" fill="#8b93a5" letter-spacing="1.2">PREFIXES IN THE 2026 REGISTER</text>
+        <g font-size="9.4">
+          <rect x="356" y="24" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="36" font-weight="800" fill="#ffffff" text-anchor="middle">MS</text>
+          <text x="402" y="36" fill="#14192e">Meat &amp; Poultry — main stalls</text><text x="714" y="36" font-weight="700" fill="#16307e" text-anchor="end">46</text>
+
+          <rect x="356" y="47" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="59" font-weight="800" fill="#ffffff" text-anchor="middle">CS</text>
+          <text x="402" y="59" fill="#14192e">Meat &amp; Poultry — chicken stalls</text><text x="714" y="59" font-weight="700" fill="#16307e" text-anchor="end">22</text>
+
+          <rect x="356" y="70" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="82" font-weight="800" fill="#ffffff" text-anchor="middle">FS</text>
+          <text x="402" y="82" fill="#14192e">Fish &amp; Seafood</text><text x="714" y="82" font-weight="700" fill="#16307e" text-anchor="end">63</text>
+
+          <rect x="356" y="93" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="105" font-weight="800" fill="#ffffff" text-anchor="middle">FV</text>
+          <text x="402" y="105" fill="#14192e">Vegetables &amp; Fruits</text><text x="714" y="105" font-weight="700" fill="#16307e" text-anchor="end">89</text>
+
+          <rect x="356" y="116" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="128" font-weight="800" fill="#ffffff" text-anchor="middle">KK</text>
+          <text x="402" y="128" fill="#14192e">Dry Goods</text><text x="714" y="128" font-weight="700" fill="#16307e" text-anchor="end">15</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 4.1 — Reading a stall ID.</b> Two prefixes (MS and CS) both belong to Meat &amp; Poultry, a legacy of the paper register. Sequence numbers are issued by a monotonic counter and are never reused, even after a stall is deleted — see Appendix&nbsp;A.</div>
+</div>
+
+<h3>4.2 Stall statuses &amp; lifecycle</h3>
+<p>A stall carries exactly one of six statuses. Four of them (<em>Occupied, Temporarily Closed, Closed, Abandoned</em>) mean the space is <strong>held</strong> and is not offered to applicants; only <em>Available</em> puts a stall back on the vacancy list.</p>
+
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 244" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="State diagram of stall statuses and the transitions between them">
+      <defs>
+        <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#4b5468"/>
+        </marker>
+      </defs>
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="8"   y="102" width="88" height="34" rx="17" fill="#eef1f6" stroke="#c9cfdd" stroke-dasharray="4 3"/>
+        <text x="52"  y="123" font-size="9.4" font-weight="700" fill="#3f4a5f">New stall</text>
+
+        <rect x="160" y="98"  width="118" height="42" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.4"/>
+        <text x="219" y="118" font-size="11" font-weight="800" fill="#0b5030">Available</text>
+        <text x="219" y="131" font-size="8" fill="#0b5030">offered to applicants</text>
+
+        <rect x="342" y="98"  width="118" height="42" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.4"/>
+        <text x="401" y="118" font-size="11" font-weight="800" fill="#16307e">Occupied</text>
+        <text x="401" y="131" font-size="8" fill="#16307e">tenant on record</text>
+
+        <rect x="160" y="180" width="118" height="40" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.4"/>
+        <text x="219" y="199" font-size="10.4" font-weight="800" fill="#8a4a04">Maintenance</text>
+        <text x="219" y="211" font-size="8" fill="#8a4a04">under repair</text>
+
+        <rect x="530" y="26"  width="176" height="40" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.4"/>
+        <text x="618" y="45" font-size="10.4" font-weight="800" fill="#8a4a04">Temporarily Closed</text>
+        <text x="618" y="57" font-size="8" fill="#8a4a04">held, not trading</text>
+
+        <rect x="530" y="100" width="176" height="40" rx="8" fill="#fee2e2" stroke="#dc2626" stroke-width="1.4"/>
+        <text x="618" y="119" font-size="10.4" font-weight="800" fill="#8f1613">Closed</text>
+        <text x="618" y="131" font-size="8" fill="#8f1613">shut by the office</text>
+
+        <rect x="530" y="174" width="176" height="40" rx="8" fill="#eef1f6" stroke="#64748b" stroke-width="1.4"/>
+        <text x="618" y="193" font-size="10.4" font-weight="800" fill="#3f4a5f">Abandoned</text>
+        <text x="618" y="205" font-size="8" fill="#3f4a5f">occupant gone, space held</text>
+      </g>
+
+      <g stroke="#4b5468" stroke-width="1.3" fill="none" marker-end="url(#ar3)">
+        <line x1="98" y1="119" x2="156" y2="119"/>
+        <line x1="280" y1="112" x2="338" y2="112"/>
+        <line x1="460" y1="112" x2="526" y2="52"/>
+        <line x1="460" y1="120" x2="526" y2="120"/>
+        <line x1="460" y1="128" x2="526" y2="188"/>
+      </g>
+      <g stroke="#4b5468" stroke-width="1.3" fill="none" marker-end="url(#ar3)" marker-start="url(#ar3)">
+        <line x1="338" y1="128" x2="282" y2="128"/>
+        <line x1="219" y1="144" x2="219" y2="176"/>
+        <line x1="618" y1="70" x2="618" y2="96"/>
+      </g>
+
+      <g font-family="Inter,sans-serif" font-size="8" fill="#4b5468">
+        <text x="309" y="106" text-anchor="middle">tenant assigned</text>
+        <text x="309" y="143" text-anchor="middle">released → vacant</text>
+        <text x="226" y="163">under repair ⇄ repaired</text>
+        <text x="462" y="80">stops trading</text>
+        <text x="466" y="112">shut by order</text>
+        <text x="462" y="160">walked away</text>
+        <text x="626" y="86">reopens</text>
+      </g>
+      <text x="8" y="236" font-family="Inter,sans-serif" font-size="8" fill="#8b93a5">Any status can be corrected from the Edit Stall form; the arrows show the ordinary route, not the only one.</text>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 4.2 — Stall lifecycle.</b> Only the <em>released → vacant</em> transition removes the occupant record, and the system always asks before doing it (§4.6). The three states on the right keep the tenant attached, which is why a temporarily closed stall still appears in the rent register.</div>
+</div>
+
+<h3>4.3 Viewing &amp; filtering stalls</h3>
+<p>The module opens on five summary tiles, a filter bar and the register table.</p>
+<div class="stat-row">
+  <div class="stat"><b>235</b><span>Total Stalls</span></div>
+  <div class="stat"><b>156</b><span>Occupied</span></div>
+  <div class="stat"><b>24</b><span>Available</span></div>
+  <div class="stat"><b>0</b><span>Maintenance</span></div>
+  <div class="stat"><b>47</b><span>Temp. Closed</span></div>
+</div>
+
+<div class="grid-2">
+  <table class="compact field-table" style="margin:0">
+    <thead><tr><th style="width:30%">Filter</th><th>Options</th></tr></thead>
+    <tbody>
+      <tr><td>Market Section</td><td>All · Meat &amp; Poultry · Fish &amp; Seafood · Vegetables &amp; Fruits · Dry Goods</td></tr>
+      <tr><td>Status</td><td>All · Occupied · Available · Maintenance · Temporarily Closed · Closed · Abandoned</td></tr>
+      <tr><td>Search</td><td>Stall ID, occupant name, or section</td></tr>
+    </tbody>
+  </table>
+  <table class="compact field-table" style="margin:0">
+    <thead><tr><th style="width:42%">Header button</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>Clear Filters</code></td><td>Resets every filter and the search box</td></tr>
+      <tr><td><code>Print List</code></td><td>Prints the filtered table as a register sheet</td></tr>
+      <tr><td><code>Stall / Space Verification</code></td><td>Opens the slip dialog (Chapter 13)</td></tr>
+      <tr><td><code>+ New Stall</code></td><td>Opens the Add Stall form</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h4>Register columns</h4>
+<table class="compact">
+  <thead><tr><th style="width:17%">Column</th><th>Shows</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Stall ID</strong></td><td>Unique identifier — MS-01, CS-04, FS-22, FV-07, KK-11</td></tr>
+    <tr><td><strong>Section</strong></td><td>One of the four market sections</td></tr>
+    <tr><td><strong>Tenant Name</strong></td><td>The current occupant, or <em>Vacant</em></td></tr>
+    <tr><td><strong>Status</strong></td><td><span class="badge badge-green">Available</span> <span class="badge badge-blue">Occupied</span> <span class="badge badge-amber">Maintenance</span> <span class="badge badge-amber">Temporarily Closed</span> <span class="badge badge-red">Closed</span> <span class="badge badge-gray">Abandoned</span></td></tr>
+    <tr><td><strong>Business Permit</strong></td><td><span class="badge badge-green">With BP</span> <span class="badge badge-red">No BP</span> <span class="badge badge-gray">Not Recorded</span> — 141 / 11 / 83 in the seeded register</td></tr>
+    <tr><td><strong>Last Inspection</strong></td><td>Date of the most recent recorded inspection, or <em>—</em> if never inspected</td></tr>
+    <tr><td><strong>Actions</strong></td><td><span class="material-symbols-outlined icon-inline">visibility</span> View details &nbsp; <span class="material-symbols-outlined icon-inline">fact_check</span> Issue verification slip &nbsp; <span class="material-symbols-outlined icon-inline" style="color:#dc2626">delete</span> Delete</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>&ldquo;Not Recorded&rdquo; is not &ldquo;No BP&rdquo;.</strong> 83 stalls in the seeded register have never had their permit status entered. Treat these as work to do, not as violations — a stall only earns <span class="badge badge-red">No BP</span> when an officer has actually checked and found none.</div></div>
+
+<h3>4.4 Adding a new stall</h3>
+<div class="steps">
+  <div class="step"><div class="step-title">Open the form</div>Click <code>+ New Stall</code> in the module header.</div>
+  <div class="step"><div class="step-title">Enter the stall particulars</div>
+    <ul>
+      <li><strong>Stall ID</strong> — type a specific ID, or leave it blank for automatic assignment</li>
+      <li><strong>Section</strong> — Meat &amp; Poultry, Fish &amp; Seafood, Vegetables &amp; Fruits or Dry Goods</li>
+      <li><strong>Tenant Name</strong> — required only if you set the status to <em>Occupied</em></li>
+      <li><strong>Status</strong> — normally <em>Available</em> for a newly built stall</li>
+      <li><strong>Business Permit</strong> — With BP, No BP or Not Recorded</li>
+    </ul>
+  </div>
+  <div class="step"><div class="step-title">Save</div>Click <code>Save</code>. The stall is created, a unique ID assigned if you left the field blank, and a logbook entry written automatically.</div>
+</div>
+
+<h3>4.5 Stall details &amp; editing</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">visibility</span>The stall record sheet</h4>
+    <p>The eye icon opens a formal, printable sheet showing:</p>
+    <ul>
+      <li><strong>Stall particulars</strong> — ID, section, status, permit, last inspection</li>
+      <li><strong>Assigned tenant</strong> — name, contact and barangay</li>
+      <li><strong>Stallkeeper roster</strong> — everyone authorised to trade there</li>
+      <li><strong>Utility summary</strong> — electricity and water meter numbers</li>
+      <li><strong>Billing history</strong> — every utility bill raised against this stall</li>
+    </ul>
+    <p>From here you can issue a verification slip or click <code>Edit Details</code>.</p>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">edit</span>Editing</h4>
+    <p>The Edit Stall form follows the <strong>&ldquo;blank keeps on-record&rdquo;</strong> pattern (§2.5): every field opens empty with the stored value as placeholder text. Fill only what changes.</p>
+    <ul>
+      <li><strong>Section</strong>, <strong>Status</strong>, <strong>Business Permit</strong></li>
+      <li><strong>Last Inspection</strong> — pick a date, or press <code>Inspected Today</code></li>
+    </ul>
+    <div class="callout callout-note" style="margin-bottom:0"><span class="material-symbols-outlined">lock</span><div><strong>Linked stall protection.</strong> When a tenant record points at this stall, the tenant name and certain status fields are locked here. Change them in Tenant Records instead, so the two never disagree.</div></div>
+  </div>
+</div>
+
+<h3>4.6 Releasing &amp; deleting a stall</h3>
+<div class="callout callout-warning"><span class="material-symbols-outlined">warning</span><div><strong>Releasing.</strong> Setting an occupied stall to <em>Available</em> asks for confirmation, then <strong>removes the occupant tenant record</strong> and returns the stall to the vacancy list. Do this only when the lease has genuinely ended — a stall that is merely shut should be <em>Temporarily Closed</em> instead.</div></div>
+<div class="callout callout-danger"><span class="material-symbols-outlined">error</span><div><strong>Deleting is refused for occupied stalls.</strong> The system will not delete a stall with an active tenant attached, because the tenant&rsquo;s rent ledger and bills would be orphaned. Release or reassign the tenant first, then delete.</div></div>
+
+<!-- ============================ CHAPTER 5 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">groups</span></div>
+  <div>
+    <span class="chapter-num">Chapter 5</span>
+    <span class="chapter-title">Tenant Records &amp; Rent</span>
+  </div>
+  <div class="chapter-kicker">The stallholder directory and the monthly rent ledger — the busiest screen in the office.</div>
+</div>
+
+<p>Tenant Records is the master directory of stallholders. It holds lease terms, contact details, stallkeeper rosters, utility meter numbers, and the month-by-month rent ledger. Rent is collected here, one tick at a time.</p>
+
+<h3>5.1 The tenant register</h3>
+<div class="stat-row">
+  <div class="stat"><b>Total</b><span>Tenants on record</span></div>
+  <div class="stat"><b>Active</b><span>Current lease holders</span></div>
+  <div class="stat"><b>Expiring</b><span>Leases ending soon</span></div>
+  <div class="stat"><b>&#8369;</b><span>Monthly rent roll</span></div>
+  <div class="stat"><b>%</b><span>Rent collected</span></div>
+</div>
+
+<table class="compact field-table">
+  <thead><tr><th style="width:20%">Filter</th><th>Options and effect</th></tr></thead>
+  <tbody>
+    <tr><td>Section</td><td>All sections, or one market section</td></tr>
+    <tr><td>Status</td><td>All · Active · Expiring Soon</td></tr>
+    <tr><td>Rent Status</td><td>All · <span class="badge badge-green">Paid</span> · <span class="badge badge-amber">Unpaid</span> · <span class="badge badge-red">Overdue</span> — evaluated against the selected Rent Month</td></tr>
+    <tr><td><strong>Rent Month</strong></td><td>Month-year picker. <strong>This is the single most important control on the screen</strong> — it decides which month your ticks are recorded against.</td></tr>
+    <tr><td>Search</td><td>Tenant name, stall ID, tenant ID or stallkeeper name</td></tr>
+  </tbody>
+</table>
+
+<h3>5.2 Adding &amp; editing a tenant</h3>
+<p>Click <code>+ New Tenant</code>. Most tenants arrive automatically from an approved application (§6.3) — use this form for records being entered from the paper register.</p>
+<table class="compact">
+  <thead><tr><th style="width:24%">Field</th><th style="width:44%">Description</th><th>Validation</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Name</strong></td><td>Full name of the stallholder</td><td>Required</td></tr>
+    <tr><td><strong>Mobile Number</strong></td><td>Contact number for collection reminders</td><td>11 digits</td></tr>
+    <tr><td><strong>Barangay</strong></td><td>Barangay of residence</td><td>—</td></tr>
+    <tr><td><strong>Stall ID</strong></td><td>Autocomplete from stalls that are actually vacant</td><td>Required; must be available</td></tr>
+    <tr><td><strong>Section</strong></td><td>Filled in for you from the chosen stall</td><td>Automatic</td></tr>
+    <tr><td><strong>Monthly Rent</strong></td><td>Contracted rent in pesos — the basis for the 20% discount</td><td>Required; numeric</td></tr>
+    <tr><td><strong>Status</strong></td><td>Active or Expiring Soon</td><td>—</td></tr>
+    <tr><td><strong>Rent Due Day</strong></td><td>Day of the month rent falls due</td><td>1–28; defaults to <strong>5</strong></td></tr>
+    <tr><td><strong>Electricity Meter No.</strong></td><td>Meter serving this stall; auto-fills the bill calculator</td><td>—</td></tr>
+    <tr><td><strong>Water Meter No.</strong></td><td>As above, for water</td><td>—</td></tr>
+    <tr><td><strong>Stallkeepers</strong></td><td>Embedded roster editor — see §5.5</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h3>5.3 Monthly rent collection</h3>
+<p>Rent is collected directly in the register. Each row shows a checkbox for the selected <strong>Rent Month</strong>, a status badge, and — while the discount is still available — what the tenant would pay if they settled today.</p>
+
+<div class="steps">
+  <div class="step"><div class="step-title">Set the Rent Month first</div>Use the month picker in the filter bar. Past months can be recorded retroactively and future months paid in advance. <strong>Check this before you tick anything.</strong></div>
+  <div class="step"><div class="step-title">Tick the tenant&rsquo;s checkbox</div>The payment is recorded immediately, stamped with today&rsquo;s date, and the discount — if it applies — is computed and stored.</div>
+  <div class="step"><div class="step-title">Confirm the row</div>The badge turns <span class="badge badge-green">Paid</span>. If the discount applied, a <span class="badge badge-green">−&#8369;X early</span> tag appears beside it.</div>
+</div>
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Undo is just an untick.</strong> Recorded the wrong tenant or the wrong month? Clear the checkbox and the payment for that month is reversed. Both the tick and the untick are written to the Logbook.</div></div>
+
+<h3>5.4 The 20% early-payment discount</h3>
+<p>Every tenant has a <strong>Rent Due Day</strong> (1–28, default the 5th). Settle <strong>on or before</strong> that day and 20% comes off the month&rsquo;s rent. Settle after it and the full rent is due, and the row shows <span class="badge badge-red">Overdue</span> until it is collected.</p>
+
+<div class="figure">
+  <div class="figure-body plain">
+    <svg viewBox="0 0 720 152" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of a rent month showing the discount window up to the due day and the overdue period after it">
+      <g font-family="Inter,sans-serif">
+        <text x="0" y="12" font-size="8.4" font-weight="800" fill="#8b93a5" letter-spacing="1.2">ONE RENT MONTH · DUE DAY = 5 (DEFAULT)</text>
+
+        <rect x="0"   y="24" width="112" height="36" rx="5" fill="#dcfce7" stroke="#16a34a" stroke-width="1.3"/>
+        <rect x="112" y="24" width="606" height="36" rx="5" fill="#fee2e2" stroke="#dc2626" stroke-width="1.3"/>
+        <rect x="112" y="24" width="8" height="36" fill="#dc2626"/>
+
+        <text x="56"  y="41" font-size="9.6" font-weight="800" fill="#0b5030" text-anchor="middle">DISCOUNT WINDOW</text>
+        <text x="56"  y="53" font-size="8.2" fill="#0b5030" text-anchor="middle">days 1 – 5 · pay 80%</text>
+        <text x="420" y="41" font-size="9.6" font-weight="800" fill="#8f1613" text-anchor="middle">OVERDUE — FULL RENT DUE</text>
+        <text x="420" y="53" font-size="8.2" fill="#8f1613" text-anchor="middle">day 6 onwards · the badge turns red on its own, and keeps counting days late</text>
+
+        <!-- day ruler -->
+        <line x1="0" y1="68" x2="718" y2="68" stroke="#dfe3ec"/>
+        <g font-size="7.8" fill="#8b93a5" text-anchor="middle">
+          <line x1="0"   y1="68" x2="0"   y2="74" stroke="#8b93a5"/><text x="6"   y="84">1</text>
+          <line x1="112" y1="68" x2="112" y2="78" stroke="#dc2626" stroke-width="1.5"/><text x="112" y="90" font-weight="800" fill="#8f1613">DUE DAY 5</text>
+          <line x1="253" y1="68" x2="253" y2="74" stroke="#8b93a5"/><text x="253" y="84">10</text>
+          <line x1="394" y1="68" x2="394" y2="74" stroke="#8b93a5"/><text x="394" y="84">15</text>
+          <line x1="535" y1="68" x2="535" y2="74" stroke="#8b93a5"/><text x="535" y="84">20</text>
+          <line x1="676" y1="68" x2="676" y2="74" stroke="#8b93a5"/><text x="676" y="84">25</text>
+          <line x1="718" y1="68" x2="718" y2="74" stroke="#8b93a5"/><text x="710" y="84">30</text>
+        </g>
+
+        <!-- worked figures -->
+        <rect x="0"   y="100" width="352" height="46" rx="6" fill="#f7f8fc" stroke="#dfe3ec"/>
+        <text x="14"  y="117" font-size="9" font-weight="800" fill="#0b5030">Ticked on or before the 5th</text>
+        <text x="14"  y="131" font-size="8.6" fill="#4b5468">&#8369;1,500 rent − &#8369;300 discount =</text>
+        <text x="200" y="131" font-size="10.4" font-weight="800" fill="#0b5030">&#8369;1,200 collected</text>
+        <text x="14"  y="142" font-size="7.8" fill="#8b93a5">Both figures are stored: &#8369;1,200 collected and &#8369;300 discount given.</text>
+
+        <rect x="366" y="100" width="352" height="46" rx="6" fill="#f7f8fc" stroke="#dfe3ec"/>
+        <text x="380" y="117" font-size="9" font-weight="800" fill="#8f1613">Ticked on the 6th or later</text>
+        <text x="380" y="131" font-size="8.6" fill="#4b5468">&#8369;1,500 rent − no discount =</text>
+        <text x="566" y="131" font-size="10.4" font-weight="800" fill="#8f1613">&#8369;1,500 collected</text>
+        <text x="380" y="142" font-size="7.8" fill="#8b93a5">Days late are counted from the due day and shown on the tenant sheet.</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 5.1 — The discount window.</b> The test is the <em>date you tick the box</em>, not the month you are ticking. Recording July&rsquo;s rent in August therefore never earns the discount — which is the correct outcome, since the tenant did not in fact pay early.</div>
+</div>
+
+<div class="grid-2">
+  <div class="ref-box" style="margin:0">
+    <div class="ref-box-title"><span class="material-symbols-outlined">calculate</span> The rule, exactly</div>
+    <ul>
+      <li>Due day is configurable per tenant, <strong>1 to 28</strong>, default <strong>5</strong>.</li>
+      <li>Paid <strong>on or before</strong> the due day → 20% off. The due day itself still qualifies.</li>
+      <li>Collected amount = <code>Monthly Rent × 0.80</code>, rounded to centavos.</li>
+      <li>The net collected <em>and</em> the discount are both stored permanently.</li>
+      <li>Before the due day passes, the register shows <span class="badge badge-green">&#8369;X if paid today</span> as an incentive.</li>
+      <li>Unpaid rent turns <span class="badge badge-red">Overdue</span> by itself the day after it falls due — nothing has to be run or rolled over.</li>
+    </ul>
+  </div>
+  <div class="example" style="margin:0">
+    <div class="example-head"><span class="material-symbols-outlined" style="font-size:15px">receipt_long</span> Worked example — early settlement</div>
+    <div class="example-body">
+      <div class="calc-line"><span>Tenant</span><b>LOTEYRO, LEEMAR — MS-01</b></div>
+      <div class="calc-line"><span>Contracted monthly rent</span><b>&#8369;1,500.00</b></div>
+      <div class="calc-line"><span>Rent due day</span><b>5 August 2026</b></div>
+      <div class="calc-line"><span>Date ticked by the collector</span><b>3 August 2026</b></div>
+      <div class="calc-line"><span>Qualifies (3 ≤ 5)</span><b>Yes — 20%</b></div>
+      <div class="calc-line"><span>Discount &#8369;1,500 × 0.20</span><b>−&#8369;300.00</b></div>
+      <div class="calc-line total"><span>Collected and receipted</span><b>&#8369;1,200.00</b></div>
+    </div>
+  </div>
+</div>
+
+<h3>5.5 Stallkeepers</h3>
+<p>A stallkeeper is a person authorised to trade at the stall on the tenant&rsquo;s behalf. Each tenant may have several. They are edited inside the Add/Edit Tenant form, and they are searchable — typing a stallkeeper&rsquo;s name in the register finds the tenant they work for.</p>
+<table class="compact field-table">
+  <thead><tr><th style="width:22%">Field</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Name</td><td>Full name as it should appear on the stall record sheet</td></tr>
+    <tr><td>Relationship</td><td>Self · Spouse · Child · Parent · Sibling · Other Relative · Hired Helper</td></tr>
+    <tr><td>Contact Number</td><td>Mobile number</td></tr>
+    <tr><td>Barangay</td><td>Barangay of residence</td></tr>
+  </tbody>
+</table>
+
+<h3>5.6 The tenant record sheet</h3>
+<p>The <span class="material-symbols-outlined icon-inline">visibility</span> icon opens a formal record sheet suitable for printing and for showing to the tenant across the counter:</p>
+<div class="cols-2">
+  <ul>
+    <li><strong>Tenant particulars</strong> — name, tenant ID, phone, barangay, assigned stall</li>
+    <li><strong>Stallkeeper information</strong> — the full authorised roster</li>
+    <li><strong>Utility meters</strong> — electricity and water meter numbers</li>
+    <li><strong>Rent account</strong> — payment date, discount received, days late if overdue</li>
+    <li><strong>Rent ledger</strong> — up to 12 months of payment history</li>
+    <li><strong>Bill history</strong> — every utility bill raised against this tenant</li>
+  </ul>
+</div>
+<div class="callout callout-note"><span class="material-symbols-outlined">balance</span><div><strong>This sheet settles disputes.</strong> When a tenant queries a figure, open the record sheet rather than the edit form: it shows the stored discount, the exact date of settlement, and the days late as the system counted them.</div></div>

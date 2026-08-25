@@ -1,0 +1,289 @@
+<!-- ============================================================
+     PART III
+     ============================================================ -->
+<div class="part">
+  <span class="part-no">Part III</span>
+  <span class="part-name">Reporting &amp; Intelligence</span>
+  <span class="part-desc">Turning the day&rsquo;s records into the report the Mayor reads and the trail an auditor follows.</span>
+</div>
+
+<!-- ============================ CHAPTER 9 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">analytics</span></div>
+  <div>
+    <span class="chapter-num">Chapter 9</span>
+    <span class="chapter-title">Analytics &amp; Operations Report</span>
+  </div>
+  <div class="chapter-kicker">A formal seven-section report for the Municipal Mayor and the Market Board.</div>
+</div>
+
+<p>The Analytics module compiles a complete <strong>executive operations report</strong> from live records. It is not a dashboard with charts bolted on — it is a document, laid out for printing, with a masthead, a reference number and seven numbered sections in the order a board expects to read them.</p>
+
+<div class="ref-box">
+  <div class="ref-box-title"><span class="material-symbols-outlined">description</span> Report masthead</div>
+  <div class="kv">
+    <div><b>Seal</b> The Tanauan municipal seal, top left</div>
+    <div><b>Reference</b> <code>PMRMS-AR-YYYYMMDD</code>, generated from the date</div>
+    <div><b>Title</b> Public Market Operations Report</div>
+    <div><b>Timestamp</b> Date and time of generation, Philippine Standard Time</div>
+  </div>
+</div>
+
+<h3>9.1 Anatomy of the report</h3>
+<div class="figure">
+  <div class="figure-body plain">
+    <svg viewBox="0 0 720 226" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram of the seven numbered sections of the operations report and what each contains">
+      <g font-family="Inter,sans-serif">
+        <rect x="0" y="0" width="720" height="34" rx="6" fill="#243B8F"/>
+        <circle cx="22" cy="17" r="10" fill="#e2a63c"/>
+        <text x="42" y="15" font-size="9.4" font-weight="800" fill="#ffffff">PUBLIC MARKET OPERATIONS REPORT</text>
+        <text x="42" y="26" font-size="7.6" fill="#c8d3f2">Municipality of Tanauan, Leyte · Market Office</text>
+        <text x="712" y="15" font-size="8" font-weight="700" fill="#ffffff" text-anchor="end">PMRMS-AR-20260826</text>
+        <text x="712" y="26" font-size="7.4" fill="#c8d3f2" text-anchor="end">generated 26 Aug 2026, 02:47 PM PHT</text>
+
+        <g>
+          <rect x="0" y="42" width="720" height="24" rx="4" fill="#eff5ff" stroke="#bfd3f7"/>
+          <text x="12" y="58" font-size="9" font-weight="800" fill="#16307e">I</text>
+          <text x="34" y="58" font-size="9" font-weight="700" fill="#16307e">Executive Summary</text>
+          <text x="200" y="58" font-size="8.2" fill="#4b5468">Headline cards with progress meters — occupancy, tenancies, applications, collection efficiency, open violations</text>
+
+          <rect x="0" y="70" width="720" height="24" rx="4" fill="#f7f8fc" stroke="#dfe3ec"/>
+          <text x="12" y="86" font-size="9" font-weight="800" fill="#16307e">II</text>
+          <text x="34" y="86" font-size="9" font-weight="700" fill="#16307e">Stall Utilization</text>
+          <text x="200" y="86" font-size="8.2" fill="#4b5468">Stacked bar chart by section and status, plus a status table with counts and proportion bars</text>
+
+          <rect x="0" y="98" width="720" height="24" rx="4" fill="#eff5ff" stroke="#bfd3f7"/>
+          <text x="12" y="114" font-size="9" font-weight="800" fill="#16307e">III</text>
+          <text x="34" y="114" font-size="9" font-weight="700" fill="#16307e">Applicant Processing</text>
+          <text x="200" y="114" font-size="8.2" fill="#4b5468">Pipeline by status — pending, incomplete, no permit, approved, rejected — with filing shares</text>
+
+          <rect x="0" y="126" width="720" height="24" rx="4" fill="#f7f8fc" stroke="#dfe3ec"/>
+          <text x="12" y="142" font-size="9" font-weight="800" fill="#16307e">IV</text>
+          <text x="34" y="142" font-size="9" font-weight="700" fill="#16307e">Tenancy &amp; Rental Coverage</text>
+          <text x="200" y="142" font-size="8.2" fill="#4b5468">By section: total stalls, occupied, tenants, monthly rent roll, section occupancy percentage</text>
+
+          <rect x="0" y="154" width="720" height="24" rx="4" fill="#eff5ff" stroke="#bfd3f7"/>
+          <text x="12" y="170" font-size="9" font-weight="800" fill="#16307e">V</text>
+          <text x="34" y="170" font-size="9" font-weight="700" fill="#16307e">Utility Billing &amp; Collection</text>
+          <text x="200" y="170" font-size="8.2" fill="#4b5468">Consumption chart plus collection standing — billed, collected and outstanding for each utility</text>
+
+          <rect x="0" y="182" width="720" height="24" rx="4" fill="#f7f8fc" stroke="#dfe3ec"/>
+          <text x="12" y="198" font-size="9" font-weight="800" fill="#16307e">VI</text>
+          <text x="34" y="198" font-size="9" font-weight="700" fill="#16307e">Compliance &amp; Violations</text>
+          <text x="200" y="198" font-size="8.2" fill="#4b5468">Summary metrics and a table of recent citations with status badges</text>
+
+          <rect x="0" y="210" width="720" height="24" rx="4" fill="#eff5ff" stroke="#bfd3f7"/>
+          <text x="12" y="226" font-size="9" font-weight="800" fill="#16307e">VII</text>
+          <text x="34" y="226" font-size="9" font-weight="700" fill="#16307e">Logbook Activity</text>
+          <text x="200" y="226" font-size="8.2" fill="#4b5468">Operational logs broken down by type and share of all logbook entries</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 9.1 — The seven sections.</b> Sections I–IV answer &ldquo;is the market full and are the leases sound&rdquo;; V answers &ldquo;is the money coming in&rdquo;; VI–VII answer &ldquo;is the place compliant and is the office keeping its records&rdquo;.</div>
+</div>
+
+<h3>9.2 Reading each section</h3>
+<div class="grid-2">
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">summarize</span> I · Executive Summary</div><p>Five headline cards, each with a progress meter: <strong>Stall Occupancy Rate</strong>, <strong>Active Tenancies</strong>, <strong>Applications Pending</strong>, <strong>Collection Efficiency Rate</strong>, and <strong>Open Violations &amp; Demerit Points</strong>. If the board reads one page, this is it.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">bar_chart</span> II · Stall Utilization</div><p>The same stacked chart as Figure 3.2, backed by a table giving exact counts per status with proportion bars. Use this to justify a request for stall rehabilitation.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">how_to_reg</span> III · Applicant Processing</div><p>Shows where applications are getting stuck. A large <em>Incomplete</em> share is a documentation problem; a large <em>Pending Review</em> share is an officer-time problem.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">apartment</span> IV · Tenancy &amp; Rental Coverage</div><p>Section-by-section occupancy and monthly rent roll. This is the section that shows which part of the market is carrying the revenue.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">payments</span> V · Utility Billing &amp; Collection</div><p>Electricity and water consumption, amounts billed, amounts collected and the outstanding balance. Collection efficiency in section I is derived from these figures.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">gavel</span> VI–VII · Compliance &amp; Activity</div><p>Recent citations with their status, then a breakdown of logbook entries by type — evidence that inspections and collections are actually being recorded, not just performed.</p></div>
+</div>
+
+<h3>9.3 Exporting &amp; presenting</h3>
+<div class="grid-2">
+  <div>
+    <p><code>Export Report</code> downloads a complete JSON file (<code>civic-market-core-report.json</code>) holding every figure behind the report. Use it to archive the month, to hand data to another office, or to build a chart the report does not include.</p>
+    <p>To present the report, print it directly (§2.6). Because it is laid out as a document, the printed output needs no reformatting.</p>
+  </div>
+  <div>
+    <div class="callout callout-note" style="margin-top:0"><span class="material-symbols-outlined">bolt</span><div><strong>The report is always live.</strong> There is no &ldquo;generate&rdquo; step and no stored version. Opening Analytics recompiles it from current records, so the reference number is the date you opened it — print or export on the day the board meets.</div></div>
+    <div class="callout callout-warning" style="margin-bottom:0"><span class="material-symbols-outlined">warning</span><div>Because it is live, a report printed before month-end collection differs from one printed after. Note the timestamp in the masthead when you file a copy.</div></div>
+  </div>
+</div>
+
+<!-- ============================ CHAPTER 10 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">menu_book</span></div>
+  <div>
+    <span class="chapter-num">Chapter 10</span>
+    <span class="chapter-title">Logbook (Audit Trail)</span>
+  </div>
+  <div class="chapter-kicker">The record of what was done, by which module, and when — written mostly without you.</div>
+</div>
+
+<p>The Logbook is both the daily activity ledger and the audit trail. Officers write inspections, incidents and announcements into it by hand; the system writes everything else into it automatically.</p>
+
+<h3>10.1 Log types</h3>
+<table class="compact">
+  <thead><tr><th style="width:16%">Type</th><th style="width:12%">Colour</th><th style="width:36%">Used for</th><th>Typical source</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Inspection</strong></td><td><span class="badge badge-blue">Blue</span></td><td>Stall inspections and permit checks</td><td>Mostly entered by hand by the Market Inspector</td></tr>
+    <tr><td><strong>Incident</strong></td><td><span class="badge badge-red">Red</span></td><td>Security incidents, complaints, disturbances</td><td>Entered by hand</td></tr>
+    <tr><td><strong>Maintenance</strong></td><td><span class="badge badge-amber">Amber</span></td><td>Repairs, cleaning, facility works</td><td>Entered by hand, or written when a stall moves to <em>Maintenance</em></td></tr>
+    <tr><td><strong>Collection</strong></td><td><span class="badge badge-green">Green</span></td><td>Rent and utility collections</td><td>Written automatically on every rent tick and bill payment</td></tr>
+    <tr><td><strong>Announcement</strong></td><td><span class="badge badge-gray">Gray</span></td><td>Public notices, schedule changes, advisories</td><td>Entered by hand</td></tr>
+  </tbody>
+</table>
+
+<h3>10.2 What the system logs by itself</h3>
+<p>Every record-changing action writes a structured, timestamped entry. You never have to remember to log these:</p>
+<div class="cols-2">
+  <ul>
+    <li>Adding, editing or deleting a stall</li>
+    <li>Creating, editing or releasing a tenant</li>
+    <li>Ticking or unticking a month&rsquo;s rent</li>
+    <li>Approving or rejecting an applicant</li>
+    <li>Assigning a stall to an approved applicant</li>
+    <li>Issuing, editing, paying or deleting a utility bill</li>
+    <li>Recording, amending or resolving a violation</li>
+    <li>Appointing, transferring or removing an officer</li>
+    <li>Issuing a stall / space verification slip</li>
+    <li>Importing, exporting or resetting the database</li>
+  </ul>
+</div>
+<div class="callout callout-note"><span class="material-symbols-outlined">history</span><div><strong>Rent entries name the figures.</strong> A collection entry records the tenant, the stall, the month, the amount collected and — where it applied — the 20% discount and the date it was settled on. That single line is usually enough to answer a query without opening the tenant record.</div></div>
+
+<h3>10.3 Manual entries, filtering &amp; export</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">add</span>Adding an entry by hand</h4>
+    <div class="steps" style="margin-top:4px">
+      <div class="step"><div class="step-title">Click <code>+ New Entry</code></div>Available in the Logbook, and as a quick action on the Dashboard top bar.</div>
+      <div class="step"><div class="step-title">Choose type and write the detail</div>Pick Inspection, Incident, Maintenance, Collection or Announcement, then describe what happened.</div>
+      <div class="step"><div class="step-title">Save</div>Stamped with the current Philippine Standard Time and added to the ledger.</div>
+    </div>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">filter_alt</span>Finding and exporting</h4>
+    <ul>
+      <li><strong>Date filter</strong> — entries recorded on a chosen date</li>
+      <li><strong>Type filter</strong> — one of the five log types</li>
+      <li><strong>Search</strong> — matches both the detail text and the type</li>
+      <li><code>Export Log</code> — all entries as CSV</li>
+      <li><code>Print List</code> — the filtered entries as a register sheet</li>
+    </ul>
+    <div class="callout callout-danger" style="margin-bottom:0"><span class="material-symbols-outlined">error</span><div><strong>Deleting a log entry breaks the trail.</strong> The system warns you because the Logbook is the office&rsquo;s audit record. Delete only a genuine mis-entry, and record why in a replacement entry.</div></div>
+  </div>
+</div>
+
+<!-- ============================ CHAPTER 11 ============================ -->
+<div class="chapter-header">
+  <div class="chapter-icon"><span class="material-symbols-outlined">forum</span></div>
+  <div>
+    <span class="chapter-num">Chapter 11</span>
+    <span class="chapter-title">Market Assistant</span>
+  </div>
+  <div class="chapter-kicker">Ask a question in plain language. The figures still come from the records.</div>
+</div>
+
+<p>The Market Assistant lets an officer ask about rent, stalls, bills, tenants and violations without building a filter. It runs entirely on the workstation — there is no online service behind it.</p>
+
+<h3>11.1 How the two-tier engine works</h3>
+<div class="figure">
+  <div class="figure-body">
+    <svg viewBox="0 0 720 226" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram of the assistant's two tiers: keyword matching first, optional local model second, with a verification gate before any answer is shown">
+      <defs>
+        <marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+        </marker>
+      </defs>
+      <g font-family="Inter,sans-serif" text-anchor="middle">
+        <rect x="0" y="88" width="112" height="44" rx="8" fill="#eef1f6" stroke="#c9cfdd"/>
+        <text x="56" y="107" font-size="10" font-weight="800" fill="#3f4a5f">Your question</text>
+        <text x="56" y="120" font-size="7.8" fill="#3f4a5f">plain language</text>
+
+        <rect x="148" y="20" width="180" height="56" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.4"/>
+        <text x="238" y="38" font-size="8" font-weight="800" fill="#16307e" letter-spacing="1">TIER 1</text>
+        <text x="238" y="53" font-size="10" font-weight="800" fill="#16307e">Keyword matching</text>
+        <text x="238" y="66" font-size="7.8" fill="#16307e">12 known market intents</text>
+
+        <rect x="148" y="144" width="180" height="56" rx="8" fill="#f7f8fc" stroke="#8b93a5" stroke-width="1.4" stroke-dasharray="4 3"/>
+        <text x="238" y="162" font-size="8" font-weight="800" fill="#4b5468" letter-spacing="1">TIER 2 · OPTIONAL</text>
+        <text x="238" y="177" font-size="10" font-weight="800" fill="#4b5468">Local AI model</text>
+        <text x="238" y="190" font-size="7.8" fill="#4b5468">classifies intent, rephrases</text>
+
+        <rect x="366" y="88" width="150" height="44" rx="8" fill="#243B8F"/>
+        <text x="441" y="107" font-size="10" font-weight="800" fill="#ffffff">Computed answer</text>
+        <text x="441" y="120" font-size="7.8" fill="#c8d3f2">figures from the database</text>
+
+        <path d="M556,80 L636,110 L556,140 L476,110 Z" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+        <text x="556" y="107" font-size="8.6" font-weight="800" fill="#0b5030">Figures</text>
+        <text x="556" y="119" font-size="8.6" font-weight="800" fill="#0b5030">match?</text>
+
+        <rect x="620" y="28" width="100" height="42" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.4"/>
+        <text x="670" y="46" font-size="9" font-weight="800" fill="#0b5030">Show model</text>
+        <text x="670" y="58" font-size="9" font-weight="800" fill="#0b5030">wording</text>
+
+        <rect x="620" y="152" width="100" height="42" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.4"/>
+        <text x="670" y="170" font-size="9" font-weight="800" fill="#8a4a04">Discard it,</text>
+        <text x="670" y="182" font-size="9" font-weight="800" fill="#8a4a04">show the record</text>
+      </g>
+      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar6)">
+        <path d="M112,102 H130 V48 H144"/>
+        <path d="M112,118 H130 V172 H144" stroke-dasharray="4 3"/>
+        <path d="M328,48 H348 V104 H362"/>
+        <path d="M328,172 H348 V120 H362" stroke-dasharray="4 3"/>
+        <line x1="516" y1="110" x2="474" y2="110"/>
+        <path d="M596,92 H612 V54 H616"/>
+        <path d="M596,128 H612 V172 H616"/>
+      </g>
+      <g font-family="Inter,sans-serif" font-size="7.8" fill="#4b5468">
+        <text x="126" y="44" text-anchor="end">strong match</text>
+        <text x="126" y="186" text-anchor="end">no clear match</text>
+        <text x="604" y="46">yes</text>
+        <text x="604" y="192">no</text>
+      </g>
+      <text x="0" y="218" font-family="Inter,sans-serif" font-size="8" fill="#8b93a5">Tier 2 is skipped entirely when no model is installed — the assistant then works in records-only mode and answers exactly as well.</text>
+    </svg>
+  </div>
+  <div class="figure-cap"><b>Figure 11.1 — The verification gate.</b> The model never supplies a number. It may only re-word an answer the database already computed, and its wording is thrown away if any figure or name in it fails to match the computed facts.</div>
+</div>
+
+<div class="callout callout-tip"><span class="material-symbols-outlined">verified</span><div><strong>Data accuracy guarantee.</strong> Amounts, counts and names are always produced by the system&rsquo;s own business logic — never generated by a language model. If the model&rsquo;s phrasing disagrees with the computed facts on any figure, the phrasing is discarded and the verified record text is shown instead.</div></div>
+
+<h3>11.2 What you can ask</h3>
+<table class="compact">
+  <thead><tr><th style="width:22%">Intent</th><th style="width:39%">Ask it like this</th><th>Answers with</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Overdue rent</strong></td><td>&ldquo;Who has overdue rent?&rdquo; · &ldquo;List overdue tenants&rdquo;</td><td>Named tenants, stalls and days late</td></tr>
+    <tr><td><strong>Unpaid rent</strong></td><td>&ldquo;Who hasn&rsquo;t paid rent this month?&rdquo;</td><td>Uncollected tenants for the current period</td></tr>
+    <tr><td><strong>Collected rent</strong></td><td>&ldquo;How much rent has been collected?&rdquo;</td><td>Total collected, net of discounts</td></tr>
+    <tr><td><strong>Tenant payment</strong></td><td>&ldquo;Has Maria Santos paid her rent?&rdquo;</td><td>That tenant&rsquo;s standing for the period</td></tr>
+    <tr><td><strong>Total earnings</strong></td><td>&ldquo;What are total market earnings?&rdquo;</td><td>Rent plus utilities collected</td></tr>
+    <tr><td><strong>Vacant stalls</strong></td><td>&ldquo;Which stalls are available?&rdquo;</td><td>Genuinely vacant stalls by section</td></tr>
+    <tr><td><strong>Stall status</strong></td><td>&ldquo;What&rsquo;s the occupancy breakdown?&rdquo;</td><td>Counts per status across the register</td></tr>
+    <tr><td><strong>Unpaid utilities</strong></td><td>&ldquo;Are there unpaid electricity bills?&rdquo;</td><td>Outstanding bills and their total</td></tr>
+    <tr><td><strong>Meter lookup</strong></td><td>&ldquo;What&rsquo;s the meter number for Stall MS-01?&rdquo;</td><td>Electricity and water meter numbers</td></tr>
+    <tr><td><strong>Tenant lookup</strong></td><td>&ldquo;Show me details for Juan Dela Cruz&rdquo;</td><td>The tenant&rsquo;s particulars and standing</td></tr>
+    <tr><td><strong>Pending applicants</strong></td><td>&ldquo;How many pending applications?&rdquo;</td><td>Count and who is waiting</td></tr>
+    <tr><td><strong>Open violations</strong></td><td>&ldquo;Any open violations?&rdquo;</td><td>Unresolved citations and demerit points</td></tr>
+  </tbody>
+</table>
+
+<h3>11.3 Reading an answer</h3>
+<div class="grid-2">
+  <div>
+    <h4><span class="material-symbols-outlined">label</span>Source badges</h4>
+    <p>Every answer states where its wording came from:</p>
+    <ul>
+      <li><span class="badge badge-green">From the records</span> — computed directly from the database</li>
+      <li><span class="badge badge-blue">Worded by model · figures verified</span> — the model phrased it, and every figure passed the check</li>
+      <li><span class="badge badge-amber">Model wording discarded</span> — the phrasing failed the check; you are seeing the raw record text</li>
+    </ul>
+    <p>All three are equally trustworthy on the numbers. The badge tells you about the <em>prose</em>, not the data.</p>
+  </div>
+  <div>
+    <h4><span class="material-symbols-outlined">touch_app</span>Working with the assistant</h4>
+    <ul>
+      <li><strong>Suggestion chips</strong> — one tap for the questions asked most often</li>
+      <li><strong>Composer bar</strong> — type any question in natural language</li>
+      <li><strong>Navigation buttons</strong> — answers offer <code>Open Tenants</code>, <code>Open Billing</code> and similar, so you can act on what you just read</li>
+      <li><strong>Model status</strong> — the header badge shows <span class="material-symbols-outlined icon-inline">neurology</span> a model is active, or <span class="material-symbols-outlined icon-inline">database</span> records-only mode</li>
+    </ul>
+    <div class="callout callout-note" style="margin-bottom:0"><span class="material-symbols-outlined">info</span><div>Records-only mode is not a degraded mode. Every one of the twelve intents above is answered identically without a model.</div></div>
+  </div>
+</div>
