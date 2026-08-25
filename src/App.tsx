@@ -14,6 +14,7 @@ type ModuleKey =
   | 'violations'
   | 'analytics'
   | 'logbook'
+  | 'officers'
   | 'assistant'
   | 'settings'
   | 'support';
@@ -49,6 +50,34 @@ type PrintReceipt = { bill: UtilityBill; label: string };
    different bills tiled onto the same sheets. */
 type PrintRequest = { bills: UtilityBill[]; single: boolean };
 
+/* ---------- Stall / space verification ----------
+
+   The slip the market office hands a stallholder to take to the licensing
+   office. It is what says the stall is really theirs, that the rent and the
+   utilities are settled, and that nothing is outstanding against it — the
+   licensing office will not issue or renew a business permit without one.
+
+   Whether it is a first permit or a renewal is the same slip with a different
+   set of boxes ticked, which is how the paper pad has always worked. */
+type VerificationPurpose = 'Issuance' | 'Renewal';
+
+type VerificationSlip = {
+  /* The number on the leaf. Its whole point is that a slip presented at the
+     licensing office can be traced back to the one this office issued. */
+  controlNo: string;
+  purpose: VerificationPurpose;
+  issuedTo: string;
+  section: string;
+  stallNo: string;
+  /* Which of the checklist lines were ticked, by their exact printed wording. */
+  checked: string[];
+  /* The write-in on the "Others" line. */
+  others: string;
+  dateIssued: string;
+  validUntil: string;
+  issuedBy: string;
+};
+
 /* A whole register laid out for paper — every row a page is showing, not the
    ten of them on screen. The active filters carry into the print, so a single
    market section is printed by filtering to it first, which is how the office
@@ -64,11 +93,35 @@ type RegisterJob = {
 type ModalType =
   | null
   | 'add-stall' | 'add-applicant' | 'add-tenant' | 'add-log' | 'assign-stall' | 'add-violation'
+  | 'add-officer'
   | 'view-stall' | 'view-applicant' | 'view-tenant' | 'view-bill' | 'view-violation'
-  | 'edit-tenant' | 'edit-stall' | 'edit-applicant' | 'edit-violation'
+  | 'view-officer'
+  | 'edit-tenant' | 'edit-stall' | 'edit-applicant' | 'edit-violation' | 'edit-officer'
   | 'confirm-logout' | 'confirm-reset' | 'confirm-delete-bill' | 'confirm-delete-stall'
   | 'confirm-delete-tenant' | 'confirm-delete-applicant' | 'confirm-delete-log'
-  | 'confirm-delete-violation';
+  | 'confirm-delete-violation' | 'confirm-delete-officer';
+
+/* ---------- The market office's own people ----------
+
+   An officer is a seat on the organizational board, not a user account. The
+   board is drawn from `reportsTo`, which holds another officer's id, so the
+   office arranges its own hierarchy rather than the app assuming one. A seat
+   with no name on it is a vacancy the board still has to show. */
+type OfficerStatus = 'Active' | 'On Leave' | 'Vacant';
+
+type Officer = {
+  id: string;
+  name: string;
+  position: string;
+  office: string;
+  /* Another officer's id, or '' for a seat at the head of the board. */
+  reportsTo: string;
+  phone: string;
+  email: string;
+  status: OfficerStatus;
+  /* When this person took the seat, as YYYY-MM-DD. Blank when not recorded. */
+  appointed: string;
+};
 
 type Applicant = {
   id: string;
@@ -99,8 +152,14 @@ type RentPayment = {
   period: string;
   paidOn: string;
   /* What was actually collected, kept as its own figure so a later change to
-     the monthly rent never rewrites what a past month was paid. */
+     the monthly rent never rewrites what a past month was paid. Already net of
+     `discount` — this is the peso figure that went in the drawer. */
   amount: number;
+  /* The early-payment discount taken off, if the month was settled on or
+     before its due date. Held separately so a past payment can still show why
+     it came to less than the monthly rent, and so changing the discount rate
+     later never rewrites what an earlier month was actually given. */
+  discount: number;
 };
 
 /* The meters serving a tenant's stall, by utility. The number is a property of
@@ -167,7 +226,12 @@ type UtilityBill = {
   currentReading: number;
   consumption: number;
   rate: number;
-  fixedCharge: number;
+  /* `amount` is the usage charge alone (consumption × rate) — the market
+     dropped the fixed/service charge, so it no longer has a second component
+     to add in. A late surcharge is deliberately not folded in here: it is not
+     something a bill is ever "worth" in the record, only something a receipt
+     picks up at the moment it happens to be printed past the due date. See
+     `surchargeAmount`. */
   amount: number;
   status: BillStatus;
   dateIssued: string;
@@ -230,6 +294,59 @@ const RECEIPTS_PER_SHEET = 4;
    The office keeps its own copy of anything a tenant is handed. */
 const RECEIPT_COPY_LABELS = ["Tenant's Copy", 'Market Office Copy', "Treasurer's Copy", 'File Copy'];
 
+/* Print-preview zoom. FIT is the scale at which a whole A4 sheet sits inside
+   the dialog; 1 is the sheet at its true printed size, which is what the
+   Actual size button snaps to for checking small print on a receipt. */
+const FIT_ZOOM = 0.62;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2;
+
+/* Four verification slips to an A4 sheet as well, cut apart into a pad. */
+const SLIPS_PER_SHEET = 4;
+
+/* Who last issued a verification slip, kept the same way the receipt printer's
+   name is — typed once a shift rather than once a slip. */
+const verifiedByKey = 'pmrms-verified-by';
+
+/* The checklist, in the order the printed pad has it. The wording is the
+   office's own and is reproduced exactly, because a licensing clerk reads the
+   slip against the pad they already know — the one correction is "Clearance",
+   which the printed pad has misspelled. */
+const VERIFICATION_CHECKLIST = [
+  'Latest Business Permit (Original)',
+  'DTI Registration',
+  'OR of Last Monthly Rental Paid',
+  'OR of Last Electric/Water Bill Paid',
+  "Meat Inspector's Clearance",
+  'Existing Lessee',
+  'Inspection of Stall',
+  'New Lessee',
+];
+
+/* What each errand ticks by default. A renewal is an existing lessee proving
+   the year just past was paid up; a first issuance is a new lessee whose stall
+   has to be inspected before anything is signed. Meat clearance is left to the
+   counter either way — it only applies to the meat and poultry section. */
+const VERIFICATION_DEFAULTS: Record<VerificationPurpose, string[]> = {
+  Renewal: [
+    'Latest Business Permit (Original)',
+    'OR of Last Monthly Rental Paid',
+    'OR of Last Electric/Water Bill Paid',
+    'Existing Lessee',
+  ],
+  Issuance: [
+    'DTI Registration',
+    'OR of Last Monthly Rental Paid',
+    'Inspection of Stall',
+    'New Lessee',
+  ],
+};
+
+/* A slip is good for one week. Long enough to get to the licensing office,
+   short enough that the standing it certifies cannot have gone stale — a stall
+   can fall behind on rent in a month, so a month-old slip proves nothing. */
+const VERIFICATION_VALID_DAYS = 7;
+
 /* ---------- Philippine time ----------
 
    Every date the system reasons about is Philippine Standard Time, whatever
@@ -279,20 +396,59 @@ const DEFAULT_RENT_DUE_DAY = 5;
 /* Every month has a 28th, so a due day is never dragged forward in February. */
 const MAX_RENT_DUE_DAY = 28;
 
+/* Settling a month's rent on or before its due date earns this much off, as a
+   percentage of the monthly rent — the market's incentive for paying early.
+   Unlike the utility surcharge, this IS recorded on the payment: a discount
+   changes what was actually collected, so the ledger has to hold it. */
+const EARLY_RENT_DISCOUNT_PCT = 20;
+
+/* What the office collects before an application is complete. The contract of
+   lease is last because it is last in fact: Title VII, Section 31 has the
+   successful applicant sign it, so the box is ticked once the signed copy is
+   back over the counter, after the rest of the papers are in. Approving an
+   application does not wait on it — Approved and Rejected are set by hand and
+   `deriveStatus` leaves them alone. */
 const REQUIREMENTS = [
   'Business Permit',
   'Barangay Clearance',
   'Community Tax Certificate (Cedula)',
   'Health / Sanitary Permit',
   '2x2 ID Photo',
+  'Signed Contract of Lease',
 ];
 
 const UTILITY_TYPES: UtilityType[] = ['Electricity', 'Water'];
 
-const UTILITY_PRESETS: Record<UtilityType, { rate: number; fixedCharge: number; unit: string; icon: string }> = {
-  Electricity: { rate: 11.5, fixedCharge: 150, unit: 'kWh', icon: 'bolt' },
-  Water: { rate: 25, fixedCharge: 80, unit: 'm³', icon: 'water_drop' },
+const UTILITY_PRESETS: Record<UtilityType, { rate: number; unit: string; icon: string }> = {
+  Electricity: { rate: 11.5, unit: 'kWh', icon: 'bolt' },
+  Water: { rate: 25, unit: 'cu.m', icon: 'water_drop' },
 };
+
+/* Late-payment surcharge, as a percentage of the bill — the market's fee
+   schedule penalizes an overdue electricity connection differently from an
+   overdue water one. Kept as the plain percentage (not the 0.0335 fraction)
+   so a receipt can print "3.35%" straight off the constant with no rounding
+   artifact from multiplying it back out. See `surchargeAmount`. */
+const SURCHARGE_RATES: Record<UtilityType, number> = {
+  Electricity: 3.35,
+  Water: 10,
+};
+
+/* ---------- The market office ---------- */
+
+const OFFICER_STATUSES: OfficerStatus[] = ['Active', 'On Leave', 'Vacant'];
+/* The offices a market seat can belong to. Free text is allowed on the form —
+   this list is only what the picker offers first. */
+const OFFICE_UNITS = [
+  'Office of the Municipal Mayor',
+  'Market Office',
+  'Market Board',
+  'Municipal Treasurer’s Office',
+  'Business Permit & Licensing Office',
+  'Municipal Health Office',
+  'Municipal Engineering Office',
+  'Sangguniang Bayan',
+];
 
 /* ============================================================
    Initial Data
@@ -759,7 +915,29 @@ const initialState = {
   ] satisfies Stall[],
   violations: [] as Violation[],
 
+  /* The market office's own board, seeded as the seats rather than the people
+     — the office types in who holds each one. A seat stays on the board while
+     it is vacant, because the post exists whether or not anybody holds it. */
+  officers: [
+    { id: 'OFC-001', name: '', position: 'Municipal Mayor', office: 'Office of the Municipal Mayor', reportsTo: '', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-002', name: '', position: 'Market Board Chairperson', office: 'Market Board', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-003', name: '', position: 'Market Supervisor', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-004', name: '', position: 'Assistant Market Supervisor', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-005', name: '', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-006', name: '', position: 'Market Inspector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-007', name: '', position: 'Records Officer', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-008', name: '', position: 'Sanitary Inspector', office: 'Municipal Health Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-009', name: '', position: 'Licensing Officer', office: 'Business Permit & Licensing Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-010', name: '', position: 'Market Treasurer / Cashier', office: 'Municipal Treasurer’s Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+  ] satisfies Officer[],
+
   utilities: [] as UtilityBill[],
+
+  /* Every stall/space verification slip this office has issued. A slip is a
+     controlled document — the licensing office may ring up to ask whether
+     number 042 is really ours and who it was written for — so the register is
+     kept rather than the number simply being burned off a counter. */
+  verifications: [] as VerificationSlip[],
 
   logs: [] as LogEntry[],
   activities: [] as ActivityItem[],
@@ -780,6 +958,7 @@ const navigation: Array<{ key: ModuleKey; label: string; icon: string }> = [
   { key: 'violations', label: 'Violations', icon: 'gavel' },
   { key: 'analytics', label: 'Analytics', icon: 'analytics' },
   { key: 'logbook', label: 'Logbook', icon: 'menu_book' },
+  { key: 'officers', label: 'Officers', icon: 'account_tree' },
   { key: 'assistant', label: 'Assistant', icon: 'forum' },
 ];
 
@@ -792,12 +971,13 @@ const searchPlaceholders: Record<ModuleKey, string> = {
   violations: 'Search violation ID, tenant, or issue...',
   analytics: 'Search is not used on Analytics',
   logbook: 'Search log details or type...',
+  officers: 'Search officer name, position, or office...',
   assistant: 'Search is not used on the Assistant',
   settings: 'Search is not used on Settings',
   support: 'Search is not used on Support',
 };
 
-const searchableModules: ModuleKey[] = ['dashboard', 'stalls', 'tenants', 'applicants', 'utilities', 'violations', 'logbook'];
+const searchableModules: ModuleKey[] = ['dashboard', 'stalls', 'tenants', 'applicants', 'utilities', 'violations', 'logbook', 'officers'];
 
 /* ============================================================
    Helpers
@@ -849,10 +1029,15 @@ function normalizeTenant(raw: Tenant): Tenant {
       const period = /^\d{4}-\d{2}$/.test(key) ? key : text(value?.period).slice(0, 7);
       if (!/^\d{4}-\d{2}$/.test(period)) return;
       const amount = Number(value?.amount);
+      const discount = Number(value?.discount);
       rentPayments[period] = {
         period,
         paidOn: typeof value?.paidOn === 'string' ? value.paidOn : '',
         amount: Number.isFinite(amount) ? amount : Number(raw?.rent) || 0,
+        /* A payment recorded before the discount existed keeps a discount of
+           zero. It is not back-dated into one: that month really was collected
+           in full, and inventing a discount now would falsify the ledger. */
+        discount: Number.isFinite(discount) && discount > 0 ? discount : 0,
       };
     });
   }
@@ -875,7 +1060,12 @@ function normalizeTenant(raw: Tenant): Tenant {
 }
 
 /* Bills used to carry only the month they covered. An older bill keeps that
-   month and is read as running from its first day to its last. */
+   month and is read as running from its first day to its last.
+
+   Bills also used to carry a fixed/service charge, folded into `amount`
+   before the market dropped that charge. An old bill's `amount` is left
+   exactly as recorded — it was genuinely billed at that figure — and any
+   leftover `fixedCharge` key from before is simply never read again. */
 function normalizeBill(raw: UtilityBill): UtilityBill {
   const period = typeof raw?.period === 'string' && raw.period ? raw.period.slice(0, 7) : currentPeriod();
   const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -897,6 +1087,83 @@ function normalizeStall(s: Stall): Stall {
   };
 }
 
+/* An officer read back from storage or an imported backup. Every field is
+   forced to the shape the rest of the app relies on: a bad `reportsTo` would
+   otherwise drop a seat off the board, and an unknown status would fall
+   through every badge and filter. `reportsTo` is only checked for shape here;
+   it is resolved against the other officers in `linkOfficers`, which is the
+   only place that can see the whole board at once. */
+function normalizeOfficer(raw: Officer): Officer {
+  const loose = (raw ?? {}) as Partial<Officer>;
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const name = str(loose.name);
+  const status = OFFICER_STATUSES.includes(loose.status as OfficerStatus) ? (loose.status as OfficerStatus) : 'Active';
+  return {
+    id: str(loose.id),
+    name,
+    position: str(loose.position),
+    office: str(loose.office),
+    reportsTo: str(loose.reportsTo),
+    phone: digitsOnly(str(loose.phone)),
+    email: str(loose.email),
+    /* Vacancy is not a status somebody can be in — it is what a seat with
+       nobody in it is. Naming a seat makes it Active unless the record says
+       the holder is away; emptying it makes it vacant again. */
+    status: name ? (status === 'Vacant' ? 'Active' : status) : 'Vacant',
+    appointed: /^\d{4}-\d{2}-\d{2}$/.test(str(loose.appointed)) ? str(loose.appointed) : '',
+  };
+}
+
+/* Makes the board a tree that can actually be walked. Four things can go
+   wrong with `reportsTo` and all four are repaired here rather than left for
+   the renderer to trip over:
+
+     - a seat reporting to an id no longer on the board (its superior was
+       deleted) is lifted to the head of the board;
+     - a seat reporting to itself is lifted the same way;
+     - a cycle — A under B, B under A — is cut at the seats that are actually
+       in it, and only those. A seat that merely reports into a cycle keeps
+       its superior, because once the cycle is cut that link is sound again;
+     - a seat with a blank or duplicated id is dropped, because two seats
+       sharing an id make every lookup in the module ambiguous.
+
+   The result is always a forest: every seat is reachable from some head. */
+function linkOfficers(list: Officer[]): Officer[] {
+  const seenIds = new Set<string>();
+  const board: Officer[] = [];
+  for (const officer of list) {
+    if (!officer.id || seenIds.has(officer.id)) continue;
+    seenIds.add(officer.id);
+    board.push({ ...officer });
+  }
+  const byId = new Map(board.map((o) => [o.id, o]));
+
+  // Self-references and superiors that are not on the board.
+  for (const officer of board) {
+    if (officer.reportsTo && (officer.reportsTo === officer.id || !byId.has(officer.reportsTo))) {
+      officer.reportsTo = '';
+    }
+  }
+
+  /* Cut only the seats that close a cycle. Walking up from a seat and
+     arriving back at that same seat is what says it is in one; meeting some
+     other seat twice means the loop is further up, and whichever seat closes
+     it will be cut when the walk reaches it. Links already cut are visible to
+     later walks, so one pass settles the whole board. */
+  for (const officer of board) {
+    const walked = new Set<string>();
+    let cursor = officer.reportsTo ? byId.get(officer.reportsTo) : undefined;
+    while (cursor) {
+      if (cursor.id === officer.id) { officer.reportsTo = ''; break; }
+      if (walked.has(cursor.id)) break;
+      walked.add(cursor.id);
+      cursor = cursor.reportsTo ? byId.get(cursor.reportsTo) : undefined;
+    }
+  }
+
+  return board;
+}
+
 function mergeState(input: unknown): AppState {
   const parsed = (input && typeof input === 'object' ? input : {}) as Partial<AppState>;
   const pick = <K extends keyof AppState>(key: K): AppState[K] =>
@@ -904,6 +1171,7 @@ function mergeState(input: unknown): AppState {
   return {
     applicants: pick('applicants').map(normalizeApplicant),
     tenants: pick('tenants').map(normalizeTenant),
+    officers: linkOfficers(pick('officers').map(normalizeOfficer)),
     logs: pick('logs').map((l) => ({ ...l, date: typeof l?.date === 'string' ? l.date : '' })),
     activities: pick('activities').slice(0, MAX_ACTIVITIES),
     stalls: pick('stalls').map(normalizeStall),
@@ -915,6 +1183,11 @@ function mergeState(input: unknown): AppState {
       notes: typeof v?.notes === 'string' ? v.notes : '',
     })),
     utilities: pick('utilities').map(normalizeBill),
+    verifications: pick('verifications').map((v) => ({
+      ...v,
+      checked: Array.isArray(v?.checked) ? v.checked : [],
+      others: typeof v?.others === 'string' ? v.others : '',
+    })),
   };
 }
 
@@ -1111,15 +1384,32 @@ function resetIdCounters() {
   try { localStorage.removeItem(idCounterKey); } catch { /* storage unavailable — max(existing) still applies */ }
 }
 
-function nextId(prefix: string, existingIds: string[]) {
+/* The numbers that would be handed out next, without handing them out. The
+   verification preview needs this: the slip on screen has to show the control
+   number that will actually print, but a preview the officer backs out of must
+   not tear a number off the pad. Nothing is claimed until it prints. */
+function peekIds(prefix: string, existingIds: string[], count: number) {
   const nums = existingIds.map((id) => parseInt(id.replace(/\D/g, ''), 10)).filter((n) => !isNaN(n));
   const maxExisting = nums.length > 0 ? Math.max(...nums) : 0;
   const counters = readIdCounters();
   const previous = typeof counters[prefix] === 'number' ? counters[prefix] : 0;
-  const next = Math.max(maxExisting, previous) + 1;
-  counters[prefix] = next;
+  const base = Math.max(maxExisting, previous);
+  return Array.from({ length: count }, (_, i) => `${prefix}-${String(base + i + 1).padStart(3, '0')}`);
+}
+
+/* Takes a run of numbers and moves the counter past them, so a sheet of four
+   slips claims four numbers in one go and the next sheet starts after them. */
+function claimIds(prefix: string, existingIds: string[], count: number) {
+  const ids = peekIds(prefix, existingIds, count);
+  if (ids.length === 0) return ids;
+  const counters = readIdCounters();
+  counters[prefix] = parseInt(ids[ids.length - 1].replace(/\D/g, ''), 10);
   try { localStorage.setItem(idCounterKey, JSON.stringify(counters)); } catch { /* falls back to max(existing) next time */ }
-  return `${prefix}-${String(next).padStart(3, '0')}`;
+  return ids;
+}
+
+function nextId(prefix: string, existingIds: string[]) {
+  return claimIds(prefix, existingIds, 1)[0];
 }
 
 /* ---------- Graph data ---------- */
@@ -1241,6 +1531,28 @@ function rentPaymentFor(tenant: Tenant, period: string): RentPayment | undefined
   return tenant.rentPayments[period];
 }
 
+/* Whether a month settled on `paidOn` qualifies for the early-payment
+   discount. "Early" is on or before the due date — paying on the due date
+   itself still counts, which is how the office has always read it. */
+function qualifiesForRentDiscount(tenant: Tenant, period: string, paidOn: string) {
+  return !!paidOn && paidOn <= rentDueIso(tenant, period);
+}
+
+/* What the discount comes to for this tenant's monthly rent. Rounded to
+   centavos so the ledger never carries a fraction it cannot collect. */
+function rentDiscountAmount(rent: number) {
+  return Math.round(rent * (EARLY_RENT_DISCOUNT_PCT / 100) * 100) / 100;
+}
+
+/* What a month would cost this tenant if it were settled today — used by the
+   register and the tenant sheet to show the incentive while it is still
+   available, before anything is recorded. */
+function rentQuoteToday(tenant: Tenant, period: string) {
+  const early = qualifiesForRentDiscount(tenant, period, todayIso());
+  const discount = early ? rentDiscountAmount(tenant.rent) : 0;
+  return { early, discount, payable: Math.round((tenant.rent - discount) * 100) / 100 };
+}
+
 /* Unpaid rent turns overdue on its own the day after it falls due — nothing has
    to be run, clicked or rolled over for the register to go red. */
 function rentStatusOf(tenant: Tenant, period: string): RentStatus {
@@ -1275,10 +1587,18 @@ function rentRollFor(tenants: Tenant[], period: string) {
   const due = tenants.reduce((s, t) => s + t.rent, 0);
   const paid = tenants.filter((t) => rentStatusOf(t, period) === 'Paid');
   const collected = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.amount ?? t.rent), 0);
+  const discounted = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.discount ?? 0), 0);
   return {
     due,
     collected,
-    outstanding: Math.max(0, due - collected),
+    /* Total early-payment discount given this month — the gap between the rent
+       roll and the cash, which is otherwise unexplained once discounts exist. */
+    discounted,
+    /* What is still owed, summed from the tenants who have not settled — not
+       `due - collected`. With an early-payment discount those two differ by the
+       discount given, so the subtraction would report a fully-collected month
+       as still partly outstanding. */
+    outstanding: tenants.filter((t) => rentStatusOf(t, period) !== 'Paid').reduce((s, t) => s + t.rent, 0),
     paidCount: paid.length,
     unpaidCount: tenants.length - paid.length,
     overdueCount: tenants.filter((t) => rentStatusOf(t, period) === 'Overdue').length,
@@ -1331,15 +1651,28 @@ function periodDays(start: string, end: string) {
   return Math.round(ms / 86400000) + 1;
 }
 
-function computeBill(previousReading: number, currentReading: number, rate: number, fixedCharge: number) {
+function computeBill(previousReading: number, currentReading: number, rate: number) {
   const consumption = Math.max(0, currentReading - previousReading);
-  const usageCharge = consumption * rate;
-  const amount = Math.round((usageCharge + fixedCharge) * 100) / 100;
-  return { consumption, usageCharge, amount };
+  const amount = Math.round(consumption * rate * 100) / 100;
+  return { consumption, amount };
 }
 
 function isOverdue(bill: UtilityBill) {
   return bill.status === 'Unpaid' && !!bill.dueDate && bill.dueDate < todayIso();
+}
+
+/* The surcharge a bill picks up at the moment it is printed, not before. It is
+   `isOverdue` — the exact same test already driving the OVERDUE badge on the
+   Billing Records table — so a receipt's surcharge can never disagree with
+   what the office is looking at when it decides to print. A bill paid off
+   before it is ever printed late never carries one; printing the same overdue
+   bill twice adds it both times, because both are genuinely late. */
+function surchargeAmount(bill: UtilityBill) {
+  return isOverdue(bill) ? Math.round(bill.amount * (SURCHARGE_RATES[bill.type] / 100) * 100) / 100 : 0;
+}
+
+function amountWithSurcharge(bill: UtilityBill) {
+  return Math.round((bill.amount + surchargeAmount(bill)) * 100) / 100;
 }
 
 function lastReadingFor(bills: UtilityBill[], stallId: string, type: UtilityType) {
@@ -1402,7 +1735,18 @@ function App() {
   const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string } | null>(null);
   const [registerJob, setRegisterJob] = useState<RegisterJob | null>(null);
 
+  /* Verification slips run the same two steps. `verifyRequest` carries the
+     stall the slip was started from, when it was started from one. */
+  const [verifyRequest, setVerifyRequest] = useState<{ stall?: Stall } | null>(null);
+  const [verifyJob, setVerifyJob] = useState<VerificationSlip[] | null>(null);
+
   const requestPrint = (bill: UtilityBill) => setPrintRequest({ bills: [bill], single: true });
+  /* A batch of different bills tiled onto sheets — one receipt each, no copy
+     labels, since each quarter goes to a different stall. */
+  const requestPrintBatch = (batch: UtilityBill[]) => {
+    if (batch.length === 0) { showToast('Select at least one bill to print'); return; }
+    setPrintRequest({ bills: batch, single: false });
+  };
 
   /* One tick so the receipt is laid out before the print dialog snapshots it.
      The body class is what narrows the print stylesheet down to the receipt —
@@ -1425,13 +1769,82 @@ function App() {
     };
   }, [printJob]);
 
+  /* Printing files the bill. A receipt is the office's word that the charge
+     exists, so anything on the sheet that was still a draft goes onto the
+     record here, under the number it prints with — the bill numbers are
+     claimed at this moment and nowhere else, so a preview backed out of files
+     nothing. Bills already on record are reprinted, not re-filed. */
   const confirmPrint = (receipts: PrintReceipt[], printedBy: string) => {
     try { localStorage.setItem(printedByKey, printedBy); } catch { /* full storage must not stop a receipt printing */ }
-    setPrintJob({ receipts, printedBy, printedAt: manilaStamp() });
+
+    const onSheet = receipts.map((r) => r.bill);
+    const pending = unsavedBills(onSheet);
+    const numbered = numberBills(onSheet, claimIds('UTL', state.utilities.map((b) => b.id), pending.length));
+    const filed = [...numbered.values()];
+    /* Every copy of a bill picks up the number its original was just given. */
+    const printed = receipts.map((r) => ({ ...r, bill: numbered.get(r.bill) ?? r.bill }));
+
+    if (filed.length > 0) {
+      setState((p) => ({
+        ...p,
+        /* Newest first, the order `addBill` files a single bill in. */
+        utilities: [...filed.slice().reverse(), ...p.utilities],
+        activities: filed.reduce((acc, b) => withActivity(acc, UTILITY_PRESETS[b.type].icon, b.type === 'Electricity' ? 'amber' : 'blue', `${b.type} bill ${b.id}`, ` of ${money(b.amount)} issued to stall ${b.stallId} on printing.`), p.activities),
+        logs: filed.reduce((acc, b) => [...acc, makeLog(acc, 'Collection', `${b.type} bill ${b.id} (${billPeriodText(b)}) issued to stall ${b.stallId}${b.tenantName ? ` — ${b.tenantName}` : ''}: ${money(b.amount)}. Filed on printing.`)], p.logs),
+      }));
+    }
+
+    setPrintJob({ receipts: printed, printedBy, printedAt: manilaStamp() });
     setPrintRequest(null);
     const sheets = Math.ceil(receipts.length / RECEIPTS_PER_SHEET);
-    showToast(`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`);
+    const sent = `${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`;
+    showToast(filed.length === 0
+      ? sent
+      : `${sent} — ${filed.length === 1 ? `bill ${filed[0].id} saved to records` : `${filed.length} bills saved to records (${filed[0].id}–${filed[filed.length - 1].id})`}`);
   };
+
+  /* The control numbers are torn off the pad here and nowhere else — a preview
+     that was cancelled leaves the counter where it was. Each slip goes onto the
+     register as it is numbered, so the office can answer for any number that
+     comes back to it later. */
+  const confirmVerification = (drafts: Omit<VerificationSlip, 'controlNo'>[]) => {
+    if (drafts.length === 0) return;
+    const issuedBy = drafts[0].issuedBy;
+    try { localStorage.setItem(verifiedByKey, issuedBy); } catch { /* full storage must not stop a slip printing */ }
+
+    const numbers = claimIds('SSV', state.verifications.map((v) => v.controlNo), drafts.length);
+    const slips: VerificationSlip[] = drafts.map((d, i) => ({ ...d, controlNo: numbers[i] }));
+    const span = slips.length === 1 ? slips[0].controlNo : `${slips[0].controlNo}–${slips[slips.length - 1].controlNo}`;
+    const forWhom = slips[0].issuedTo
+      ? `${slips[0].issuedTo}${slips[0].stallNo ? ` (stall ${slips[0].stallNo})` : ''}`
+      : 'blank, to be filled in at the counter';
+
+    setState((p) => ({
+      ...p,
+      verifications: [...p.verifications, ...slips],
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `Stall/space verification ${span} issued for business permit ${slips[0].purpose.toLowerCase()} — ${forWhom}. Valid until ${formatIsoDate(slips[0].validUntil)}.`)],
+      activities: withActivity(p.activities, 'fact_check', 'blue', span, ` issued for business permit ${slips[0].purpose.toLowerCase()}.`),
+    }));
+
+    setVerifyJob(slips);
+    setVerifyRequest(null);
+    showToast(`Verification ${span} issued and sent to print`);
+  };
+
+  /* Same two-step as a receipt, and the job is dropped when the dialog closes
+     so a later plain Ctrl+P does not silently reprint a numbered slip. */
+  useEffect(() => {
+    if (!verifyJob) return;
+    document.body.classList.add('printing');
+    const finish = () => setVerifyJob(null);
+    window.addEventListener('afterprint', finish);
+    const timer = window.setTimeout(() => window.print(), 80);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('afterprint', finish);
+      document.body.classList.remove('printing');
+    };
+  }, [verifyJob]);
 
   const showToast = useCallback((message: string) => {
     const id = ++toastSeq.current;
@@ -1521,6 +1934,7 @@ function App() {
   const liveTenant = (t: Tenant) => state.tenants.find((x) => x.id === t.id) ?? t;
   const liveApplicant = (a: Applicant) => state.applicants.find((x) => x.id === a.id) ?? a;
   const liveViolation = (v: Violation) => state.violations.find((x) => x.id === v.id) ?? v;
+  const liveOfficer = (o: Officer) => state.officers.find((x) => x.id === o.id) ?? o;
 
   const withActivity = (list: ActivityItem[], icon: string, iconColor: string, highlight: string, text: string): ActivityItem[] =>
     [{ id: `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, icon, iconColor, highlight, text, time: 'Just now' }, ...list].slice(0, MAX_ACTIVITIES);
@@ -1579,12 +1993,20 @@ function App() {
     const tenant = state.tenants.find((t) => t.id === tenantId);
     if (!tenant || !!rentPaymentFor(tenant, period) === paid) return;
     const label = formatPeriod(period);
+    /* Settled today, so the discount is decided against today's date. It is
+       fixed onto the payment at this moment and never recomputed — the month
+       stays collected at what was actually taken, whatever the rate becomes. */
+    const paidOn = todayIso();
+    const early = qualifiesForRentDiscount(tenant, period, paidOn);
+    const discount = early ? rentDiscountAmount(tenant.rent) : 0;
+    const collected = Math.round((tenant.rent - discount) * 100) / 100;
+
     setState((p) => ({
       ...p,
       tenants: p.tenants.map((t) => {
         if (t.id !== tenantId) return t;
         const next = { ...t.rentPayments };
-        if (paid) next[period] = { period, paidOn: todayIso(), amount: t.rent };
+        if (paid) next[period] = { period, paidOn, amount: collected, discount };
         else delete next[period];
         return { ...t, rentPayments: next };
       }),
@@ -1593,13 +2015,19 @@ function App() {
         paid ? 'payments' : 'undo',
         paid ? 'green' : 'amber',
         tenant.name,
-        paid ? ` paid ${money(tenant.rent)} rent for ${label}.` : `'s rent for ${label} was set back to unpaid.`,
+        paid
+          ? ` paid ${money(collected)} rent for ${label}${early ? ` — ${EARLY_RENT_DISCOUNT_PCT}% early-payment discount applied.` : '.'}`
+          : `'s rent for ${label} was set back to unpaid.`,
       ),
       logs: [...p.logs, makeLog(p.logs, 'Collection', paid
-        ? `Rent for ${label} collected from ${tenant.name} (${tenant.id}${tenant.stallId && tenant.stallId !== '—' ? `, stall ${tenant.stallId}` : ''}): ${money(tenant.rent)}.`
+        ? `Rent for ${label} collected from ${tenant.name} (${tenant.id}${tenant.stallId && tenant.stallId !== '—' ? `, stall ${tenant.stallId}` : ''}): ${money(collected)}${early ? ` (${money(tenant.rent)} less ${EARLY_RENT_DISCOUNT_PCT}% early-payment discount of ${money(discount)}, settled on or before ${formatIsoDate(rentDueIso(tenant, period))})` : ''}.`
         : `Rent payment for ${label} by ${tenant.name} (${tenant.id}) was reversed.`)],
     }));
-    showToast(paid ? `${tenant.name} marked paid for ${label}` : `${tenant.name} marked unpaid for ${label}`);
+    showToast(paid
+      ? (early
+        ? `${tenant.name} paid ${money(collected)} for ${label} — ${EARLY_RENT_DISCOUNT_PCT}% early discount`
+        : `${tenant.name} marked paid for ${label}`)
+      : `${tenant.name} marked unpaid for ${label}`);
   };
 
   /* A meter number typed into the calculator for a tenant who has none on file
@@ -1790,6 +2218,55 @@ function App() {
     closeModal();
   };
 
+  /* ---------- The market office's board ---------- */
+
+  const addOfficer = (officer: Officer) => {
+    setState((p) => ({
+      ...p,
+      officers: linkOfficers([...p.officers, officer]),
+      activities: withActivity(p.activities, 'account_tree', 'blue', officer.position, ` was added to the market office board${officer.name ? ` — ${officer.name}` : ' as a vacant seat'}.`),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}) added to the office board${officer.name ? `: ${officer.name}` : ' as a vacant seat'}.`)],
+    }));
+    showToast(officer.name ? `${officer.name} added to the board` : `${officer.position} added as a vacant seat`);
+    closeModal();
+  };
+
+  const updateOfficer = (updated: Officer) => {
+    const previous = state.officers.find((o) => o.id === updated.id);
+    setState((p) => ({
+      ...p,
+      officers: linkOfficers(p.officers.map((o) => (o.id === updated.id ? updated : o))),
+      activities: withActivity(p.activities, 'account_tree', 'amber', updated.position, previous && previous.name !== updated.name
+        ? ` is now held by ${updated.name || 'nobody — the seat is vacant'}.`
+        : `'s details were updated.`),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', previous && previous.name !== updated.name
+        ? `${updated.position} (${updated.id}) changed from ${previous.name || 'vacant'} to ${updated.name || 'vacant'}.`
+        : `${updated.position} (${updated.id}) was updated on the office board.`)],
+    }));
+    showToast(`${updated.position} updated`);
+    closeModal();
+  };
+
+  /* Removing a seat must not orphan the seats under it: everyone who reported
+     to it is lifted to whoever it reported to, so the board stays one tree
+     and nobody quietly disappears off the bottom of it. */
+  const deleteOfficer = (officer: Officer) => {
+    const reassignTo = officer.reportsTo;
+    const reports = state.officers.filter((o) => o.reportsTo === officer.id);
+    setState((p) => ({
+      ...p,
+      officers: linkOfficers(
+        p.officers
+          .filter((o) => o.id !== officer.id)
+          .map((o) => (o.reportsTo === officer.id ? { ...o, reportsTo: reassignTo } : o)),
+      ),
+      activities: withActivity(p.activities, 'account_tree', 'red', officer.position, ' was removed from the office board.'),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}${officer.name ? ` — ${officer.name}` : ''}) removed from the office board.${reports.length > 0 ? ` ${reports.length} seat${reports.length === 1 ? '' : 's'} reassigned.` : ''}`)],
+    }));
+    showToast(`${officer.position} removed from the board`);
+    closeModal();
+  };
+
   const resetData = () => { localStorage.removeItem(storageKey); resetIdCounters(); setState(initialState); showToast('Data reset to defaults'); closeModal(); };
 
   const handleNewEntry = () => setModal({ type: 'add-log' });
@@ -1797,7 +2274,7 @@ function App() {
   const handleLogout = () => setModal({ type: 'confirm-logout' });
 
   const downloadReport = () => {
-    downloadJSON({ generatedAt: new Date().toISOString(), summary: { tenants: state.tenants.length, applicants: state.applicants.length, stalls: state.stalls.length }, data: state }, 'civic-market-core-report.json');
+    downloadJSON({ generatedAt: new Date().toISOString(), summary: { tenants: state.tenants.length, applicants: state.applicants.length, stalls: state.stalls.length, officers: state.officers.length }, data: state }, 'civic-market-core-report.json');
     showToast('Report downloaded');
   };
 
@@ -1868,13 +2345,14 @@ function App() {
 
         <div className="page-content">
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
-          {active === 'stalls' && <StallManagementPage onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
+          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
           {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
           {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
+          {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, officerLabel(state.officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-office-board.csv'); showToast('Office board exported'); }} />}
           {active === 'assistant' && <AssistantPage state={state} onNavigate={setActive} />}
           {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
@@ -1886,10 +2364,13 @@ function App() {
       {modal.type === 'add-tenant' && <Modal title="Add New Tenant" wide onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
       {modal.type === 'assign-stall' && <Modal title="Assign Stall & Create Tenant" wide onClose={closeModal}><AssignStallForm applicant={modal.data as Applicant} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onSkip={closeModal} /></Modal>}
       {modal.type === 'add-log' && <Modal title="Add Log Entry" onClose={closeModal}><AddLogForm existingIds={state.logs.map(l => l.id)} onSubmit={addLog} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-officer' && <Modal title="Add Officer" subtitle="A seat on the market office board." wide onClose={closeModal}><OfficerForm officers={state.officers} onSubmit={addOfficer} onCancel={closeModal} /></Modal>}
+      {modal.type === 'edit-officer' && <Modal title="Edit Officer" subtitle="Update the seat, who holds it, and where it sits on the board." wide onClose={closeModal}><OfficerForm officers={state.officers} officer={liveOfficer(modal.data as Officer)} onSubmit={updateOfficer} onCancel={closeModal} /></Modal>}
+      {modal.type === 'view-officer' && <Modal title="Officer Details" sheet onClose={closeModal}><OfficerDetailView officer={liveOfficer(modal.data as Officer)} officers={state.officers} onEdit={() => setModal({ type: 'edit-officer', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'add-violation' && <Modal title="Record a Violation" wide onClose={closeModal}><ViolationForm existingIds={state.violations.map(v => v.id)} tenants={state.tenants} onSubmit={addViolation} onCancel={closeModal} /></Modal>}
       {modal.type === 'view-violation' && <Modal title="Violation Details" sheet onClose={closeModal}><ViolationDetailView violation={liveViolation(modal.data as Violation)} onEdit={() => setModal({ type: 'edit-violation', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-violation' && <Modal title="Edit Violation" wide onClose={closeModal}><ViolationEditForm violation={modal.data as Violation} current={liveViolation(modal.data as Violation)} tenants={state.tenants} onSave={updateViolation} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-stall' && <Modal title="Stall Details" sheet onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-stall' && <Modal title="Stall Details" sheet onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onVerify={() => { const s = liveStall(modal.data as Stall); closeModal(); setVerifyRequest({ stall: s }); }} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-stall' && <Modal title="Edit Stall Details" wide onClose={closeModal}><StallEditForm stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onSave={updateStall} onClose={closeModal} /></Modal>}
       {modal.type === 'view-applicant' && <Modal title="Applicant Details" sheet onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
@@ -1926,6 +2407,14 @@ function App() {
           description={`Application ${applicant.id} (${applicant.status}) will be permanently removed. This cannot be undone.`}
           confirmLabel="Delete Applicant" confirmDanger onConfirm={() => deleteApplicant(applicant)} onCancel={closeModal} />;
       })()}
+      {modal.type === 'confirm-delete-officer' && (() => {
+        const officer = modal.data as Officer;
+        const reports = state.officers.filter((o) => o.reportsTo === officer.id);
+        const superior = state.officers.find((o) => o.id === officer.reportsTo);
+        return <ConfirmDialog icon="person_remove" iconStyle="danger" title={`Remove ${officer.name || officer.position} from the board?`}
+          description={`${officer.position} (${officer.id}) will be removed from the market office board.${reports.length > 0 ? ` The ${reports.length} seat${reports.length === 1 ? '' : 's'} reporting to it will be moved under ${superior ? `${superior.position}` : 'the head of the board'}.` : ''} This cannot be undone.`}
+          confirmLabel="Remove Officer" confirmDanger onConfirm={() => deleteOfficer(officer)} onCancel={closeModal} />;
+      })()}
       {modal.type === 'confirm-delete-log' && (() => {
         const log = modal.data as LogEntry;
         return <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this log entry?"
@@ -1938,9 +2427,19 @@ function App() {
           description={`The ${violation.status.toLowerCase()} citation against ${violation.tenant} for "${violation.issue}" will be permanently removed from the register.${violation.status === 'Open' ? ' Resolve it instead if it was served and settled — delete only if it was recorded in error.' : ' Delete only if it was recorded in error; resolved citations are the register’s history.'} This cannot be undone.`}
           confirmLabel="Delete Violation" confirmDanger onConfirm={() => deleteViolation(violation)} onCancel={closeModal} />;
       })()}
-      {printRequest && <PrintPreviewDialog request={printRequest} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
+      {printRequest && <PrintPreviewDialog request={printRequest} billsOnRecord={state.utilities} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
       {printJob && <div className="print-area"><ReceiptSheets receipts={printJob.receipts} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
       {registerJob && <div className="print-area"><RegisterSheet job={registerJob} /></div>}
+      {verifyRequest && (
+        <VerificationPrintDialog
+          stall={verifyRequest.stall}
+          tenantName={verifyRequest.stall ? (state.tenants.find((t) => t.stallId === verifyRequest.stall!.id)?.name ?? verifyRequest.stall.tenant) : undefined}
+          existingIds={state.verifications.map((v) => v.controlNo)}
+          onConfirm={confirmVerification}
+          onCancel={() => setVerifyRequest(null)}
+        />
+      )}
+      {verifyJob && <div className="print-area"><VerificationSheets slips={verifyJob} /></div>}
 
       {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
 
@@ -2007,6 +2506,8 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
       out.push({ key: `b${b.id}`, module: 'utilities', icon: 'receipt_long', label: `${b.type} \u2014 Stall ${b.stallId}`, detail: `${b.id} \u00b7 ${billPeriodText(b)} \u00b7 ${money(b.amount)}`, kind: 'Bill' }));
     state.violations.filter((v) => has(v.id, v.tenant, v.issue)).forEach((v) =>
       out.push({ key: `v${v.id}`, module: 'violations', icon: 'gavel', label: v.issue, detail: `${v.id} \u00b7 ${v.tenant}`, kind: 'Violation' }));
+    state.officers.filter((o) => has(o.id, o.name, o.position, o.office)).forEach((o) =>
+      out.push({ key: `o${o.id}`, module: 'officers', icon: 'account_tree', label: o.name || `${o.position} (vacant)`, detail: `${o.id} · ${o.position}${o.office ? ` · ${o.office}` : ''}`, kind: 'Officer' }));
     return out.slice(0, 24);
   }, [q, state]);
 
@@ -2092,12 +2593,17 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
             <div className="earnings-meter">
               <div className={`earnings-meter-fill${roll.overdueCount > 0 ? ' danger' : ''}`} style={{ width: `${collectionPct}%` }} />
             </div>
-            <span className="earnings-basis">{percent(collectionPct)} collected · {roll.paidCount} of {state.tenants.length} tenants paid</span>
+            <span className="earnings-basis">
+              {percent(collectionPct)} collected · {roll.paidCount} of {state.tenants.length} tenants paid
+              {roll.discounted > 0 && ` · ${money(roll.discounted)} given as early-payment discounts`}
+            </span>
           </div>
           <div className="earnings-grid">
             <EarningsFigure label="Monthly Rent Roll" value={money(roll.due)} basis="Contracted rent from every tenancy on record" />
             <EarningsFigure label="Rent Outstanding" value={money(roll.outstanding)} tone={roll.outstanding > 0 ? 'danger' : 'success'} basis={`${roll.unpaidCount} unpaid · ${roll.overdueCount} past due`} />
-            <EarningsFigure label="Rent Collected to Date" value={money(rentToDate)} tone="success" basis="Every month recorded as settled" />
+            {roll.discounted > 0
+              ? <EarningsFigure label={`Early-Payment Discounts (${EARLY_RENT_DISCOUNT_PCT}%)`} value={money(roll.discounted)} basis={`Taken off for settling on or before the due date — why collected sits below the roll`} />
+              : <EarningsFigure label="Rent Collected to Date" value={money(rentToDate)} tone="success" basis="Every month recorded as settled" />}
             <EarningsFigure label="Utilities Collected" value={money(utilitiesCollected)} basis={`${money(outstandingUtilities)} still outstanding`} />
           </div>
           <div className="earnings-total">
@@ -2146,7 +2652,7 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
    Stall Management Page
    ============================================================ */
 
-function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onDelete, onPrintList }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onDelete: (s: Stall) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onDelete, onPrintList, onVerify }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onDelete: (s: Stall) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; onVerify: (s?: Stall) => void; }) {
   /* Prints every row the filters are showing, not the page of them on screen. */
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
@@ -2181,6 +2687,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
           <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
+          <button className="btn-outline" onClick={() => onVerify()}><span className="material-symbols-outlined">fact_check</span>Stall / Space Verification</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Stall</button>
         </div>
       </div>
@@ -2220,7 +2727,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div className="table-wrap">
           <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Permit</th><th>Last Inspection</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td><PermitBadge permit={s.permit} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
+              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td><PermitBadge permit={s.permit} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn" title="Issue verification slip" aria-label="Issue verification slip" onClick={() => onVerify(s)}><span className="material-symbols-outlined">fact_check</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
               {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
             </tbody>
           </table>
@@ -2349,8 +2856,16 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
     `Tenant register · rent for ${formatPeriodShort(period)}${search ? ` · matching “${search}”` : ''}`,
-    ['Tenant ID', 'Name', 'Stall ID', 'Section', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`, 'Status'],
-    filtered.map((t) => [t.id, t.name, t.stallId, t.section, money(t.rent), rentStatusOf(t, period), t.status]),
+    ['Tenant ID', 'Name', 'Stall ID', 'Section', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`, 'Collected', 'Discount', 'Status'],
+    filtered.map((t) => {
+      const payment = rentPaymentFor(t, period);
+      return [
+        t.id, t.name, t.stallId, t.section, money(t.rent), rentStatusOf(t, period),
+        payment ? money(payment.amount) : '—',
+        payment && payment.discount > 0 ? `−${money(payment.discount)}` : '—',
+        t.status,
+      ];
+    }),
   );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -2440,9 +2955,10 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
                 const paid = rentStatus === 'Paid';
                 const payment = rentPaymentFor(t, period);
                 const late = rentDaysLate(t, period);
+                const quote = rentQuoteToday(t, period);
                 const rentTitle = paid
-                  ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'} — tick to undo`
-                  : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''} — tick once collected`;
+                  ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'}${payment && payment.discount > 0 ? ` — ${money(payment.amount)} after a ${money(payment.discount)} early-payment discount` : ''} — tick to undo`
+                  : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''}${quote.early ? ` · pays ${money(quote.payable)} today with the ${EARLY_RENT_DISCOUNT_PCT}% early discount` : ''} — tick once collected`;
                 return (
                   <tr key={t.id}>
                     <td><strong>{t.id}</strong></td>
@@ -2455,6 +2971,16 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
                         <input type="checkbox" checked={paid} onChange={(e) => onSetRentPaid(t.id, period, e.target.checked)} aria-label={`Rent paid for ${formatPeriod(period)} by ${t.name}`} />
                         <RentStatusBadge status={rentStatus} />
                       </label>
+                      {paid && payment && payment.discount > 0 && (
+                        <span className="rent-discount-tag" title={`${money(t.rent)} less ${EARLY_RENT_DISCOUNT_PCT}% for paying on or before the due date`}>
+                          −{money(payment.discount)} early
+                        </span>
+                      )}
+                      {!paid && quote.early && quote.discount > 0 && (
+                        <span className="rent-discount-tag muted" title={`Settled on or before ${formatIsoDate(rentDueIso(t, period))}, this month costs ${money(quote.payable)}`}>
+                          {money(quote.payable)} if paid today
+                        </span>
+                      )}
                     </td>
                     <td><TenantStatusBadge status={t.status} /></td>
                     <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
@@ -2475,11 +3001,12 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
    Utility Billing Page — electricity & water calculator + records
    ============================================================ */
 
-function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onRecordMeter, onExport, onPrintList }: {
+function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport, onPrintList }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; search: string;
   onAdd: (b: UtilityBill) => void; onView: (b: UtilityBill) => void;
   onToggleStatus: (id: string) => void; onDelete: (b: UtilityBill) => void;
   onPrint: (b: UtilityBill) => void;
+  onPrintBatch: (bills: UtilityBill[]) => void;
   onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
   onExport: () => void;
   onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void;
@@ -2508,6 +3035,28 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
   }), [bills, typeFilter, statusFilter, search]);
 
   const paged = paginate(filtered, page);
+
+  /* Bills ticked for a batch print, held by id so the set survives paging and
+     refiltering. Ids that fall out of the records entirely are dropped when
+     the batch is built, so a deleted bill can never reach the printer. */
+  const [selected, setSelected] = useState<string[]>([]);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const selectedBills = useMemo(
+    () => selected.map((id) => bills.find((b) => b.id === id)).filter((b): b is UtilityBill => !!b),
+    [selected, bills],
+  );
+
+  const toggleOne = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  /* The header box acts on the rows in view, which is what the officer can
+     actually see — not the whole filtered set behind the pagination. */
+  const pageIds = paged.items.map((b) => b.id);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedSet.has(id));
+  const togglePage = () =>
+    setSelected((prev) => (allOnPageSelected
+      ? prev.filter((id) => !pageIds.includes(id))
+      : [...prev, ...pageIds.filter((id) => !prev.includes(id))]));
 
   const totals = useMemo(() => {
     const period = currentPeriod();
@@ -2545,12 +3094,12 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Electricity</span><span className="material-symbols-outlined stat-icon warning">bolt</span></div>
           <div className="stat-value">{moneyShort(totals.electricity)}</div>
-          <div className="stat-caption">{totals.kwh.toLocaleString()} kWh billed</div>
+          <div className="stat-caption">{totals.kwh.toLocaleString()} {UTILITY_PRESETS.Electricity.unit} billed</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Water</span><span className="material-symbols-outlined stat-icon primary">water_drop</span></div>
           <div className="stat-value">{moneyShort(totals.water)}</div>
-          <div className="stat-caption">{totals.cubic.toLocaleString()} m³ billed</div>
+          <div className="stat-caption">{totals.cubic.toLocaleString()} {UTILITY_PRESETS.Water.unit} billed</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Outstanding</span><span className="material-symbols-outlined stat-icon danger">payments</span></div>
@@ -2568,12 +3117,50 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
           <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Unpaid">Unpaid</option><option value="Paid">Paid</option><option value="Overdue">Overdue</option></select>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} bills</span>
         </div>
+
+        {/* Only appears once something is ticked, so the table is unchanged
+            for the ordinary one-bill-at-a-time way of working. */}
+        {selectedBills.length > 0 && (
+          <div className="batch-bar">
+            <span className="batch-count">
+              <span className="material-symbols-outlined">checklist</span>
+              {selectedBills.length} bill{selectedBills.length === 1 ? '' : 's'} selected
+              <span className="batch-sheets">· {Math.ceil(selectedBills.length / RECEIPTS_PER_SHEET)} A4 sheet{Math.ceil(selectedBills.length / RECEIPTS_PER_SHEET) === 1 ? '' : 's'}, {RECEIPTS_PER_SHEET} receipts to a sheet</span>
+            </span>
+            <div className="batch-actions">
+              <button type="button" className="btn-outline" onClick={() => setSelected([])}>Clear Selection</button>
+              <button type="button" className="btn-primary" onClick={() => onPrintBatch(selectedBills)}>
+                <span className="material-symbols-outlined">print</span>Print {selectedBills.length} Receipt{selectedBills.length === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Bill ID</th><th>Utility</th><th>Stall No.</th><th>Meter No.</th><th>Tenant</th><th>Period</th><th>Consumption</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+            <thead><tr>
+              <th className="check-col">
+                <input
+                  type="checkbox"
+                  aria-label={allOnPageSelected ? 'Clear selection on this page' : 'Select every bill on this page'}
+                  checked={allOnPageSelected}
+                  disabled={pageIds.length === 0}
+                  onChange={togglePage}
+                />
+              </th>
+              <th>Bill ID</th><th>Utility</th><th>Stall No.</th><th>Meter No.</th><th>Tenant</th><th>Period</th><th>Consumption</th><th>Amount</th><th>Status</th><th>Action</th>
+            </tr></thead>
             <tbody>
               {paged.items.map((b) => (
-                <tr key={b.id}>
+                <tr key={b.id} className={selectedSet.has(b.id) ? 'row-selected' : undefined}>
+                  <td className="check-col">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select bill ${b.id} for printing`}
+                      checked={selectedSet.has(b.id)}
+                      onChange={() => toggleOne(b.id)}
+                    />
+                  </td>
                   <td><strong>{b.id}</strong></td>
                   <td><span className={`utility-tag ${b.type.toLowerCase()}`}><span className="material-symbols-outlined">{UTILITY_PRESETS[b.type].icon}</span>{b.type}</span></td>
                   <td><strong>{b.stallId}</strong></td>
@@ -2593,7 +3180,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
                   </td>
                 </tr>
               ))}
-              {paged.items.length === 0 && <tr><td colSpan={10}><div className="empty-state"><span className="material-symbols-outlined">receipt_long</span>No utility bills match the current filters.</div></td></tr>}
+              {paged.items.length === 0 && <tr><td colSpan={11}><div className="empty-state"><span className="material-symbols-outlined">receipt_long</span>No utility bills match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -2626,7 +3213,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const [previous, setPrevious] = useState('');
   const [current, setCurrent] = useState('');
   const [rate, setRate] = useState(String(UTILITY_PRESETS.Electricity.rate));
-  const [fixedCharge, setFixedCharge] = useState(String(UTILITY_PRESETS.Electricity.fixedCharge));
   /* The bill falls due after the period it covers. Moving the period end drags
      the due date with it, until the officer sets one of their own. */
   const [dueDate, setDueDate] = useState(() => isoPlusDays(monthEndIso(currentPeriod()), 15));
@@ -2666,7 +3252,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const applyType = (next: UtilityType) => {
     setType(next);
     setRate(String(UTILITY_PRESETS[next].rate));
-    setFixedCharge(String(UTILITY_PRESETS[next].fixedCharge));
     fillFromRecords(stallId, tenants.find((t) => t.id === tenantId), next);
     setError('');
   };
@@ -2701,9 +3286,13 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const prevNum = toAmount(previous);
   const currNum = toAmount(current);
   const rateNum = toAmount(rate);
-  const fixedNum = toAmount(fixedCharge);
-  const { consumption, usageCharge, amount } = computeBill(prevNum, currNum, rateNum, fixedNum);
+  const { consumption, amount } = computeBill(prevNum, currNum, rateNum);
   const readingsInverted = current !== '' && currNum < prevNum;
+  /* A live heads-up, not an enforced figure — the bill is not on record yet,
+     so nothing here is what actually prints; it just warns the officer before
+     they save or print that the due date they picked has already passed. */
+  const wouldBeOverdue = !!dueDate && dueDate < todayIso();
+  const previewSurcharge = wouldBeOverdue ? Math.round(amount * (SURCHARGE_RATES[type] / 100) * 100) / 100 : 0;
 
   const resetForm = () => {
     setCurrent(''); setNotes(''); setError('');
@@ -2716,7 +3305,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     if (isNegative(previous) || isNegative(current)) return 'Meter readings cannot be negative.';
     if (readingsInverted) return 'Current reading cannot be lower than the previous reading.';
     if (rateNum <= 0) return 'Rate per unit must be greater than zero.';
-    if (isNegative(fixedCharge)) return 'Fixed / service charge cannot be negative.';
     if (!periodStart || !periodEnd) return 'Set the days this billing period covers.';
     if (periodEnd < periodStart) return 'The billing period cannot end before it starts.';
     if (dueDate && dueDate < periodEnd) return 'The due date falls before the billing period ends.';
@@ -2742,7 +3330,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
       currentReading: currNum,
       consumption,
       rate: rateNum,
-      fixedCharge: fixedNum,
       amount,
       status: 'Unpaid',
       dateIssued: todayIso(),
@@ -2869,15 +3456,10 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Rate per {preset.unit} (₱)</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={rate} onChange={(e) => { setRate(e.target.value); setError(''); }} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Fixed / Service Charge (₱)</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={fixedCharge} onChange={(e) => setFixedCharge(e.target.value)} />
-            </div>
+          <div className="form-group">
+            <label className="form-label">Rate per {preset.unit} (₱)</label>
+            <input className="form-input" type="number" min="0" step="0.01" value={rate} onChange={(e) => { setRate(e.target.value); setError(''); }} />
+            <span className="form-hint">The market's fee schedule sets this at {money(UTILITY_PRESETS[type].rate)} per {preset.unit} for {type.toLowerCase()} — editable per bill if a stall is metered on a different rate.</span>
           </div>
 
           <div className="form-group">
@@ -2899,9 +3481,17 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           <div className="calc-row"><span>Previous reading</span><strong>{prevNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row"><span>Current reading</span><strong>{currNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row highlight"><span>Consumption</span><strong>{consumption.toLocaleString()} {preset.unit}</strong></div>
-          <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(usageCharge)}</strong></div>
-          <div className="calc-row"><span>Fixed / service charge</span><strong>{money(fixedNum)}</strong></div>
-          <div className="calc-total"><span>Total Amount Due</span><strong>{money(amount)}</strong></div>
+          <div className="calc-row"><span>Rate per {preset.unit}</span><strong>{money(rateNum)}</strong></div>
+          <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(amount)}</strong></div>
+          {wouldBeOverdue ? (
+            <>
+              <div className="calc-row warning"><span>Late Surcharge ({SURCHARGE_RATES[type]}%) — due date already passed</span><strong>+{money(previewSurcharge)}</strong></div>
+              <div className="calc-total"><span>Total if Printed Today</span><strong>{money(amount + previewSurcharge)}</strong></div>
+              <p className="calc-surcharge-note">This due date has already passed, so a receipt printed today will carry the surcharge automatically. The amount saved to records is {money(amount)}; the surcharge is never added to that figure, only to whatever is printed after the due date.</p>
+            </>
+          ) : (
+            <div className="calc-total"><span>Total Amount Due</span><strong>{money(amount)}</strong></div>
+          )}
           <div className="calc-row"><span>Due date</span><strong>{formatIsoDate(dueDate)}</strong></div>
           {error && <div className="calc-error"><span className="material-symbols-outlined">error</span>{error}</div>}
           <div className="calc-actions">
@@ -3728,7 +4318,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
   const backup = useBackupFile((data, file) => setPending({ data, fileName: file.name }));
 
   const countOf = (data: AppState) =>
-    data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length;
+    data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length + data.officers.length;
 
   return (
     <>
@@ -3739,7 +4329,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
           <div className="settings-section-body">
             <div className="settings-item"><span className="settings-item-label">Application</span><span className="settings-item-value">Tanauan Public Market v1.0</span></div>
             <div className="settings-item"><span className="settings-item-label">Storage</span><span className="settings-item-value">Local Browser Storage</span></div>
-            <div className="settings-item"><span className="settings-item-label">Total Records</span><span className="settings-item-value">{state.stalls.length + state.tenants.length + state.applicants.length + state.logs.length + state.violations.length + state.utilities.length}</span></div>
+            <div className="settings-item"><span className="settings-item-label">Total Records</span><span className="settings-item-value">{state.stalls.length + state.tenants.length + state.applicants.length + state.logs.length + state.violations.length + state.utilities.length + state.officers.length}</span></div>
             <div className="settings-item"><span className="settings-item-label">Last Saved</span><span className="settings-item-value">{lastSaved ? new Date(lastSaved).toLocaleString() : 'Not yet saved'}</span></div>
           </div>
         </div>
@@ -3779,7 +4369,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
           icon="upload_file"
           iconStyle="warning"
           title="Import and replace all records?"
-          description={`"${pending.fileName}" holds ${countOf(pending.data)} records — ${pending.data.tenants.length} tenants, ${pending.data.stalls.length} stalls, ${pending.data.applicants.length} applicants, ${pending.data.utilities.length} utility bills, ${pending.data.violations.length} violations, and ${pending.data.logs.length} logbook entries. Importing replaces the ${countOf(state)} records on this workstation. This cannot be undone.`}
+          description={`"${pending.fileName}" holds ${countOf(pending.data)} records — ${pending.data.tenants.length} tenants, ${pending.data.stalls.length} stalls, ${pending.data.applicants.length} applicants, ${pending.data.utilities.length} utility bills, ${pending.data.violations.length} violations, ${pending.data.logs.length} logbook entries, and ${pending.data.officers.length} seats on the office board. Importing replaces the ${countOf(state)} records on this workstation. This cannot be undone.`}
           confirmLabel="Import and Replace"
           onConfirm={() => { onImport(pending.data); setPending(null); }}
           onCancel={() => setPending(null)}
@@ -3857,7 +4447,7 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
               <div>
                 <h4>Download Full Backup</h4>
                 <p>Export all system data (stalls, tenants, applicants, logs, settings) as a single JSON file. Use this to transfer data to another computer running this system.</p>
-                <p className="backup-meta">Current records: {state.stalls.length} stalls · {state.tenants.length} tenants · {state.applicants.length} applicants · {state.utilities.length} utility bills · {state.violations.length} violations · {state.logs.length} logs</p>
+                <p className="backup-meta">Current records: {state.stalls.length} stalls · {state.tenants.length} tenants · {state.applicants.length} applicants · {state.utilities.length} utility bills · {state.violations.length} violations · {state.logs.length} logs · {state.officers.length} office seats</p>
               </div>
             </div>
             <button className="btn-primary" onClick={onBackup}><span className="material-symbols-outlined">download</span>Download Full Backup</button>
@@ -4416,7 +5006,7 @@ function AddLogForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]
    Detail Views
    ============================================================ */
 
-function StallDetailView({ stall, occupant, bills, onEdit, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onEdit: () => void; onClose: () => void }) {
+function StallDetailView({ stall, occupant, bills, onEdit, onClose, onVerify }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onEdit: () => void; onClose: () => void; onVerify: () => void }) {
   const billed = bills.reduce((sum, b) => sum + b.amount, 0);
   const unpaid = bills.filter((b) => b.status === 'Unpaid').reduce((sum, b) => sum + b.amount, 0);
 
@@ -4467,6 +5057,7 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose }: { stall: S
     <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued for stall ${stall.id} yet.`} />
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-outline" onClick={onVerify}><span className="material-symbols-outlined">fact_check</span>Stall / Space Verification</button>
       <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Details</button>
     </div>
   </>);
@@ -4823,7 +5414,17 @@ function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { t
             label={paid ? 'Date Paid' : 'Due Date'}
             value={paid ? (payment?.paidOn ? formatIsoDate(payment.paidOn) : '') : formatIsoDate(rentDueIso(tenant, period))}
           />
+          {paid && payment && payment.discount > 0 && (<>
+            <RecordRow label={`Early-Payment Discount (${EARLY_RENT_DISCOUNT_PCT}%)`} value={`−${money(payment.discount)}`} />
+            <RecordRow label="Amount Collected" value={money(payment.amount)} />
+          </>)}
         </div>
+        {paid && payment && payment.discount > 0 && (
+          <RecordNote>Settled on {formatIsoDate(payment.paidOn)}, on or before the due date, so {EARLY_RENT_DISCOUNT_PCT}% of the {money(tenant.rent)} monthly rent was taken off. {money(payment.amount)} was collected.</RecordNote>
+        )}
+        {!paid && rentQuoteToday(tenant, period).early && (
+          <RecordNote>Settled today, this month qualifies for the {EARLY_RENT_DISCOUNT_PCT}% early-payment discount: {money(rentQuoteToday(tenant, period).payable)} instead of {money(tenant.rent)}. The discount is lost after {formatIsoDate(rentDueIso(tenant, period))}.</RecordNote>
+        )}
         {rentStatus === 'Overdue' && (
           <RecordNote>Rent for {formatPeriod(period)} fell due on {formatIsoDate(rentDueIso(tenant, period))} and is {late} day{late === 1 ? '' : 's'} past due.</RecordNote>
         )}
@@ -5496,10 +6097,16 @@ function BillDetailView({ bill, onToggleStatus, onPrint, onClose }: { bill: Util
 
       <RecordSection title="Charges" icon="payments">
         <div className="record-grid">
-          <RecordRow label="Usage Charge" value={money(bill.consumption * bill.rate)} />
-          <RecordRow label="Fixed / Service Charge" value={money(bill.fixedCharge)} />
+          <RecordRow label="Rate" value={`${money(bill.rate)} / ${preset.unit}`} />
+          <RecordRow label="Usage Charge" value={money(bill.amount)} />
         </div>
-        <RecordTotal label="Total Amount Due" value={money(bill.amount)} />
+        {isOverdue(bill) && (
+          <>
+            <RecordRow label={`Late Surcharge (${SURCHARGE_RATES[bill.type]}%)`} value={`+${money(surchargeAmount(bill))}`} />
+            <RecordNote>Past due since {formatIsoDate(bill.dueDate)} — a receipt printed now carries the surcharge automatically. This does not change the amount on record; it applies only to what actually prints.</RecordNote>
+          </>
+        )}
+        <RecordTotal label={isOverdue(bill) ? 'Total if Printed Today' : 'Total Amount Due'} value={money(isOverdue(bill) ? amountWithSurcharge(bill) : bill.amount)} />
       </RecordSection>
 
       {bill.notes && <RecordSection title="Notes" icon="sticky_note_2"><RecordNote>{bill.notes}</RecordNote></RecordSection>}
@@ -5575,12 +6182,16 @@ function RentLedger({ tenant }: { tenant: Tenant }) {
         <p className="bill-history-empty">No month has been marked paid for {tenant.name} yet.</p>
       ) : (
         <table className="mini-table">
-          <thead><tr><th>Month</th><th>Date Paid</th><th>Amount</th><th>Status</th></tr></thead>
+          <thead><tr><th>Month</th><th>Date Paid</th><th>Discount</th><th>Collected</th><th>Status</th></tr></thead>
           <tbody>
             {payments.slice(0, 12).map((p) => (
               <tr key={p.period}>
                 <td>{formatPeriod(p.period)}</td>
                 <td>{p.paidOn ? formatIsoDate(p.paidOn) : '—'}</td>
+                <td>{p.discount > 0
+                  ? <span className="rent-discount-tag" title={`${EARLY_RENT_DISCOUNT_PCT}% off for paying on or before the due date`}>−{money(p.discount)}</span>
+                  : <span className="muted">—</span>}
+                </td>
                 <td><strong>{money(p.amount)}</strong></td>
                 <td><RentStatusBadge status="Paid" /></td>
               </tr>
@@ -5589,6 +6200,463 @@ function RentLedger({ tenant }: { tenant: Tenant }) {
         </table>
       )}
     </div>
+  );
+}
+
+
+/* ============================================================
+   Officers — the market office board
+   ============================================================ */
+
+/* How an officer reads anywhere they are named as somebody else's superior
+   or in an export. A vacant seat is named by its post, because the post is
+   what exists even when nobody holds it. */
+function officerLabel(officer?: Officer) {
+  if (!officer) return '—';
+  return officer.name ? `${officer.name} — ${officer.position}` : `${officer.position} (vacant)`;
+}
+
+/* Every seat that reports to `parentId`, in the order the board holds them.
+   '' asks for the seats at the head of the board. */
+function reportsOf(officers: Officer[], parentId: string) {
+  return officers.filter((o) => o.reportsTo === parentId);
+}
+
+/* Everyone under an officer, however far down. Used to stop a seat being
+   moved beneath one of its own reports, which would close a loop in the
+   board. `linkOfficers` would break such a loop on the next load, but by then
+   the office has already lost the arrangement it meant to save. */
+function descendantsOf(officers: Officer[], id: string): Set<string> {
+  const out = new Set<string>();
+  const walk = (parentId: string) => {
+    for (const child of reportsOf(officers, parentId)) {
+      if (out.has(child.id)) continue;
+      out.add(child.id);
+      walk(child.id);
+    }
+  };
+  walk(id);
+  return out;
+}
+
+/* How deep a seat sits, so the "Reports To" picker can indent the board
+   instead of offering a flat list of every post in the office. */
+function officerDepth(officers: Officer[], officer: Officer) {
+  let depth = 0;
+  let cursor = officer;
+  const seen = new Set<string>([officer.id]);
+  while (cursor.reportsTo) {
+    const parent = officers.find((o) => o.id === cursor.reportsTo);
+    if (!parent || seen.has(parent.id)) break;
+    seen.add(parent.id);
+    cursor = parent;
+    depth += 1;
+  }
+  return depth;
+}
+
+/* The board flattened top-down, so a printed list reads in the same order the
+   chart does rather than in whatever order the seats happened to be added. */
+function officersInBoardOrder(officers: Officer[]): Officer[] {
+  const out: Officer[] = [];
+  const placed = new Set<string>();
+  const walk = (parentId: string) => {
+    for (const officer of reportsOf(officers, parentId)) {
+      if (placed.has(officer.id)) continue;
+      placed.add(officer.id);
+      out.push(officer);
+      walk(officer.id);
+    }
+  };
+  walk('');
+  // Anything the walk could not reach still belongs on the list.
+  for (const officer of officers) if (!placed.has(officer.id)) out.push(officer);
+  return out;
+}
+
+function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPrintList, onExport }: {
+  officers: Officer[]; search: string;
+  onAdd: () => void; onView: (o: Officer) => void; onEdit: (o: Officer) => void; onDelete: (o: Officer) => void;
+  onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void;
+  onExport: () => void;
+}) {
+  const [view, setView] = useState<'board' | 'directory'>('board');
+  const [officeFilter, setOfficeFilter] = useState('');
+  const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [search, officeFilter]);
+  /* A search is a search of the whole office, so it opens the directory — the
+     chart cannot show a match without also showing the seats above it. */
+  useEffect(() => { if (search) setView('directory'); }, [search]);
+
+  const filled = officers.filter((o) => o.name && o.status !== 'Vacant');
+  const vacant = officers.filter((o) => !o.name || o.status === 'Vacant');
+  const onLeave = officers.filter((o) => o.status === 'On Leave');
+  const offices = useMemo(() => Array.from(new Set(officers.map((o) => o.office).filter(Boolean))).sort(), [officers]);
+
+  const ordered = useMemo(() => officersInBoardOrder(officers), [officers]);
+
+  const filtered = useMemo(() => ordered.filter((o) => {
+    if (officeFilter && o.office !== officeFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!o.name.toLowerCase().includes(q) && !o.position.toLowerCase().includes(q) && !o.office.toLowerCase().includes(q) && !o.id.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }), [ordered, officeFilter, search]);
+
+  const paged = paginate(filtered, page);
+
+  const printList = () => onPrintList(
+    officeFilter || 'Market Office Board',
+    `Organizational board${search ? ` · matching “${search}”` : ''} · ${filled.length} of ${officers.length} seat${officers.length === 1 ? '' : 's'} filled`,
+    ['Officer ID', 'Position', 'Name', 'Office', 'Reports To', 'Status', 'Contact'],
+    filtered.map((o) => [o.id, o.position, o.name || 'Vacant', o.office || '—', officerLabel(officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—']),
+  );
+
+  return (
+    <>
+      <div className="page-header">
+        <div><h2 className="page-title">Market Office</h2><p className="page-subtitle">Who holds which post, who reports to whom, and which seats are still to be filled.</p></div>
+        <div className="page-actions">
+          <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No seats match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print Board</button>
+          <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>Add Officer</button>
+        </div>
+      </div>
+
+      <div className="stats-row">
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Seats on the Board</span><span className="material-symbols-outlined stat-icon primary">account_tree</span></div>
+          <div className="stat-value">{officers.length}</div>
+          <div className="stat-caption">{filled.length} filled, {vacant.length} vacant</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Officers in Post</span></div>
+          <div className="stat-value">{filled.length}</div>
+          <div className="stat-caption">{percent(ratio(filled.length, officers.length))} of the board</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">On Leave</span></div>
+          <div className="stat-value">{onLeave.length}</div>
+          <div className="stat-caption">{onLeave.length === 0 ? 'Everyone in post is at work' : onLeave.map((o) => o.position).join(', ')}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Vacant Seats</span></div>
+          <div className={`stat-value${vacant.length > 0 ? ' danger' : ''}`}>{vacant.length}</div>
+          <div className="stat-caption">{vacant.length === 0 ? 'Every post is held' : 'Awaiting appointment'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Offices Represented</span><span className="material-symbols-outlined stat-icon primary">corporate_fare</span></div>
+          <div className="stat-value">{offices.length}</div>
+          <div className="stat-caption">{offices.length === 0 ? 'No office recorded on any seat' : offices.slice(0, 2).join(', ')}{offices.length > 2 ? ` +${offices.length - 2} more` : ''}</div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="filter-row">
+          <div className="view-toggle" role="tablist" aria-label="How to show the board">
+            <button type="button" role="tab" aria-selected={view === 'board'} className={`view-toggle-btn${view === 'board' ? ' active' : ''}`} onClick={() => setView('board')}>
+              <span className="material-symbols-outlined">account_tree</span>Organizational Board
+            </button>
+            <button type="button" role="tab" aria-selected={view === 'directory'} className={`view-toggle-btn${view === 'directory' ? ' active' : ''}`} onClick={() => setView('directory')}>
+              <span className="material-symbols-outlined">grid_view</span>Directory
+            </button>
+          </div>
+          {view === 'directory' && (
+            <>
+              <select className="filter-select" value={officeFilter} onChange={(e) => setOfficeFilter(e.target.value)}>
+                <option value="">All Offices</option>
+                {offices.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+              <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total}</span>
+            </>
+          )}
+        </div>
+
+        {view === 'board' ? (
+          <OrgBoard officers={officers} onView={onView} onEdit={onEdit} />
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead><tr><th>Officer</th><th>Office</th><th>Reports To</th><th>Contact</th><th>Appointed</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {paged.items.map((o, i) => (
+                    <tr key={o.id}>
+                      <td>
+                        <div className="applicant-cell">
+                          <div className={`avatar-initials ${o.name ? getAvatarColor(i) : 'vacant'}`}>{o.name ? getInitials(o.name) : '—'}</div>
+                          <div className="applicant-info">
+                            <div className="name">{o.name || <span className="seat-vacant">Vacant seat</span>}</div>
+                            <div className="phone">{o.position}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{o.office || '—'}</td>
+                      <td>{o.reportsTo ? officerLabel(officers.find((x) => x.id === o.reportsTo)) : <span className="seat-vacant">Head of the board</span>}</td>
+                      <td className="no-wrap">{formatPhone(o.phone) || '—'}</td>
+                      <td className="no-wrap">{o.appointed ? formatIsoDate(o.appointed) : '—'}</td>
+                      <td><OfficerStatusBadge officer={o} /></td>
+                      <td>
+                        <div className="row-actions">
+                          <button type="button" className="row-icon-btn" title="View officer" aria-label="View officer" onClick={() => onView(o)}><span className="material-symbols-outlined">visibility</span></button>
+                          <button type="button" className="row-icon-btn edit" title="Edit officer" aria-label="Edit officer" onClick={() => onEdit(o)}><span className="material-symbols-outlined">edit</span></button>
+                          <button type="button" className="row-icon-btn danger" title="Remove from board" aria-label="Remove from board" onClick={() => onDelete(o)}><span className="material-symbols-outlined">delete</span></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">person_search</span>No seats match the current filters.</div></td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function OfficerStatusBadge({ officer }: { officer: Officer }) {
+  if (!officer.name || officer.status === 'Vacant') return <span className="badge badge-abandoned">Vacant</span>;
+  if (officer.status === 'On Leave') return <span className="badge badge-expiring">On Leave</span>;
+  return <span className="badge badge-active">Active</span>;
+}
+
+/* The chart itself. Drawn from `reportsTo` rather than from any fixed idea of
+   what a market office looks like, so an office running three collectors
+   under one supervisor gets three boxes under one box. */
+function OrgBoard({ officers, onView, onEdit }: { officers: Officer[]; onView: (o: Officer) => void; onEdit: (o: Officer) => void }) {
+  const heads = reportsOf(officers, '');
+
+  if (officers.length === 0) {
+    return <div className="empty-state"><span className="material-symbols-outlined">account_tree</span>No seats on the board yet. Add the first one to start the chart.</div>;
+  }
+
+  return (
+    <div className="org-board">
+      <div className="org-board-scroll">
+        <ul className="org-level org-level-root">
+          {heads.map((officer) => (
+            <OrgNode key={officer.id} officer={officer} officers={officers} onView={onView} onEdit={onEdit} seen={new Set()} />
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/* One box and everything under it. `seen` is carried down the recursion so a
+   board that somehow still holds a loop draws each seat once and stops,
+   rather than recursing until the tab dies. */
+function OrgNode({ officer, officers, onView, onEdit, seen }: { officer: Officer; officers: Officer[]; onView: (o: Officer) => void; onEdit: (o: Officer) => void; seen: Set<string> }) {
+  if (seen.has(officer.id)) return null;
+  const below = new Set(seen);
+  below.add(officer.id);
+  const reports = reportsOf(officers, officer.id).filter((o) => !below.has(o.id));
+  const vacant = !officer.name || officer.status === 'Vacant';
+
+  return (
+    <li className="org-node">
+      <div className={`org-card${vacant ? ' vacant' : ''}`}>
+        <button type="button" className="org-card-main" onClick={() => onView(officer)} title={`View ${officer.position}`}>
+          <span className={`avatar-initials ${vacant ? 'vacant' : getAvatarColor(officer.position.length)}`}>{vacant ? '—' : getInitials(officer.name)}</span>
+          <span className="org-card-text">
+            <span className="org-card-name">{officer.name || 'Vacant seat'}</span>
+            <span className="org-card-position">{officer.position}</span>
+            {officer.office && <span className="org-card-office">{officer.office}</span>}
+          </span>
+        </button>
+        <div className="org-card-foot">
+          {officer.status === 'On Leave' && <span className="org-card-tag leave">On leave</span>}
+          <button type="button" className="row-icon-btn edit org-card-edit" title={`Edit ${officer.position}`} aria-label={`Edit ${officer.position}`} onClick={() => onEdit(officer)}>
+            <span className="material-symbols-outlined">edit</span>
+          </button>
+        </div>
+      </div>
+      {reports.length > 0 && (
+        <ul className="org-level">
+          {reports.map((child) => (
+            <OrgNode key={child.id} officer={child} officers={officers} onView={onView} onEdit={onEdit} seen={below} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function OfficerDetailView({ officer, officers, onEdit, onClose }: { officer: Officer; officers: Officer[]; onEdit: () => void; onClose: () => void }) {
+  const superior = officers.find((o) => o.id === officer.reportsTo);
+  const reports = reportsOf(officers, officer.id);
+
+  return (<>
+    <RecordSheet
+      title={officer.name || 'Vacant seat'}
+      subtitle={`${officer.position}${officer.office ? ` · ${officer.office}` : ''} · ${officer.id}`}
+      badge={<OfficerStatusBadge officer={officer} />}
+    >
+      <RecordSection title="The Seat" icon="badge">
+        <div className="record-grid">
+          <RecordRow label="Position" value={officer.position} />
+          <RecordRow label="Office" value={officer.office} />
+          <RecordRow label="Held By" value={officer.name} />
+          <RecordRow label="Appointed" value={officer.appointed ? formatIsoDate(officer.appointed) : ''} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Contact" icon="phone">
+        <div className="record-grid">
+          <RecordRow label="Mobile Number" value={formatPhone(officer.phone)} />
+          <RecordRow label="Email" value={officer.email} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Place on the Board" icon="account_tree">
+        <div className="record-grid">
+          <RecordRow label="Reports To" value={superior ? officerLabel(superior) : ''} />
+          <RecordRow label="Seats Reporting In" value={reports.length > 0 ? String(reports.length) : ''} />
+        </div>
+        {reports.length > 0 && (
+          <ul className="record-list">
+            {reports.map((r) => <li key={r.id}>{officerLabel(r)}</li>)}
+          </ul>
+        )}
+      </RecordSection>
+
+    </RecordSheet>
+
+    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+      <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Officer</button>
+    </div>
+  </>);
+}
+
+/* Add and edit are one form. Unlike the tenant and applicant editors this one
+   opens on the values already filed rather than blank: a seat has only a
+   handful of fields, and an officer correcting a spelling should not have to
+   retype the rest of the post. */
+function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Officer[]; officer?: Officer; onSubmit: (o: Officer) => void; onCancel: () => void }) {
+  const editing = Boolean(officer);
+  const [name, setName] = useState(officer?.name ?? '');
+  const [position, setPosition] = useState(officer?.position ?? '');
+  const [office, setOffice] = useState(officer?.office ?? OFFICE_UNITS[1]);
+  const [reportsTo, setReportsTo] = useState(officer?.reportsTo ?? '');
+  const [phone, setPhone] = useState(officer?.phone ?? '');
+  const [email, setEmail] = useState(officer?.email ?? '');
+  const [status, setStatus] = useState<OfficerStatus>(officer?.status ?? 'Active');
+  const [appointed, setAppointed] = useState(officer?.appointed ?? '');
+  const [error, setError] = useState('');
+
+  /* Vacancy is a property of the seat, not a state the holder is in: naming
+     somebody fills the seat, clearing the name empties it again. A seat that
+     was vacant opens on Active the moment a name is typed into it. */
+  const held = Boolean(name.trim());
+  const heldStatus: OfficerStatus = status === 'Vacant' ? 'Active' : status;
+
+  /* A seat cannot be moved under itself or under one of its own reports —
+     that closes a loop and the board stops being a tree. */
+  const forbidden = useMemo(() => {
+    if (!officer) return new Set<string>();
+    const set = descendantsOf(officers, officer.id);
+    set.add(officer.id);
+    return set;
+  }, [officers, officer]);
+
+  const superiors = officersInBoardOrder(officers).filter((o) => !forbidden.has(o.id));
+
+  const submit = () => {
+    const trimmedPosition = position.trim();
+    if (!trimmedPosition) { setError('Enter the position — a seat on the board is a post, even before anybody holds it.'); return; }
+    const phoneError = phoneProblem(phone);
+    if (phoneError) { setError(phoneError); return; }
+    const trimmedEmail = email.trim();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) { setError('Enter a valid email address, or leave it blank.'); return; }
+    const trimmedName = name.trim();
+
+    onSubmit({
+      id: officer?.id ?? nextId('OFC', officers.map((o) => o.id)),
+      name: trimmedName,
+      position: trimmedPosition,
+      office: office.trim(),
+      reportsTo,
+      phone: phone.trim(),
+      email: trimmedEmail,
+      /* A seat with nobody in it is vacant whatever the picker says. */
+      status: trimmedName ? heldStatus : 'Vacant',
+      appointed,
+    });
+  };
+
+  return (
+    <>
+      <div className="form-grid">
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Position *</label>
+            <input className="form-input" autoFocus value={position} placeholder="e.g. Market Supervisor" onChange={(e) => { setPosition(e.target.value); setError(''); }} />
+            <span className="form-hint">The post itself. It stays on the board when the person holding it changes.</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Office</label>
+            <input className="form-input" list="office-units" value={office} placeholder="e.g. Market Office" onChange={(e) => setOffice(e.target.value)} />
+            <datalist id="office-units">{OFFICE_UNITS.map((u) => <option key={u} value={u} />)}</datalist>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Held By</label>
+            <input className="form-input" value={name} placeholder="e.g. Juan Dela Cruz" onChange={(e) => { setName(e.target.value); setError(''); }} />
+            <span className="form-hint">Leave blank if the post is vacant.</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Status</label>
+            <select className="form-select" value={held ? heldStatus : 'Vacant'} disabled={!held} onChange={(e) => setStatus(e.target.value as OfficerStatus)}>
+              {held
+                ? OFFICER_STATUSES.filter((st) => st !== 'Vacant').map((st) => <option key={st} value={st}>{st}</option>)
+                : <option value="Vacant">Vacant</option>}
+            </select>
+            <span className="form-hint">{held ? 'On Leave keeps the seat on the board while its holder is away.' : 'A seat with nobody in it is vacant.'}</span>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Reports To</label>
+            <select className="form-select" value={reportsTo} onChange={(e) => setReportsTo(e.target.value)}>
+              <option value="">— Head of the board —</option>
+              {superiors.map((o) => <option key={o.id} value={o.id}>{' '.repeat(officerDepth(officers, o) * 3)}{officerLabel(o)}</option>)}
+            </select>
+            <span className="form-hint">{editing && forbidden.size > 1 ? 'This seat and the seats under it are not offered — a seat cannot report to itself.' : 'Where this seat sits on the chart.'}</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Date Appointed</label>
+            <input className="form-input" type="date" value={appointed} max={todayIso()} onChange={(e) => setAppointed(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Mobile Number</label>
+            <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Email</label>
+            <input className="form-input" type="email" value={email} placeholder="e.g. marketoffice@tanauan.gov.ph" onChange={(e) => { setEmail(e.target.value); setError(''); }} />
+          </div>
+        </div>
+
+        {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+      </div>
+
+      <div className="modal-footer">
+        <button className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">save</span>{editing ? 'Save Changes' : 'Add Officer'}</button>
+      </div>
+    </>
   );
 }
 
@@ -5604,6 +6672,44 @@ function chunkIntoSheets(receipts: PrintReceipt[]): PrintReceipt[][] {
     sheets.push(receipts.slice(i, i + RECEIPTS_PER_SHEET));
   }
   return sheets.length > 0 ? sheets : [[]];
+}
+
+/* ---------- Numbering a sheet's bills ----------
+
+   A receipt handed to a tenant is the office's word that the charge exists, so
+   printing one puts the bill on record rather than leaving a numbered slip of
+   paper with nothing behind it.
+
+   Which bills that means, in the order they first appear on the sheet. The
+   same bill printed in four copies is one entry, so it is numbered once and
+   every copy carries that one number; four different bills are four entries.
+   Bills already on record are left alone — reprinting never re-files them. */
+function unsavedBills(bills: UtilityBill[]): UtilityBill[] {
+  const seen = new Set<UtilityBill>();
+  const pending: UtilityBill[] = [];
+  for (const bill of bills) {
+    if (bill.id || seen.has(bill)) continue;
+    seen.add(bill);
+    pending.push(bill);
+  }
+  return pending;
+}
+
+/* Pairs each unsaved bill with the copy of it that carries its new number.
+   The preview and the print run this over the same bills, so the number the
+   officer is shown is the number that ends up on the record. */
+function numberBills(bills: UtilityBill[], ids: string[]): Map<UtilityBill, UtilityBill> {
+  const numbered = new Map<UtilityBill, UtilityBill>();
+  unsavedBills(bills).forEach((bill, i) => {
+    if (ids[i]) numbered.set(bill, { ...bill, id: ids[i] });
+  });
+  return numbered;
+}
+
+/* A bill the office already has for that stall, utility and month. Saving asks
+   before adding a second one; printing cannot ask, so the preview says so. */
+function billsClashing(pending: UtilityBill[], onRecord: UtilityBill[]): UtilityBill[] {
+  return pending.filter((p) => onRecord.some((b) => b.stallId === p.stallId && b.type === p.type && b.period === p.period));
 }
 
 /* What goes on paper, and what the preview shows — the same component both
@@ -5626,7 +6732,7 @@ function ReceiptSheets({ receipts, printedBy, printedAt }: { receipts: PrintRece
 /* A receipt has to say who issued it, and the app has no signed-in identity to
    take that from, so the name is asked for and remembered for the next print.
    Nothing reaches the printer until the officer has seen the sheet. */
-function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRequest; onConfirm: (receipts: PrintReceipt[], printedBy: string) => void; onCancel: () => void }) {
+function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { request: PrintRequest; billsOnRecord: UtilityBill[]; onConfirm: (receipts: PrintReceipt[], printedBy: string) => void; onCancel: () => void }) {
   const [name, setName] = useState(() => { try { return localStorage.getItem(printedByKey) ?? ''; } catch { return ''; } });
   const [copies, setCopies] = useState(2);
   const [error, setError] = useState('');
@@ -5637,13 +6743,99 @@ function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRe
     : request.bills.map((bill) => ({ bill, label: '' }));
 
   const sheets = Math.ceil(Math.max(receipts.length, 1) / RECEIPTS_PER_SHEET);
-  const unsaved = receipts.filter((r) => !r.bill.id).length;
+
+  /* Printing files any draft on the sheet, so the preview shows the number it
+     will be filed under rather than "not yet on record". Only peeked here —
+     the number is claimed when the officer actually prints, so backing out of
+     this dialog leaves the bill numbers where they were. */
+  const pending = unsavedBills(receipts.map((r) => r.bill));
+  const numbered = numberBills(receipts.map((r) => r.bill), peekIds('UTL', billsOnRecord.map((b) => b.id), pending.length));
+  const previewReceipts = receipts.map((r) => ({ ...r, bill: numbered.get(r.bill) ?? r.bill }));
+  const willFile = [...numbered.values()];
+  const clashing = billsClashing(pending, billsOnRecord);
+  const overdueCount = receipts.filter((r) => isOverdue(r.bill)).length;
+
+  /* Zoom is a plain scale on the same sheet the printer gets, so magnifying it
+     cannot change what prints. Fullscreen is an in-page mode rather than the
+     Fullscreen API: the dialog is already inside an Electron window, and a
+     real fullscreen request would hide the window chrome the officer needs. */
+  const [zoom, setZoom] = useState(FIT_ZOOM);
+  const [full, setFull] = useState(false);
+
+  const stepZoom = (delta: number) => setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
+
+  /* Esc backs out of fullscreen before it closes the dialog, so the first press
+     never loses a half-filled form. Capture phase beats Modal's own handler. */
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      setFull(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [full]);
 
   const submit = () => {
     if (!name.trim()) { setError('Enter the name of the person printing these receipts.'); return; }
     if (receipts.length === 0) { setError('There is nothing to print.'); return; }
     onConfirm(receipts, name.trim());
   };
+
+  const preview = (
+    <div className={`print-preview${full ? ' fullscreen' : ''}`} aria-label="Preview of the sheets that will print">
+      <div className="print-preview-toolbar">
+        <span className="print-preview-count">{sheets} A4 sheet{sheets === 1 ? '' : 's'} · {receipts.length} receipt{receipts.length === 1 ? '' : 's'}</span>
+        <div className="print-preview-zoom">
+          <button type="button" className="row-icon-btn" title="Zoom out" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-0.15)}><span className="material-symbols-outlined">zoom_out</span></button>
+          <span className="print-preview-level">{Math.round(zoom * 100)}%</span>
+          <button type="button" className="row-icon-btn" title="Zoom in" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(0.15)}><span className="material-symbols-outlined">zoom_in</span></button>
+          <button type="button" className="btn-outline-sm" onClick={() => setZoom(FIT_ZOOM)}>Fit</button>
+          <button type="button" className="btn-outline-sm" onClick={() => setZoom(1)}>Actual size</button>
+          <button type="button" className="row-icon-btn" title={full ? 'Exit fullscreen' : 'Fullscreen'} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'} onClick={() => setFull((v) => !v)}>
+            <span className="material-symbols-outlined">{full ? 'fullscreen_exit' : 'fullscreen'}</span>
+          </button>
+        </div>
+      </div>
+      <div className="print-preview-viewport">
+        {/* `zoom`, not `transform: scale` — zoom reflows, so the scroll area
+            sizes itself to the magnified sheet. A transform would leave the
+            container at its unscaled size and the sheet would be clipped at
+            anything above 100%. Chromium-only, which is all this app runs on. */}
+        <div className="print-preview-scale zoomable" style={{ zoom }}>
+          <ReceiptSheets
+            receipts={previewReceipts}
+            printedBy={name.trim() || '—'}
+            printedAt={manilaStamp()}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (full) {
+    return (
+      <div className="print-fullscreen" role="dialog" aria-modal="true" aria-label="Print preview, fullscreen">
+        <div className="print-fullscreen-bar">
+          <div className="print-fullscreen-title">
+            <span className="material-symbols-outlined">print</span>
+            <div>
+              <strong>Print Preview</strong>
+              <span>{receipts.length} receipt{receipts.length === 1 ? '' : 's'} · {sheets} A4 sheet{sheets === 1 ? '' : 's'}</span>
+            </div>
+          </div>
+          <div className="print-fullscreen-actions">
+            <button className="btn-outline" onClick={() => setFull(false)}><span className="material-symbols-outlined">fullscreen_exit</span>Exit Fullscreen</button>
+            <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">print</span>Print {sheets} Sheet{sheets === 1 ? '' : 's'}</button>
+          </div>
+        </div>
+        {error && <div className="form-error" style={{ margin: '0 20px' }}><span className="material-symbols-outlined">error</span>{error}</div>}
+        {preview}
+      </div>
+    );
+  }
 
   return (
     <Modal
@@ -5674,23 +6866,37 @@ function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRe
         )}
       </div>
 
-      {unsaved > 0 && (
+      {willFile.length > 0 && (
         <div className="dialog-note">
           <span className="material-symbols-outlined">info</span>
-          <span>{unsaved === receipts.length ? 'This bill is not on record yet' : `${unsaved} of these bills are not on record yet`}, so {unsaved === 1 ? 'it prints' : 'they print'} without a bill number. Save to records first if the tenant needs one.</span>
+          <span>
+            {willFile.length === 1
+              ? `This bill is not on record yet — printing files it as ${willFile[0].id}.`
+              : `${willFile.length} of these bills are not on record yet — printing files them as ${willFile[0].id}–${willFile[willFile.length - 1].id}.`}
+            {' '}The {willFile.length === 1 ? 'number is' : 'numbers are'} claimed only when this prints.
+          </span>
+        </div>
+      )}
+      {clashing.length > 0 && (
+        <div className="dialog-note warning">
+          <span className="material-symbols-outlined">warning</span>
+          <span>
+            {clashing.length === 1
+              ? `Stall ${clashing[0].stallId} already has ${/^[aeiou]/i.test(clashing[0].type) ? 'an' : 'a'} ${clashing[0].type.toLowerCase()} bill on record for ${formatPeriod(clashing[0].period)}`
+              : `${clashing.length} of these stalls already have a bill on record for the same utility and month`}
+            , so printing files a second one. Check the reading before you print if this is meant to be a correction.
+          </span>
+        </div>
+      )}
+      {overdueCount > 0 && (
+        <div className="dialog-note warning">
+          <span className="material-symbols-outlined">running_with_errors</span>
+          <span>{overdueCount === receipts.length ? (receipts.length === 1 ? 'This bill is' : 'These bills are') : `${overdueCount} of these receipts are`} past the due date, so the late surcharge is added automatically on the printed copy. The amount held on record is unchanged.</span>
         </div>
       )}
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
 
-      <div className="print-preview" aria-label="Preview of the sheets that will print">
-        <div className="print-preview-scale">
-          <ReceiptSheets
-            receipts={receipts}
-            printedBy={name.trim() || '—'}
-            printedAt={manilaStamp()}
-          />
-        </div>
-      </div>
+      {preview}
 
       <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
         <button className="btn-outline" onClick={onCancel}>Cancel</button>
@@ -5705,6 +6911,12 @@ function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRe
    figures, so a quarter cut out on its own still says who owes what. */
 function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill; label: string; printedBy: string; printedAt: string }) {
   const preset = UTILITY_PRESETS[bill.type];
+  /* The surcharge is decided right here, at the moment this receipt is laid
+     out — not carried on the bill. Printing the same overdue bill again next
+     week recomputes it against next week's date, same as `isOverdue` always
+     has for the OVERDUE badge everywhere else. */
+  const overdue = isOverdue(bill);
+  const surcharge = surchargeAmount(bill);
   return (
     <div className="receipt">
       <header className="receipt-masthead">
@@ -5737,12 +6949,23 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
         <div className="receipt-line"><span>Previous Reading</span><strong>{bill.previousReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Current Reading</span><strong>{bill.currentReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Consumption</span><strong>{bill.consumption.toLocaleString()} {preset.unit}</strong></div>
-        <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.consumption * bill.rate)}</strong></div>
-        <div className="receipt-line"><span>Fixed / Service Charge</span><strong>{money(bill.fixedCharge)}</strong></div>
+        <div className="receipt-line"><span>Rate per {preset.unit}</span><strong>{money(bill.rate)}</strong></div>
+        <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.amount)}</strong></div>
+        {overdue && (
+          <div className="receipt-line surcharge">
+            <span>Late Surcharge ({SURCHARGE_RATES[bill.type]}%)</span>
+            <strong>+{money(surcharge)}</strong>
+          </div>
+        )}
       </section>
 
-      <div className="receipt-total"><span>Total Due</span><strong>{money(bill.amount)}</strong></div>
-      <div className="receipt-status">Status at printing: <strong>{(isOverdue(bill) ? 'Overdue' : bill.status).toUpperCase()}</strong></div>
+      <div className="receipt-total"><span>Total Due</span><strong>{money(overdue ? amountWithSurcharge(bill) : bill.amount)}</strong></div>
+      <div className="receipt-status">Status at printing: <strong>{(overdue ? 'Overdue' : bill.status).toUpperCase()}</strong></div>
+      {overdue && (
+        <p className="receipt-surcharge-note">
+          Past due since {formatIsoDate(bill.dueDate)}. A {SURCHARGE_RATES[bill.type]}% surcharge of {money(surcharge)} has been added to the billed amount of {money(bill.amount)}.
+        </p>
+      )}
 
       {bill.notes && <p className="receipt-notes"><span>Notes:</span> {bill.notes}</p>}
 
@@ -5763,6 +6986,254 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
         <span>Printed by <strong>{printedBy}</strong> · {printedAt}</span>
       </footer>
     </div>
+  );
+}
+
+/* ============================================================
+   Printing — stall / space verification slips, four to an A4 sheet
+   ============================================================ */
+
+/* Same quartering as the receipts, so the office cuts both sheets the same way
+   and the last sheet is padded out rather than leaving three ragged edges. */
+function chunkSlips(slips: VerificationSlip[]): VerificationSlip[][] {
+  const sheets: VerificationSlip[][] = [];
+  for (let i = 0; i < slips.length; i += SLIPS_PER_SHEET) {
+    sheets.push(slips.slice(i, i + SLIPS_PER_SHEET));
+  }
+  return sheets.length > 0 ? sheets : [[]];
+}
+
+function VerificationSheets({ slips }: { slips: VerificationSlip[] }) {
+  return (<>
+    {chunkSlips(slips).map((sheet, sheetIndex) => (
+      <div className="slip-sheet" key={sheetIndex}>
+        {sheet.map((slip) => <VerificationSlipCard key={slip.controlNo} slip={slip} />)}
+        {Array.from({ length: SLIPS_PER_SHEET - sheet.length }, (_, i) => (
+          <div className="slip slip-blank" key={`blank-${i}`} />
+        ))}
+      </div>
+    ))}
+  </>);
+}
+
+/* A field left empty prints as a ruled line rather than a dash, because a slip
+   is often run off blank and filled in at the counter by hand — that is what
+   the paper pad was. Anything typed in beforehand prints instead of the rule. */
+function SlipField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="slip-field">
+      <span className="slip-field-label">{label}</span>
+      <span className={`slip-field-value${value ? '' : ' blank'}`}>{value}</span>
+    </div>
+  );
+}
+
+/* One quarter of the sheet. The control number, the date it was issued and the
+   date it lapses are the three things a licensing clerk checks first, so they
+   sit together at the top where a slip folded in a wallet still shows them. */
+function VerificationSlipCard({ slip }: { slip: VerificationSlip }) {
+  return (
+    <div className="slip">
+      <header className="slip-masthead">
+        <img className="slip-seal" src="./logo.jpg" alt="" aria-hidden="true" />
+        <div className="slip-identity">
+          <span>Republic of the Philippines</span>
+          <span>Municipality of Tanauan, Leyte</span>
+          <strong>Tanauan Public Market</strong>
+          <span>Market Office</span>
+        </div>
+      </header>
+
+      <div className="slip-control">
+        <span className="slip-control-label">Control No.</span>
+        <span className="slip-control-no">{slip.controlNo}</span>
+      </div>
+
+      <h1 className="slip-title">Stall / Space Verification</h1>
+      <p className="slip-subtitle">(For Business Permit {slip.purpose})</p>
+
+      <div className="slip-dates">
+        <div className="slip-date"><span>Date Issued</span><strong>{formatIsoDate(slip.dateIssued)}</strong></div>
+        <div className="slip-date"><span>Valid Until</span><strong>{formatIsoDate(slip.validUntil)}</strong></div>
+      </div>
+
+      <div className="slip-party">
+        <SlipField label="Issued To" value={slip.issuedTo} />
+        <SlipField label="Section" value={slip.section} />
+        <SlipField label="Stall No." value={slip.stallNo} />
+      </div>
+
+      <ul className="slip-checklist">
+        {VERIFICATION_CHECKLIST.map((item) => (
+          <li key={item}>
+            <span className={`slip-box${slip.checked.includes(item) ? ' ticked' : ''}`} aria-hidden="true" />
+            <span className="slip-item">{item}</span>
+          </li>
+        ))}
+        <li>
+          <span className={`slip-box${slip.others ? ' ticked' : ''}`} aria-hidden="true" />
+          <span className="slip-item">Others <span className={`slip-others${slip.others ? '' : ' blank'}`}>{slip.others}</span></span>
+        </li>
+      </ul>
+
+      <p className="slip-validity">
+        Valid for {VERIFICATION_VALID_DAYS} days only, until <strong>{formatIsoDate(slip.validUntil)}</strong>.
+      </p>
+
+      <footer className="slip-foot">
+        <div className="slip-sign">
+          <span className="slip-sign-name">{slip.issuedBy}</span>
+          <span className="slip-sign-rule" />
+          <span className="slip-sign-role">Market Supervisor</span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+/* Nothing reaches the printer until the officer has seen the sheet, the same
+   rule the receipts follow. The control numbers on the preview are the ones
+   that will print — they are only claimed when Print is pressed. */
+function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, onCancel }: {
+  stall?: Stall; tenantName?: string; existingIds: string[];
+  onConfirm: (slips: Omit<VerificationSlip, 'controlNo'>[]) => void;
+  onCancel: () => void;
+}) {
+  const [purpose, setPurpose] = useState<VerificationPurpose>('Renewal');
+  const [issuedTo, setIssuedTo] = useState(tenantName && tenantName !== 'Vacant' ? tenantName : '');
+  const [section, setSection] = useState(stall?.section ?? '');
+  const [stallNo, setStallNo] = useState(stall?.id ?? '');
+  const [checked, setChecked] = useState<string[]>(VERIFICATION_DEFAULTS.Renewal);
+  const [others, setOthers] = useState('');
+  const [count, setCount] = useState(1);
+  const [issuedBy, setIssuedBy] = useState(() => { try { return localStorage.getItem(verifiedByKey) ?? ''; } catch { return ''; } });
+  const [error, setError] = useState('');
+
+  /* Switching the errand re-ticks the checklist for it. The officer can still
+     change any box afterwards — the defaults are the usual case, not a rule. */
+  const choosePurpose = (next: VerificationPurpose) => {
+    setPurpose(next);
+    setChecked(VERIFICATION_DEFAULTS[next]);
+  };
+
+  const toggle = (item: string) => setChecked((prev) => (
+    prev.includes(item) ? prev.filter((c) => c !== item) : [...prev, item]
+  ));
+
+  const dateIssued = todayIso();
+  const validUntil = isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS);
+
+  const draft = (): Omit<VerificationSlip, 'controlNo'> => ({
+    purpose,
+    issuedTo: issuedTo.trim(),
+    section: section.trim(),
+    stallNo: stallNo.trim(),
+    checked,
+    others: others.trim(),
+    dateIssued,
+    validUntil,
+    issuedBy: issuedBy.trim(),
+  });
+
+  /* Each slip on the sheet is a separate issuable leaf, so each gets its own
+     number — printing four is running off a short pad, not four copies of one. */
+  const numbers = peekIds('SSV', existingIds, count);
+  const preview: VerificationSlip[] = numbers.map((controlNo) => ({
+    ...draft(),
+    issuedBy: issuedBy.trim() || '',
+    controlNo,
+  }));
+
+  const submit = () => {
+    if (!issuedBy.trim()) { setError('Enter the name of the officer issuing these slips.'); return; }
+    onConfirm(Array.from({ length: count }, () => draft()));
+  };
+
+  return (
+    <Modal
+      title="Print Preview — Stall / Space Verification"
+      subtitle={`${count} slip${count === 1 ? '' : 's'} · 1 A4 sheet · four to a sheet · valid ${VERIFICATION_VALID_DAYS} days`}
+      stacked wide onClose={onCancel}
+    >
+      <div className="print-setup">
+        <div className="form-group">
+          <label className="form-label">Purpose *</label>
+          <select className="form-select" value={purpose} onChange={(e) => choosePurpose(e.target.value as VerificationPurpose)}>
+            <option value="Renewal">Renewal — existing lessee</option>
+            <option value="Issuance">Issuance — new lessee</option>
+          </select>
+          <span className="form-hint">Prints on the slip and ticks the boxes that errand usually needs.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Issued By *</label>
+          <input
+            className="form-input" autoFocus value={issuedBy} placeholder="e.g. Luz M. Maderazo"
+            onChange={(e) => { setIssuedBy(e.target.value); setError(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          />
+          <span className="form-hint">Signs the slip as Market Supervisor, and is offered back next time.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Issued To</label>
+          <input className="form-input" value={issuedTo} placeholder="Leave blank to write in by hand" onChange={(e) => setIssuedTo(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Section</label>
+          <select className="form-select" value={section} onChange={(e) => setSection(e.target.value)}>
+            <option value="">Leave blank</option>
+            {SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Stall No.</label>
+          <input className="form-input" value={stallNo} placeholder="e.g. MS-01" onChange={(e) => setStallNo(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Slips on the Sheet</label>
+          <select className="form-select" value={count} onChange={(e) => setCount(Number(e.target.value))}>
+            <option value={1}>1 slip</option>
+            <option value={2}>2 slips</option>
+            <option value={4}>4 — fill the sheet</option>
+          </select>
+          <span className="form-hint">Each slip is issued its own control number. Leave the details blank to run off a numbered pad.</span>
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Requirements Checked</label>
+        <div className="slip-checkgrid">
+          {VERIFICATION_CHECKLIST.map((item) => (
+            <label className="slip-checkbox" key={item}>
+              <input type="checkbox" checked={checked.includes(item)} onChange={() => toggle(item)} />
+              <span>{item}</span>
+            </label>
+          ))}
+        </div>
+        <input className="form-input" value={others} placeholder="Others — e.g. until Dec 31, 2026" onChange={(e) => setOthers(e.target.value)} style={{ marginTop: '10px' }} />
+        <span className="form-hint">Unticked boxes print empty, for ticking by hand at the counter.</span>
+      </div>
+
+      <div className="dialog-note">
+        <span className="material-symbols-outlined">info</span>
+        <span>
+          {count === 1 ? `Control number ${numbers[0]} will be` : `Control numbers ${numbers[0]}–${numbers[numbers.length - 1]} will be`}
+          {' '}issued and recorded, dated {formatIsoDate(dateIssued)} and valid until {formatIsoDate(validUntil)}.
+          {' '}{count === 1 ? 'It is claimed' : 'They are claimed'} only when this prints.
+        </span>
+      </div>
+      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+
+      <div className="print-preview" aria-label="Preview of the sheet that will print">
+        <div className="print-preview-scale">
+          <VerificationSheets slips={preview.map((s) => ({ ...s, issuedBy: s.issuedBy || '—' }))} />
+        </div>
+      </div>
+
+      <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+        <button className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">print</span>Print Sheet</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -5969,6 +7440,9 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
           `${roll.paidCount} of ${state.tenants.length} tenants have paid`,
           `${money(roll.outstanding)} still outstanding across ${roll.unpaidCount} tenant${roll.unpaidCount === 1 ? '' : 's'}`,
           `${roll.overdueCount} tenant${roll.overdueCount === 1 ? ' is' : 's are'} past the due date`,
+          ...(roll.discounted > 0
+            ? [`${money(roll.discounted)} given as ${EARLY_RENT_DISCOUNT_PCT}% early-payment discounts — collected is below the rent roll by that much`]
+            : []),
         ],
         navigate: 'tenants',
       };
@@ -6002,8 +7476,8 @@ const ASSISTANT_INTENTS: AssistantIntent[] = [
           `Stall ${tenant.stallId}, ${tenant.section}`,
           `Monthly rent ${money(tenant.rent)}, falls due day ${clampDueDay(tenant.rentDueDay)}`,
           status === 'Paid' && payment?.paidOn
-            ? `Paid ${formatIsoDate(payment.paidOn)}, ${money(payment.amount)}`
-            : `Due ${formatIsoDate(rentDueIso(tenant, period))}${status === 'Overdue' ? `, ${rentDaysLate(tenant, period)} days late` : ''}`,
+            ? `Paid ${formatIsoDate(payment.paidOn)}, ${money(payment.amount)}${payment.discount > 0 ? ` (after a ${money(payment.discount)} early-payment discount)` : ''}`
+            : `Due ${formatIsoDate(rentDueIso(tenant, period))}${status === 'Overdue' ? `, ${rentDaysLate(tenant, period)} days late` : ''}${rentQuoteToday(tenant, period).early ? ` — ${money(rentQuoteToday(tenant, period).payable)} if settled today with the ${EARLY_RENT_DISCOUNT_PCT}% early discount` : ''}`,
           `Rent collected from this tenant to date: ${money(rentTotalPaid(tenant))}`,
         ],
         navigate: 'tenants',

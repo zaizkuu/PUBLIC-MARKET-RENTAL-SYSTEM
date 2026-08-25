@@ -1,0 +1,2166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tanauan Public Market Rental Monitoring System — User Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
+<style>
+/* ===== RESET & BASE ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #3b82f6;
+  --color-primary-bg: rgba(37, 99, 235, 0.08);
+  --color-primary-dark: #1e40af;
+  --sidebar-start: #243B8F;
+  --sidebar-mid: #3a3aa0;
+  --sidebar-end: #4f3fb0;
+  --sidebar-gold: #e2a63c;
+  --sidebar-gold-light: #f3c975;
+  --color-bg: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;
+  --color-border-light: #f0f1f3;
+  --color-text: #1a1f36;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-success: #16a34a;
+  --color-success-bg: #dcfce7;
+  --color-success-text: #0b5030;
+  --color-warning: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-warning-text: #8a4a04;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fee2e2;
+  --color-danger-text: #8f1613;
+  --color-info-bg: #dbeafe;
+  --color-info-text: #16307e;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+html { font-size: 11pt; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--color-text);
+  line-height: 1.65;
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  vertical-align: middle;
+}
+
+/* ===== PAGE LAYOUT ===== */
+@page {
+  size: A4 portrait;
+  margin: 18mm 16mm 20mm 16mm;
+}
+
+.page {
+  page-break-after: always;
+  position: relative;
+}
+.page:last-child { page-break-after: avoid; }
+
+/* ===== COVER PAGE ===== */
+.cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  text-align: center;
+  background: linear-gradient(160deg, var(--sidebar-start) 0%, var(--sidebar-mid) 55%, var(--sidebar-end) 100%);
+  color: #ffffff;
+  padding: 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.cover-seal {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 4px solid var(--sidebar-gold);
+  object-fit: cover;
+  margin-bottom: 24px;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+
+.cover-municipality {
+  font-size: 13pt;
+  font-weight: 500;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.8);
+  margin-bottom: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.cover-title {
+  font-size: 28pt;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  margin-bottom: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.cover-subtitle {
+  font-size: 14pt;
+  font-weight: 500;
+  color: var(--sidebar-gold-light);
+  margin-bottom: 40px;
+  position: relative;
+  z-index: 1;
+}
+
+.cover-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--sidebar-gold);
+  color: var(--sidebar-start);
+  padding: 10px 28px;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 13pt;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 4px 16px rgba(226, 166, 60, 0.4);
+}
+
+.cover-meta {
+  margin-top: 40px;
+  font-size: 10pt;
+  color: rgba(255,255,255,0.6);
+  position: relative;
+  z-index: 1;
+}
+
+.cover-divider {
+  width: 80px;
+  height: 3px;
+  background: var(--sidebar-gold);
+  border-radius: 2px;
+  margin: 20px auto;
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== TABLE OF CONTENTS ===== */
+.toc-page {
+  padding: 40px;
+  min-height: 100vh;
+}
+
+.toc-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 32px;
+  padding-bottom: 16px;
+  border-bottom: 3px solid var(--color-primary);
+}
+
+.toc-header h2 {
+  font-size: 20pt;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+}
+
+.toc-list {
+  list-style: none;
+}
+
+.toc-part {
+  font-size: 10pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--sidebar-gold);
+  margin-top: 24px;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.toc-item {
+  display: flex;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px dotted var(--color-border-light);
+}
+
+.toc-num {
+  font-weight: 700;
+  color: var(--color-primary);
+  min-width: 36px;
+  font-variant-numeric: tabular-nums;
+}
+
+.toc-label {
+  font-weight: 500;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.toc-sub {
+  padding-left: 36px;
+}
+.toc-sub .toc-num { color: var(--color-text-secondary); font-weight: 500; min-width: 28px; }
+.toc-sub .toc-label { font-weight: 400; color: var(--color-text-secondary); }
+
+/* ===== CHAPTER HEADERS ===== */
+.chapter {
+  padding: 40px;
+  min-height: auto;
+}
+
+.chapter-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+  padding-bottom: 14px;
+  border-bottom: 3px solid var(--color-primary);
+}
+
+.chapter-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--sidebar-start), var(--sidebar-mid));
+  color: white;
+  font-size: 24px;
+}
+
+.chapter-num {
+  font-size: 10pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-primary);
+  display: block;
+}
+
+.chapter-title {
+  font-size: 20pt;
+  font-weight: 800;
+  color: var(--color-text);
+  display: block;
+  line-height: 1.2;
+}
+
+/* ===== SECTION HEADERS ===== */
+h3 {
+  font-size: 13pt;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  margin-top: 28px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h3::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 20px;
+  background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
+  border-radius: 2px;
+}
+
+h4 {
+  font-size: 11.5pt;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+/* ===== PARAGRAPHS & LISTS ===== */
+p {
+  margin-bottom: 10px;
+  color: var(--color-text);
+}
+
+ul, ol {
+  margin-bottom: 12px;
+  padding-left: 24px;
+}
+
+li {
+  margin-bottom: 5px;
+}
+
+/* ===== CALLOUT BOXES ===== */
+.callout {
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin: 16px 0;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 10pt;
+}
+
+.callout .material-symbols-outlined { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+
+.callout-note {
+  background: var(--color-info-bg);
+  border-left: 4px solid var(--color-primary);
+  color: var(--color-info-text);
+}
+
+.callout-tip {
+  background: var(--color-success-bg);
+  border-left: 4px solid var(--color-success);
+  color: var(--color-success-text);
+}
+
+.callout-warning {
+  background: var(--color-warning-bg);
+  border-left: 4px solid var(--color-warning);
+  color: var(--color-warning-text);
+}
+
+.callout-danger {
+  background: var(--color-danger-bg);
+  border-left: 4px solid var(--color-danger);
+  color: var(--color-danger-text);
+}
+
+/* ===== TABLES ===== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 9.5pt;
+}
+
+thead th {
+  background: var(--color-primary-dark);
+  color: white;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 9pt;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+thead th:first-child { border-radius: 8px 0 0 0; }
+thead th:last-child { border-radius: 0 8px 0 0; }
+
+tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+  vertical-align: top;
+}
+
+tbody tr:nth-child(even) { background: #f9fafb; }
+tbody tr:hover { background: var(--color-primary-bg); }
+
+/* ===== BADGES ===== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 8.5pt;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-blue { background: var(--color-info-bg); color: var(--color-info-text); }
+.badge-green { background: var(--color-success-bg); color: var(--color-success-text); }
+.badge-amber { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.badge-red { background: var(--color-danger-bg); color: var(--color-danger-text); }
+.badge-gray { background: #f1f3f7; color: #475569; }
+.badge-gold { background: #fef3c7; color: #92400e; }
+
+/* ===== STEP BOXES ===== */
+.steps {
+  counter-reset: step;
+  margin: 16px 0;
+}
+
+.step {
+  counter-increment: step;
+  position: relative;
+  padding: 14px 16px 14px 52px;
+  margin-bottom: 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.step::before {
+  content: counter(step);
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  color: white;
+  font-weight: 700;
+  font-size: 10pt;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 26px;
+}
+
+.step-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* ===== FEATURE CARDS ===== */
+.feature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.feature-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  border-top: 4px solid;
+  border-image: linear-gradient(90deg, var(--color-primary-dark), var(--color-primary-light)) 1;
+}
+
+.feature-card-title {
+  font-weight: 700;
+  font-size: 10.5pt;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.feature-card-title .material-symbols-outlined {
+  color: var(--color-primary);
+  font-size: 18px;
+}
+
+.feature-card p {
+  font-size: 9.5pt;
+  color: var(--color-text-secondary);
+  margin-bottom: 0;
+}
+
+/* ===== INLINE CODE & KEYS ===== */
+code, .key {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: 'Inter', sans-serif;
+  font-size: 9pt;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+}
+
+/* ===== ICON INLINE ===== */
+.icon-inline {
+  font-size: 16px;
+  vertical-align: middle;
+  color: var(--color-primary);
+}
+
+/* ===== STAT CARD PREVIEW ===== */
+.stat-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.stat-box {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  border-top: 4px solid;
+  border-image: linear-gradient(90deg, #1d4ed8, #3b82f6, #60a5fa) 1;
+  text-align: center;
+}
+
+.stat-box-value {
+  font-size: 16pt;
+  font-weight: 800;
+  color: var(--color-primary-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-box-label {
+  font-size: 8.5pt;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ===== SIDEBAR PREVIEW ===== */
+.sidebar-preview {
+  background: linear-gradient(160deg, var(--sidebar-start) 0%, var(--sidebar-mid) 55%, var(--sidebar-end) 100%);
+  border-radius: var(--radius);
+  padding: 16px;
+  color: white;
+  font-size: 9.5pt;
+  max-width: 220px;
+}
+
+.sidebar-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  margin-bottom: 3px;
+  color: rgba(255,255,255,0.82);
+}
+
+.sidebar-preview-item.active {
+  background: var(--sidebar-gold);
+  color: var(--sidebar-start);
+  font-weight: 700;
+}
+
+.sidebar-preview-item .material-symbols-outlined { font-size: 18px; }
+
+/* ===== FIELD TABLE ===== */
+.field-table td:first-child {
+  font-weight: 600;
+  white-space: nowrap;
+  min-width: 140px;
+}
+
+/* ===== FOOTER ===== */
+.page-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 40px;
+  font-size: 7.5pt;
+  color: var(--color-text-tertiary);
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--color-border-light);
+}
+
+/* ===== PRINT ADJUSTMENTS ===== */
+@media print {
+  body { background: white; }
+  .chapter { padding: 0; }
+  .page { min-height: auto; }
+  .cover { min-height: 100vh; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .callout, .badge, .stat-box, .sidebar-preview, thead th, .chapter-icon, .step::before, .cover, .feature-card {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ===== DIVIDER ===== */
+hr {
+  border: none;
+  border-top: 2px solid var(--color-border);
+  margin: 28px 0;
+}
+
+/* ===== REFERENCE BOX ===== */
+.ref-box {
+  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 14px 0;
+}
+
+.ref-box-title {
+  font-weight: 700;
+  font-size: 10pt;
+  color: var(--color-primary-dark);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ===== WORKFLOW ARROW ===== */
+.workflow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+
+.workflow-step {
+  background: var(--color-primary-bg);
+  border: 1px solid rgba(37,99,235,0.2);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 9pt;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+}
+
+.workflow-arrow {
+  color: var(--color-primary);
+  font-size: 16px;
+}
+
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!--                        COVER PAGE                             -->
+<!-- ============================================================ -->
+<div class="page cover">
+  <img src="../public/logo.jpg" alt="Municipal Seal of Tanauan, Leyte" class="cover-seal">
+  <div class="cover-municipality">Republic of the Philippines</div>
+  <div class="cover-municipality">Municipality of Tanauan, Leyte</div>
+  <div class="cover-divider"></div>
+  <div class="cover-title">Public Market Rental<br>Monitoring System</div>
+  <div class="cover-subtitle">Market Office — Municipal Government</div>
+  <div class="cover-badge">
+    <span class="material-symbols-outlined">menu_book</span>
+    User Manual
+  </div>
+  <div class="cover-meta">
+    <p>Version 1.0 &nbsp;·&nbsp; August 2026</p>
+    <p style="margin-top:4px;">A comprehensive guide to operating every feature of the system</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--                    TABLE OF CONTENTS                          -->
+<!-- ============================================================ -->
+<div class="page toc-page">
+  <div class="toc-header">
+    <span class="material-symbols-outlined" style="font-size:28px; color:var(--color-primary);">toc</span>
+    <h2>Table of Contents</h2>
+  </div>
+
+  <ul class="toc-list">
+    <li class="toc-part">Part I — Getting Started</li>
+    <li class="toc-item"><span class="toc-num">1</span><span class="toc-label">Introduction &amp; System Overview</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">1.1</span><span class="toc-label">About the System</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">1.2</span><span class="toc-label">Key Features at a Glance</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">1.3</span><span class="toc-label">System Requirements</span></li>
+    <li class="toc-item"><span class="toc-num">2</span><span class="toc-label">System Interface &amp; Navigation</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">2.1</span><span class="toc-label">Application Layout</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">2.2</span><span class="toc-label">Sidebar Navigation</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">2.3</span><span class="toc-label">Top Bar &amp; Search</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">2.4</span><span class="toc-label">Notifications Panel</span></li>
+
+    <li class="toc-part">Part II — Core Modules</li>
+    <li class="toc-item"><span class="toc-num">3</span><span class="toc-label">Dashboard</span></li>
+    <li class="toc-item"><span class="toc-num">4</span><span class="toc-label">Stall Management</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">4.1</span><span class="toc-label">Viewing &amp; Filtering Stalls</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">4.2</span><span class="toc-label">Adding a New Stall</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">4.3</span><span class="toc-label">Viewing Stall Details</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">4.4</span><span class="toc-label">Editing a Stall</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">4.5</span><span class="toc-label">Deleting a Stall</span></li>
+    <li class="toc-item"><span class="toc-num">5</span><span class="toc-label">Tenant Records</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">5.1</span><span class="toc-label">Managing Tenants</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">5.2</span><span class="toc-label">Monthly Rent Collection</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">5.3</span><span class="toc-label">Early-Payment Discount (20%)</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">5.4</span><span class="toc-label">Stallkeeper Management</span></li>
+    <li class="toc-item"><span class="toc-num">6</span><span class="toc-label">Applicant Management</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">6.1</span><span class="toc-label">Application Pipeline</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">6.2</span><span class="toc-label">Documentary Requirements</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">6.3</span><span class="toc-label">Approval &amp; Stall Assignment</span></li>
+    <li class="toc-item"><span class="toc-num">7</span><span class="toc-label">Utility Billing</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">7.1</span><span class="toc-label">Bill Calculator</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">7.2</span><span class="toc-label">Billing Records &amp; Management</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">7.3</span><span class="toc-label">Receipt Printing &amp; Batch Printing</span></li>
+    <li class="toc-item toc-sub"><span class="toc-num">7.4</span><span class="toc-label">Late Surcharges</span></li>
+    <li class="toc-item"><span class="toc-num">8</span><span class="toc-label">Violations Register</span></li>
+
+    <li class="toc-part">Part III — Reporting &amp; Intelligence</li>
+    <li class="toc-item"><span class="toc-num">9</span><span class="toc-label">Analytics &amp; Operations Report</span></li>
+    <li class="toc-item"><span class="toc-num">10</span><span class="toc-label">Logbook (Audit Trail)</span></li>
+    <li class="toc-item"><span class="toc-num">11</span><span class="toc-label">Market Assistant (AI)</span></li>
+
+    <li class="toc-part">Part IV — Administration</li>
+    <li class="toc-item"><span class="toc-num">12</span><span class="toc-label">Officers &amp; Organizational Board</span></li>
+    <li class="toc-item"><span class="toc-num">13</span><span class="toc-label">Stall / Space Verification Slips</span></li>
+    <li class="toc-item"><span class="toc-num">14</span><span class="toc-label">Settings &amp; Data Management</span></li>
+    <li class="toc-item"><span class="toc-num">15</span><span class="toc-label">Support &amp; Help Center</span></li>
+
+    <li class="toc-part">Appendices</li>
+    <li class="toc-item"><span class="toc-num">A</span><span class="toc-label">Business Rules Quick Reference</span></li>
+    <li class="toc-item"><span class="toc-num">B</span><span class="toc-label">Troubleshooting &amp; FAQ</span></li>
+    <li class="toc-item"><span class="toc-num">C</span><span class="toc-label">Contact Information</span></li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--                 CHAPTER 1: INTRODUCTION                       -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">info</span></div>
+    <div>
+      <span class="chapter-num">Chapter 1</span>
+      <span class="chapter-title">Introduction &amp; System Overview</span>
+    </div>
+  </div>
+
+  <h3>1.1 About the System</h3>
+  <p>The <strong>Public Market Rental Monitoring System (PMRMS)</strong> is a desktop application developed for the <strong>Market Office of the Municipality of Tanauan, Leyte</strong>. It serves as the centralized digital platform for managing all operational aspects of the Tanauan Public Market, including stall management, tenant records, rent collection, utility billing, applicant processing, violation tracking, and official report generation.</p>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>100% Offline Operation:</strong> This system runs entirely on your local computer. No internet connection is required. All data is stored securely on your workstation and never transmitted to external servers, ensuring complete data privacy.</div>
+  </div>
+
+  <h3>1.2 Key Features at a Glance</h3>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">dashboard</span> Dashboard</div>
+      <p>Real-time overview of market operations, revenue, occupancy rates, and recent activity.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">storefront</span> Stall Management</div>
+      <p>Complete registry of all market stalls with status tracking, inspections, and verification slips.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">groups</span> Tenant Records</div>
+      <p>Master directory of stallholders with lease terms, rent collection, and stallkeeper rosters.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">person_add</span> Applicant Management</div>
+      <p>Full application pipeline from intake through document verification to stall assignment.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">bolt</span> Utility Billing</div>
+      <p>Electricity and water meter-based billing engine with receipt printing and batch processing.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">gavel</span> Violations</div>
+      <p>Citation register with demerit point tracking, resolution workflow, and repeat offender monitoring.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">analytics</span> Analytics</div>
+      <p>Formal executive operations report for the Municipal Mayor and Market Board.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">forum</span> AI Assistant</div>
+      <p>Offline intelligent querying assistant for quick answers about rent, stalls, and billing.</p>
+    </div>
+  </div>
+
+  <h3>1.3 System Requirements</h3>
+  <table>
+    <thead>
+      <tr><th>Requirement</th><th>Specification</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Operating System</td><td>Windows 10 or later (64-bit)</td></tr>
+      <tr><td>Storage</td><td>Local browser storage (data saved to <code>%APPDATA%\Tanauan Public Market System</code>)</td></tr>
+      <tr><td>Internet</td><td>Not required — fully offline operation</td></tr>
+      <tr><td>Printer</td><td>Any A4-capable printer for receipts, reports, and verification slips</td></tr>
+      <tr><td>Display</td><td>Minimum 1280×720 resolution recommended</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<!--           CHAPTER 2: INTERFACE & NAVIGATION                   -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">web</span></div>
+    <div>
+      <span class="chapter-num">Chapter 2</span>
+      <span class="chapter-title">System Interface &amp; Navigation</span>
+    </div>
+  </div>
+
+  <h3>2.1 Application Layout</h3>
+  <p>The application uses a modern two-column layout consisting of:</p>
+  <ul>
+    <li><strong>Left Sidebar</strong> — Fixed navigation panel (240px wide) with the deep royal blue-to-violet gradient background. Contains your main navigation modules and utility actions.</li>
+    <li><strong>Main Content Area</strong> — The right panel that displays the currently selected module's content, with a sticky top bar at the top.</li>
+  </ul>
+
+  <h3>2.2 Sidebar Navigation</h3>
+  <p>The sidebar is divided into three sections:</p>
+
+  <h4>Municipal Branding (Top)</h4>
+  <p>Displays the official Municipal Seal of Tanauan, Leyte and the application name "<strong>Tanauan Public Market</strong>" with the subtitle "<strong>Market Office</strong>".</p>
+
+  <h4>Primary Navigation Modules (Center)</h4>
+  <p>Ten main navigation items are available. The currently active module is highlighted with a <span class="badge badge-gold">warm gold pill</span> background and bold white text:</p>
+  <table>
+    <thead>
+      <tr><th>Module</th><th>Icon</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Dashboard</strong></td><td><span class="material-symbols-outlined icon-inline">dashboard</span></td><td>Central command center with market overview</td></tr>
+      <tr><td><strong>Stall Management</strong></td><td><span class="material-symbols-outlined icon-inline">storefront</span></td><td>Registry of all physical market stalls</td></tr>
+      <tr><td><strong>Tenant Records</strong></td><td><span class="material-symbols-outlined icon-inline">groups</span></td><td>Stallholder directory and rent ledger</td></tr>
+      <tr><td><strong>Applicants</strong></td><td><span class="material-symbols-outlined icon-inline">person_add</span></td><td>Application pipeline management</td></tr>
+      <tr><td><strong>Utility Billing</strong></td><td><span class="material-symbols-outlined icon-inline">bolt</span></td><td>Electricity &amp; water billing engine</td></tr>
+      <tr><td><strong>Violations</strong></td><td><span class="material-symbols-outlined icon-inline">gavel</span></td><td>Compliance and citation register</td></tr>
+      <tr><td><strong>Analytics</strong></td><td><span class="material-symbols-outlined icon-inline">analytics</span></td><td>Executive operations report</td></tr>
+      <tr><td><strong>Logbook</strong></td><td><span class="material-symbols-outlined icon-inline">menu_book</span></td><td>Operational audit trail</td></tr>
+      <tr><td><strong>Officers</strong></td><td><span class="material-symbols-outlined icon-inline">account_tree</span></td><td>Organizational board and officer directory</td></tr>
+      <tr><td><strong>Assistant</strong></td><td><span class="material-symbols-outlined icon-inline">forum</span></td><td>Offline AI querying assistant</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Utility Actions (Bottom)</h4>
+  <p>At the bottom of the sidebar, you will find:</p>
+  <ul>
+    <li><span class="material-symbols-outlined icon-inline">settings</span> <strong>Settings</strong> — System configuration, backup, and data management</li>
+    <li><span class="material-symbols-outlined icon-inline">help</span> <strong>Support</strong> — Help center, FAQ, and contact information</li>
+    <li><span class="material-symbols-outlined icon-inline">logout</span> <strong>Log Out</strong> — Opens a confirmation dialog before logging out</li>
+  </ul>
+
+  <h3>2.3 Top Bar &amp; Search</h3>
+  <p>The sticky top bar (64px height) contains the following elements from left to right:</p>
+  <ul>
+    <li><strong>Context Search Bar</strong> — A search input that adapts its placeholder text to the current module (e.g., "Search stalls by ID, tenant, section..." in Stall Management). In the Dashboard, typing here triggers a <strong>global multi-entity search</strong> across Tenants, Stalls, Applicants, Bills, Violations, and Officers.</li>
+    <li><strong>Quick Action Button</strong> — On certain modules, a context-specific action button appears (e.g., "<code>+ New Log Entry</code>" on the Dashboard).</li>
+    <li><strong>Philippine Standard Time Clock</strong> — A live digital clock displaying the current time in <code>HH:MM:SS AM/PM PHT</code> format along with the full date, updating every second.</li>
+    <li><strong>Notification Bell</strong> — Displays a red dot when there are active alerts. Click to open the notifications panel.</li>
+    <li><strong>Admin Avatar</strong> — Circular avatar displaying "AD" for the system administrator.</li>
+  </ul>
+
+  <h3>2.4 Notifications Panel</h3>
+  <p>Clicking the notification bell <span class="material-symbols-outlined icon-inline">notifications</span> opens a dropdown panel that displays real-time operational alerts. These notifications are automatically generated by the system based on current data:</p>
+  <table>
+    <thead>
+      <tr><th>Alert Type</th><th>Trigger Condition</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><span class="badge badge-red">Overdue Rent</span></td><td>Tenants whose rent is past due and uncollected</td></tr>
+      <tr><td><span class="badge badge-amber">Unpaid Utilities</span></td><td>Electricity or water bills that are unpaid or overdue</td></tr>
+      <tr><td><span class="badge badge-blue">Pending Applicants</span></td><td>Applications awaiting review</td></tr>
+      <tr><td><span class="badge badge-amber">Expiring Leases</span></td><td>Tenant leases approaching expiration</td></tr>
+      <tr><td><span class="badge badge-gray">Maintenance</span></td><td>Stalls currently under maintenance</td></tr>
+      <tr><td><span class="badge badge-red">Open Violations</span></td><td>Unresolved violation citations</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<!--                  CHAPTER 3: DASHBOARD                         -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">dashboard</span></div>
+    <div>
+      <span class="chapter-num">Chapter 3</span>
+      <span class="chapter-title">Dashboard</span>
+    </div>
+  </div>
+
+  <p>The Dashboard is the central operational command center of the system. It provides a real-time, high-level overview of all market operations at a glance. This is the first page you see after logging in.</p>
+
+  <h3>3.1 Statistics Cards</h3>
+  <p>The top row displays five key metric cards, each showing a primary figure with supporting breakdowns:</p>
+
+  <div class="stat-preview">
+    <div class="stat-box"><div class="stat-box-value">48</div><div class="stat-box-label">Total Stalls</div></div>
+    <div class="stat-box"><div class="stat-box-value">87%</div><div class="stat-box-label">Occupancy</div></div>
+    <div class="stat-box"><div class="stat-box-value">42</div><div class="stat-box-label">Active Tenants</div></div>
+    <div class="stat-box"><div class="stat-box-value">5</div><div class="stat-box-label">Pending Applicants</div></div>
+    <div class="stat-box"><div class="stat-box-value">₱12,500</div><div class="stat-box-label">Unpaid Utilities</div></div>
+  </div>
+
+  <table class="field-table">
+    <thead><tr><th>Card</th><th>Primary Value</th><th>Breakdown Details</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Total Stalls</strong></td><td>Count of all registered stalls</td><td>Occupied, Available, Temp. Closed, Closed, Abandoned, Maintenance</td></tr>
+      <tr><td><strong>Occupancy</strong></td><td>Occupied count / Total stalls</td><td>Progress bar showing occupancy percentage</td></tr>
+      <tr><td><strong>Active Tenants</strong></td><td>Total active tenant records</td><td>Number expiring soon; quick link to "View Tenants"</td></tr>
+      <tr><td><strong>Pending Applicants</strong></td><td>Awaiting review count</td><td>Incomplete documents count; quick link "Review Now"</td></tr>
+      <tr><td><strong>Unpaid Utilities</strong></td><td>Total peso outstanding</td><td>Count of unpaid and overdue bills; link to Utilities</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3.2 Market Earnings Panel</h3>
+  <p>This panel provides a comprehensive view of the current month's financial standing:</p>
+  <ul>
+    <li><strong>Monthly Rent Roll</strong> — Total contracted rent from all active tenants</li>
+    <li><strong>Rent Outstanding</strong> — Uncollected rent for the current period</li>
+    <li><strong>Early-Payment Discounts Given</strong> — Total value of 20% discounts issued</li>
+    <li><strong>Rent Collected to Date</strong> — Actual rent collected for the month</li>
+    <li><strong>Utilities Collected</strong> — Total utility payments received</li>
+    <li><strong>Total Market Earnings</strong> — Combined rent + utilities collected</li>
+  </ul>
+  <p>A large progress meter visualizes the collection percentage. If there are overdue bills, the meter turns <span style="color:var(--color-danger);font-weight:600;">red</span> to alert officers.</p>
+  <p>Click the <code>Open Rent Register</code> button to navigate directly to the Tenant Records module for detailed rent management.</p>
+
+  <h3>3.3 Stall Occupancy Chart</h3>
+  <p>An interactive stacked bar chart displays stall utilization broken down by <strong>market section</strong> (Meat &amp; Poultry, Fish &amp; Seafood, Vegetables &amp; Fruits, Dry Goods). Each bar is color-segmented by stall status with an accompanying legend. Click <code>Full Report</code> to navigate to the Analytics module.</p>
+
+  <h3>3.4 Recent Activity Feed</h3>
+  <p>A live feed displays the last 50 system operations in reverse chronological order. Each entry shows:</p>
+  <ul>
+    <li>A colored action icon indicating the type of activity</li>
+    <li>A text description of the action (e.g., "Rent collected from Maria Santos for Stall MS-01")</li>
+    <li>A relative timestamp (e.g., "Just now", "5 minutes ago")</li>
+  </ul>
+
+  <h3>3.5 Global Search</h3>
+  <p>When you type into the search bar from the Dashboard, the system performs a <strong>global multi-entity search</strong>. Results are categorized and displayed in a list of up to 24 items across:</p>
+  <ul>
+    <li>Tenants &nbsp;·&nbsp; Stalls &nbsp;·&nbsp; Applicants &nbsp;·&nbsp; Utility Bills &nbsp;·&nbsp; Violations &nbsp;·&nbsp; Officers</li>
+  </ul>
+  <p>Clicking on any search result will navigate directly to the relevant record.</p>
+</div>
+
+<!-- ============================================================ -->
+<!--             CHAPTER 4: STALL MANAGEMENT                       -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">storefront</span></div>
+    <div>
+      <span class="chapter-num">Chapter 4</span>
+      <span class="chapter-title">Stall Management</span>
+    </div>
+  </div>
+
+  <p>The Stall Management module provides a complete registry of all physical market stalls across all sections. It allows you to track stall status, occupancy, business permits, and inspections.</p>
+
+  <h3>4.1 Viewing &amp; Filtering Stalls</h3>
+  <p>The module opens with summary statistics at the top: <strong>Total Stalls</strong>, <strong>Occupied</strong>, <strong>Available</strong>, <strong>Maintenance</strong>, and <strong>Temporarily Closed</strong>.</p>
+
+  <h4>Filter Controls</h4>
+  <table class="field-table">
+    <thead><tr><th>Filter</th><th>Options</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Market Section</strong></td><td>All Sections, Meat &amp; Poultry, Fish &amp; Seafood, Vegetables &amp; Fruits, Dry Goods</td></tr>
+      <tr><td><strong>Status</strong></td><td>All Statuses, Occupied, Available, Maintenance, Temporarily Closed, Closed, Abandoned</td></tr>
+      <tr><td><strong>Search</strong></td><td>Search by Stall ID, occupant tenant name, or section</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Header Action Buttons</h4>
+  <ul>
+    <li><code>Clear Filters</code> — Reset all filters to show all stalls</li>
+    <li><code>Print List</code> — Prints the currently filtered stall table as a formal register sheet</li>
+    <li><code>Stall / Space Verification</code> — Opens the verification slip issuance dialog (see Chapter 13)</li>
+    <li><code>+ New Stall</code> — Opens the Add Stall form</li>
+  </ul>
+
+  <h4>Data Table Columns</h4>
+  <table>
+    <thead><tr><th>Column</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>Stall ID</td><td>Unique identifier (e.g., MS-01, CS-01, FV-01, KK-01)</td></tr>
+      <tr><td>Section</td><td>Market section the stall belongs to</td></tr>
+      <tr><td>Tenant Name</td><td>Name of the current occupant, or "Vacant"</td></tr>
+      <tr><td>Status</td><td>Color-coded status badge (green=Available, blue=Occupied, amber=Maintenance, red=Closed, gray=Abandoned)</td></tr>
+      <tr><td>Business Permit</td><td>Permit badge: <span class="badge badge-green">With BP</span> <span class="badge badge-red">No BP</span> <span class="badge badge-gray">Not Recorded</span></td></tr>
+      <tr><td>Last Inspection</td><td>Date of the most recent stall inspection</td></tr>
+      <tr><td>Actions</td><td>View Details, Issue Verification Slip, Delete</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.2 Adding a New Stall</h3>
+  <p>Click the <code>+ New Stall</code> button to open the Add Stall modal form.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Enter Stall Details</div>
+      Fill in the following fields:
+      <ul>
+        <li><strong>Stall ID</strong> — Enter a custom ID or leave empty for auto-generation</li>
+        <li><strong>Section</strong> — Select the market section (Meat &amp; Poultry, Fish &amp; Seafood, Vegetables &amp; Fruits, or Dry Goods)</li>
+        <li><strong>Tenant Name</strong> — Required if the status is set to "Occupied"</li>
+        <li><strong>Status</strong> — Select the initial stall status</li>
+        <li><strong>Business Permit</strong> — Select: With BP, No BP, or Not Recorded</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="step-title">Save the Record</div>
+      Click <code>Save</code> to create the stall. The system will automatically assign a unique ID if one was not provided, and a logbook entry will be created.
+    </div>
+  </div>
+
+  <h3>4.3 Viewing Stall Details</h3>
+  <p>Click the <span class="material-symbols-outlined icon-inline">visibility</span> (eye) icon on any stall row to open the <strong>Stall Details View</strong>. This formal record sheet displays:</p>
+  <ul>
+    <li><strong>Stall Particulars</strong> — ID, section, status, permit status, last inspection date</li>
+    <li><strong>Assigned Tenant</strong> — Name, contact, and barangay of the current occupant</li>
+    <li><strong>Stallkeeper Roster</strong> — List of all registered stallkeepers with their relationship to the tenant</li>
+    <li><strong>Utility Summary</strong> — Electricity and water meter numbers and billing overview</li>
+    <li><strong>Billing History</strong> — Table of all utility bills associated with this stall</li>
+  </ul>
+  <p>From this view you can issue a <strong>Verification Slip</strong> or click <code>Edit Details</code> to modify the stall record.</p>
+
+  <h3>4.4 Editing a Stall</h3>
+  <p>The Edit Stall form uses a <strong>"blank keeps on-record"</strong> pattern: all inputs appear blank with the current value shown as a placeholder (e.g., <em>"On record: Meat &amp; Poultry"</em>). Only fields that you explicitly fill in will be updated.</p>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>Linked Stall Protection:</strong> When a stall is linked to a tenant record, the tenant name and certain status fields are locked in the stall edit form. Changes to these must be made through the Tenant Records module instead.</div>
+  </div>
+
+  <p>Available fields for editing:</p>
+  <ul>
+    <li><strong>Section</strong> — Change the market section</li>
+    <li><strong>Status</strong> — Update the stall status</li>
+    <li><strong>Business Permit</strong> — Update permit status</li>
+    <li><strong>Last Inspection</strong> — Set a new date, or use the <code>Inspected Today</code> shortcut button</li>
+  </ul>
+
+  <div class="callout callout-warning">
+    <span class="material-symbols-outlined">warning</span>
+    <div><strong>Releasing a Stall:</strong> If you change the status to "Available" on an occupied stall, the system will ask for confirmation and then remove the occupant tenant record, releasing the stall.</div>
+  </div>
+
+  <h3>4.5 Deleting a Stall</h3>
+  <p>Click the <span class="material-symbols-outlined icon-inline" style="color:var(--color-danger);">delete</span> (trash) icon to delete a stall. A confirmation dialog will appear.</p>
+
+  <div class="callout callout-danger">
+    <span class="material-symbols-outlined">error</span>
+    <div><strong>Occupied Stall Protection:</strong> You cannot delete a stall that is currently occupied by an active tenant. You must first release or reassign the tenant through Tenant Records before the stall can be deleted.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--             CHAPTER 5: TENANT RECORDS                         -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">groups</span></div>
+    <div>
+      <span class="chapter-num">Chapter 5</span>
+      <span class="chapter-title">Tenant Records</span>
+    </div>
+  </div>
+
+  <p>The Tenant Records module is the master directory of all market stallholders. It manages lease terms, contact details, stallkeeper rosters, utility meters, and the monthly rent collection ledger.</p>
+
+  <h3>5.1 Managing Tenants</h3>
+
+  <h4>Top Statistics</h4>
+  <p>Five summary cards are displayed at the top:</p>
+  <ul>
+    <li><strong>Total Tenants</strong> — Count of all tenant records</li>
+    <li><strong>Active Tenants</strong> — Currently active lease holders</li>
+    <li><strong>Expiring Soon</strong> — Tenants with leases approaching expiration</li>
+    <li><strong>Monthly Revenue</strong> — Total contracted rent roll with average rent per stall</li>
+    <li><strong>Rent Collected</strong> — Collection total for the active period with a progress bar</li>
+  </ul>
+
+  <h4>Filter Controls</h4>
+  <table class="field-table">
+    <thead><tr><th>Filter</th><th>Options</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Section</strong></td><td>All Sections, or specific market section</td></tr>
+      <tr><td><strong>Status</strong></td><td>All Statuses, Active, Expiring Soon</td></tr>
+      <tr><td><strong>Rent Status</strong></td><td>All Rent, Rent Paid, Rent Unpaid, Rent Overdue</td></tr>
+      <tr><td><strong>Rent Month</strong></td><td>Month-year picker for selecting the rent period to view/collect</td></tr>
+      <tr><td><strong>Search</strong></td><td>Tenant name, stall ID, tenant ID, or stallkeeper name</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Adding a New Tenant</h4>
+  <p>Click <code>+ New Tenant</code> to open the Add Tenant form with the following fields:</p>
+  <table class="field-table">
+    <thead><tr><th>Field</th><th>Description</th><th>Validation</th></tr></thead>
+    <tbody>
+      <tr><td>Name</td><td>Full name of the tenant</td><td>Required</td></tr>
+      <tr><td>Mobile Number</td><td>Contact phone number</td><td>11-digit validation</td></tr>
+      <tr><td>Barangay</td><td>Tenant's barangay of residence</td><td>—</td></tr>
+      <tr><td>Stall ID</td><td>Autocomplete dropdown from available stalls</td><td>Required; must be available</td></tr>
+      <tr><td>Section</td><td>Auto-filled based on selected stall</td><td>—</td></tr>
+      <tr><td>Monthly Rent</td><td>Contracted monthly rent amount in pesos</td><td>Required; numeric</td></tr>
+      <tr><td>Status</td><td>Active or Expiring Soon</td><td>—</td></tr>
+      <tr><td>Rent Due Day</td><td>Day of month when rent is due (1–28)</td><td>Default: 5</td></tr>
+      <tr><td>Electricity Meter No.</td><td>Electricity meter number for this stall</td><td>—</td></tr>
+      <tr><td>Water Meter No.</td><td>Water meter number for this stall</td><td>—</td></tr>
+      <tr><td>Stallkeepers</td><td>Embedded stallkeeper editor (see Section 5.4)</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 Monthly Rent Collection</h3>
+  <p>The Tenant Records table includes an interactive rent collection feature. For the selected <strong>Rent Month</strong> (set via the month picker filter), each row displays:</p>
+  <ul>
+    <li>A <strong>checkbox</strong> — Tick to record the tenant's rent as paid for that month</li>
+    <li>A <strong>status badge</strong> — Shows <span class="badge badge-green">Paid</span>, <span class="badge badge-amber">Unpaid</span>, or <span class="badge badge-red">Overdue</span></li>
+    <li>A <strong>discount tag</strong> — Shows the early-payment discount if applicable</li>
+  </ul>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Select the Rent Month</div>
+      Use the <strong>Rent Month picker</strong> in the filter bar to choose which month you are collecting rent for. You can select past months for retroactive logging or future months for advance payments.
+    </div>
+    <div class="step">
+      <div class="step-title">Mark Rent as Paid</div>
+      Click the <strong>checkbox</strong> next to the tenant's name. The system will immediately record the payment with today's date and calculate any applicable early-payment discount.
+    </div>
+    <div class="step">
+      <div class="step-title">Verify the Payment</div>
+      The status badge will change to <span class="badge badge-green">Paid</span>. If the payment qualifies for an early discount, you will see a <span class="badge badge-green">−₱X early</span> tag.
+    </div>
+  </div>
+
+  <div class="callout callout-tip">
+    <span class="material-symbols-outlined">lightbulb</span>
+    <div><strong>Undo Payment:</strong> If a payment was recorded in error, simply uncheck the checkbox to reverse the recorded payment for that month.</div>
+  </div>
+
+  <h3>5.3 Early-Payment Discount (20%)</h3>
+  <p>The system automatically applies a <strong>20% early-payment discount</strong> when rent is paid on or before the tenant's due date:</p>
+
+  <div class="ref-box">
+    <div class="ref-box-title"><span class="material-symbols-outlined icon-inline">calculate</span> Discount Calculation Rule</div>
+    <ul>
+      <li>Each tenant has a configurable <strong>Rent Due Day</strong> (1 to 28, default: 5th of the month)</li>
+      <li>If rent is collected <strong>on or before</strong> the due day of the month → <strong>20% discount applied</strong></li>
+      <li>The net collected amount = <code>Monthly Rent × 0.80</code></li>
+      <li>Both the <em>net collected amount</em> and the <em>discount amount</em> are stored permanently</li>
+      <li>If the due day has not yet passed, the table shows an incentive tag: <span class="badge badge-green">[₱X] if paid today</span></li>
+    </ul>
+  </div>
+
+  <h3>5.4 Stallkeeper Management</h3>
+  <p>Each tenant can have multiple stallkeepers — individuals authorized to operate the stall on behalf of the tenant. Stallkeepers are managed through an embedded editor within the Add/Edit Tenant forms.</p>
+
+  <h4>Stallkeeper Fields</h4>
+  <table class="field-table">
+    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>Name</td><td>Full name of the stallkeeper</td></tr>
+      <tr><td>Relationship</td><td>Self, Spouse, Child, Parent, Sibling, Other Relative, or Hired Helper</td></tr>
+      <tr><td>Contact Number</td><td>Phone number</td></tr>
+      <tr><td>Barangay</td><td>Barangay of residence</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Viewing Tenant Details</h4>
+  <p>Click the <span class="material-symbols-outlined icon-inline">visibility</span> icon on any tenant row to open the <strong>Tenant Details View</strong>, a formal record sheet that includes:</p>
+  <ul>
+    <li><strong>Tenant Particulars</strong> — Name, ID, phone, barangay, assigned stall</li>
+    <li><strong>Stallkeeper Information</strong> — All registered stallkeepers and their details</li>
+    <li><strong>Utility Meters</strong> — Electricity and water meter numbers</li>
+    <li><strong>Rent Account</strong> — Payment date, discount received, and days late (if overdue)</li>
+    <li><strong>Rent Ledger</strong> — Up to 12 months of rent payment history</li>
+    <li><strong>Bill History</strong> — All utility bills associated with this tenant</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--         CHAPTER 6: APPLICANT MANAGEMENT                       -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">person_add</span></div>
+    <div>
+      <span class="chapter-num">Chapter 6</span>
+      <span class="chapter-title">Applicant Management</span>
+    </div>
+  </div>
+
+  <p>The Applicant Management module tracks the entire application pipeline — from intake and document verification through approval or rejection, and seamless transition to stall assignment.</p>
+
+  <h3>6.1 Application Pipeline</h3>
+  <h4>Top Statistics</h4>
+  <ul>
+    <li><strong>Total Applicants</strong> — All applications on record</li>
+    <li><strong>Pending Review</strong> — Complete applications awaiting officer review</li>
+    <li><strong>Incomplete Docs</strong> — Applications with missing documentary requirements</li>
+    <li><strong>No Business Permit</strong> — Compliance flag for applicants without a business permit</li>
+    <li><strong>Approved (This Month)</strong> — Applications approved in the current month</li>
+  </ul>
+
+  <h4>Application Status Flow</h4>
+  <div class="workflow">
+    <div class="workflow-step">Incomplete</div>
+    <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
+    <div class="workflow-step">Pending Review</div>
+    <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
+    <div class="workflow-step">Approved / Rejected</div>
+    <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
+    <div class="workflow-step">Stall Assigned</div>
+  </div>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>Automatic Status Advancement:</strong> The application status automatically progresses as requirements are ticked. When all 6 documentary requirements are submitted, the status changes from "Incomplete" to "Pending Review" automatically.</div>
+  </div>
+
+  <h3>6.2 Documentary Requirements</h3>
+  <p>Each applicant must submit <strong>6 documentary requirements</strong>. The system tracks submission status with a visual checklist:</p>
+
+  <table>
+    <thead><tr><th>#</th><th>Requirement</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><strong>Business Permit</strong></td><td>Valid business permit from BPLO</td></tr>
+      <tr><td>2</td><td><strong>Barangay Clearance</strong></td><td>Clearance from the applicant's barangay</td></tr>
+      <tr><td>3</td><td><strong>Community Tax Certificate</strong></td><td>Cedula (CTC) for the current year</td></tr>
+      <tr><td>4</td><td><strong>Health / Sanitary Permit</strong></td><td>Health certificate or sanitary permit</td></tr>
+      <tr><td>5</td><td><strong>2×2 ID Photo</strong></td><td>Recent identification photograph</td></tr>
+      <tr><td>6</td><td><strong>Signed Contract of Lease</strong></td><td>Executed lease agreement with the Market Office</td></tr>
+    </tbody>
+  </table>
+
+  <p>In the applicant table, the <strong>Requirements</strong> column shows the completion status as colored dots (e.g., <code>4/6</code>) with tooltips listing each specific requirement.</p>
+
+  <div class="callout callout-tip">
+    <span class="material-symbols-outlined">lightbulb</span>
+    <div><strong>Business Permit Sync:</strong> When an applicant who has already been assigned a stall submits their Business Permit, the linked stall's permit status automatically updates from <span class="badge badge-red">No BP</span> to <span class="badge badge-green">With BP</span>.</div>
+  </div>
+
+  <h3>6.3 Approval &amp; Stall Assignment</h3>
+  <p>When reviewing an applicant, officers can <strong>Approve</strong> or <strong>Reject</strong> the application:</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Open the Applicant Review Form</div>
+      Click on the applicant's row or the review action button to open the review form. Here you can edit the applicant's information and tick/untick documentary requirements.
+    </div>
+    <div class="step">
+      <div class="step-title">Click "Approve"</div>
+      After verifying all requirements, click the <code>Approve</code> button. This immediately launches the <strong>Assign Stall Form</strong>.
+    </div>
+    <div class="step">
+      <div class="step-title">Assign a Stall</div>
+      The stall assignment form shows all genuinely vacant stalls in the market. If the applicant stated a preferred stall and it is still available, it will be pre-selected. Fill in:
+      <ul>
+        <li><strong>Stall</strong> — Select from available stalls</li>
+        <li><strong>Monthly Rent</strong> — Set the contracted rent amount</li>
+        <li><strong>Section</strong> — Auto-filled based on selected stall</li>
+      </ul>
+      The applicant's name and phone number are automatically carried over to create a new tenant record.
+    </div>
+    <div class="step">
+      <div class="step-title">Confirm Assignment</div>
+      Click <code>Assign &amp; Create Tenant</code> to finalize. The system will:
+      <ul>
+        <li>Create a new Tenant record with the applicant's details</li>
+        <li>Mark the selected stall as "Occupied"</li>
+        <li>Link the applicant record to the new tenant</li>
+        <li>Log the action in the Logbook</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>Skip Stall Assignment:</strong> You can click <code>Skip for now</code> to approve the applicant without immediately assigning a stall. The stall can be assigned later.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--             CHAPTER 7: UTILITY BILLING                        -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">bolt</span></div>
+    <div>
+      <span class="chapter-num">Chapter 7</span>
+      <span class="chapter-title">Utility Billing</span>
+    </div>
+  </div>
+
+  <p>The Utility Billing module is the meter reading calculation and billing engine for <strong>Electricity</strong> and <strong>Water</strong> utilities across all market stalls.</p>
+
+  <h3>7.1 Bill Calculator</h3>
+  <p>The embedded Bill Calculator at the top of the page allows you to create new utility bills.</p>
+
+  <h4>Utility Rates</h4>
+  <table>
+    <thead><tr><th>Utility</th><th>Rate</th><th>Unit</th><th>Late Surcharge</th></tr></thead>
+    <tbody>
+      <tr><td><span class="material-symbols-outlined icon-inline">bolt</span> Electricity</td><td>₱11.50</td><td>per kWh</td><td>3.35%</td></tr>
+      <tr><td><span class="material-symbols-outlined icon-inline">water_drop</span> Water</td><td>₱25.00</td><td>per cu.m</td><td>10.00%</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ref-box">
+    <div class="ref-box-title"><span class="material-symbols-outlined icon-inline">calculate</span> Billing Formula</div>
+    <p><strong>Consumption</strong> = Current Reading − Previous Reading (minimum 0)<br>
+    <strong>Amount Due</strong> = Consumption × Rate per Unit</p>
+  </div>
+
+  <h4>How to Create a New Bill</h4>
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Select Utility Type</div>
+      Toggle between <strong>Electricity</strong> and <strong>Water</strong>. The system automatically loads the correct rate, unit labels, and icon.
+    </div>
+    <div class="step">
+      <div class="step-title">Select Stall &amp; Tenant</div>
+      Choose a stall from the dropdown — the occupant tenant, last recorded meter reading, and meter number are auto-filled. Alternatively, select a tenant to auto-select their stall.
+    </div>
+    <div class="step">
+      <div class="step-title">Set Period Covered</div>
+      Enter the <strong>Period From</strong> and <strong>Period To</strong> dates. Use the <code>Cover all of [Month]</code> button to quickly set the first and last day of the current month.
+    </div>
+    <div class="step">
+      <div class="step-title">Set Due Date</div>
+      The due date defaults to 15 days after the period end date. You can adjust this manually.
+    </div>
+    <div class="step">
+      <div class="step-title">Enter Meter Readings</div>
+      The <strong>Previous Reading</strong> is auto-populated from the last bill on record. Enter the <strong>Current Reading</strong>. The system validates that readings are not negative and that the current reading is not less than the previous reading.
+    </div>
+    <div class="step">
+      <div class="step-title">Review the Live Calculation</div>
+      A real-time summary card displays: stall, tenant, meter number, period range, readings, consumption, rate, and total amount due. If the due date has already passed, a warning shows the computed late surcharge.
+    </div>
+    <div class="step">
+      <div class="step-title">Save or Print</div>
+      <ul>
+        <li><code>Save to Records</code> — Posts the bill, writes a Logbook entry, and updates meter info if needed</li>
+        <li><code>Print Receipt</code> — Opens the Print Preview for immediate receipt printing</li>
+        <li><code>Clear</code> — Resets the calculator</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout callout-warning">
+    <span class="material-symbols-outlined">warning</span>
+    <div><strong>Duplicate Detection:</strong> If a bill already exists for the same stall, utility type, and billing period, the system will show a confirmation modal asking whether you want to proceed or cancel.</div>
+  </div>
+
+  <h3>7.2 Billing Records &amp; Management</h3>
+  <p>Below the calculator, the <strong>Billing Records Table</strong> lists all issued bills with the following filters:</p>
+  <ul>
+    <li><strong>Utility Type</strong> — Filter by Electricity or Water</li>
+    <li><strong>Status</strong> — Filter by Unpaid, Paid, or Overdue</li>
+    <li><strong>Search</strong> — Search by bill ID, stall number, tenant name, or meter number</li>
+  </ul>
+
+  <h4>Table Columns</h4>
+  <table>
+    <thead><tr><th>Column</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>Select</td><td>Checkbox for batch printing selection</td></tr>
+      <tr><td>Bill ID</td><td>Unique bill identifier (e.g., UTL-001)</td></tr>
+      <tr><td>Utility</td><td>Electricity or Water</td></tr>
+      <tr><td>Stall No.</td><td>Associated stall ID</td></tr>
+      <tr><td>Meter No.</td><td>Meter number used for reading</td></tr>
+      <tr><td>Tenant</td><td>Name of the billed tenant</td></tr>
+      <tr><td>Period</td><td>Billing period covered</td></tr>
+      <tr><td>Consumption</td><td>Calculated consumption (kWh or cu.m)</td></tr>
+      <tr><td>Amount</td><td>Billed amount in pesos</td></tr>
+      <tr><td>Status</td><td><span class="badge badge-green">Paid</span> <span class="badge badge-amber">Unpaid</span> <span class="badge badge-red">Overdue</span></td></tr>
+      <tr><td>Actions</td><td>View, Mark Paid/Unpaid, Print Receipt, Delete</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.3 Receipt Printing &amp; Batch Printing</h3>
+
+  <h4>Single Bill Printing</h4>
+  <p>Click the <span class="material-symbols-outlined icon-inline">print</span> icon on any bill row to open the <strong>Print Preview Dialog</strong>. Options include:</p>
+  <ul>
+    <li><strong>Number of Copies:</strong> 1 copy, 2 copies (Tenant's Copy + Market Office Copy), or 4 copies (adding Treasurer's Copy + File Copy)</li>
+    <li><strong>Zoom Controls:</strong> Slider from 35% to 200%, "Fit" button, and "Actual Size (100%)" button</li>
+    <li><strong>Fullscreen Mode:</strong> For detailed preview (press <code>Esc</code> to exit)</li>
+  </ul>
+
+  <h4>Batch Printing</h4>
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Select Bills for Printing</div>
+      Use the checkboxes on each row to select individual bills, or use the header checkbox to select all visible bills.
+    </div>
+    <div class="step">
+      <div class="step-title">Review the Batch Bar</div>
+      A floating batch bar appears at the bottom showing: <em>"X bills selected · Y A4 sheets, 4 receipts to a sheet"</em>
+    </div>
+    <div class="step">
+      <div class="step-title">Print Selected</div>
+      Click <code>Print X Receipts</code>. The system tiles up to 4 different stall receipts per A4 sheet in a 2×2 grid with dotted cut guidelines.
+    </div>
+  </div>
+
+  <h4>Receipt Layout</h4>
+  <p>Each printed receipt includes: the Municipal Seal, "Republic of the Philippines" header, stall and tenant details, meter readings, consumption calculation, amount due, due date, late surcharge (if applicable), and the "Printed By" officer name.</p>
+
+  <h3>7.4 Late Surcharges</h3>
+  <div class="ref-box">
+    <div class="ref-box-title"><span class="material-symbols-outlined icon-inline">warning</span> Late Surcharge Rules</div>
+    <ul>
+      <li><strong>Electricity:</strong> 3.35% surcharge on the billed amount after the due date</li>
+      <li><strong>Water:</strong> 10.00% surcharge on the billed amount after the due date</li>
+      <li>Surcharges are calculated <strong>dynamically at the time of printing</strong> — they appear on the receipt if the due date has passed, but the original ledger amount remains unchanged</li>
+      <li>This ensures historical records are accurate while printed receipts reflect the current total owed</li>
+    </ul>
+  </div>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>"Printed By" Memory:</strong> The system remembers the issuing officer's name from the last print session, so you only need to enter it once. The name is stored in <code>localStorage</code> and persists across sessions.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--             CHAPTER 8: VIOLATIONS REGISTER                    -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">gavel</span></div>
+    <div>
+      <span class="chapter-num">Chapter 8</span>
+      <span class="chapter-title">Violations Register</span>
+    </div>
+  </div>
+
+  <p>The Violations Register is a compliance and citation tracking module that records tenant offences, assigns demerit points, and manages dispute resolutions.</p>
+
+  <h3>8.1 Overview &amp; Statistics</h3>
+  <ul>
+    <li><strong>Total Violations</strong> — All recorded citations</li>
+    <li><strong>Open Citations</strong> — Unresolved violations requiring attention</li>
+    <li><strong>Resolved Citations</strong> — Successfully resolved cases</li>
+    <li><strong>Open Demerit Points</strong> — Total unresolved demerit points across all tenants</li>
+  </ul>
+
+  <h4>Repeat Offenders Panel</h4>
+  <p>A dedicated panel ranks tenants by their total <strong>unresolved demerit points</strong>, helping market inspectors identify repeat offenders and prioritize enforcement actions.</p>
+
+  <h3>8.2 Standard Citation Issues</h3>
+  <p>The system includes 8 pre-defined violation categories:</p>
+  <table>
+    <thead><tr><th>#</th><th>Violation Issue</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Late document submission</td></tr>
+      <tr><td>2</td><td>Improper stall cleanup</td></tr>
+      <tr><td>3</td><td>Health code violation</td></tr>
+      <tr><td>4</td><td>Unpaid rent or utilities</td></tr>
+      <tr><td>5</td><td>Operating beyond stall boundary</td></tr>
+      <tr><td>6</td><td>Unauthorized subleasing</td></tr>
+      <tr><td>7</td><td>Fire safety non-compliance</td></tr>
+      <tr><td>8</td><td>Obstruction of walkway</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.3 Recording a Violation</h3>
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Click "+ Record Violation"</div>
+      Opens the violation recording form.
+    </div>
+    <div class="step">
+      <div class="step-title">Fill in Citation Details</div>
+      <ul>
+        <li><strong>Party Cited</strong> — Select from a datalist of tenant names, or type a custom name for non-tenants</li>
+        <li><strong>Demerit Points</strong> — Assign the severity (numeric points)</li>
+        <li><strong>Violation Issue</strong> — Select from the 8 standard issues or enter a custom violation</li>
+        <li><strong>Status</strong> — Open or Resolved</li>
+        <li><strong>Date Recorded</strong> — The date of the violation</li>
+        <li><strong>Date Resolved</strong> — If already resolved, enter the resolution date</li>
+        <li><strong>Officer Notes</strong> — Free-text field for recording details and context</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="step-title">Save the Citation</div>
+      Click <code>Save</code> to record. A logbook entry is automatically created.
+    </div>
+  </div>
+
+  <h3>8.4 Resolving &amp; Managing Violations</h3>
+  <p>Open the <strong>Edit Violation</strong> form to:</p>
+  <ul>
+    <li>Change the status from <span class="badge badge-red">Open</span> to <span class="badge badge-green">Resolved</span> (automatically stamps the resolution date)</li>
+    <li>Reopen a resolved citation (clears the resolution date)</li>
+    <li>Amend demerit points or officer notes</li>
+  </ul>
+
+  <h4>Additional Features</h4>
+  <ul>
+    <li><code>Export CSV</code> — Download all violation records as a CSV file</li>
+    <li><code>Print List</code> — Print the filtered violations table</li>
+    <li>Table is sorted with open cases first, then by newest recorded date</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--           CHAPTER 9: ANALYTICS & REPORTS                      -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">analytics</span></div>
+    <div>
+      <span class="chapter-num">Chapter 9</span>
+      <span class="chapter-title">Analytics &amp; Operations Report</span>
+    </div>
+  </div>
+
+  <p>The Analytics module generates a formal <strong>executive operations report</strong> intended for the Municipal Mayor and Market Board. The report is compiled live from all current system records and is organized into seven numbered sections.</p>
+
+  <h4>Report Header</h4>
+  <p>The report masthead includes the Tanauan Municipal Seal, document reference number (<code>PMRMS-AR-YYYYMMDD</code>), and generation timestamp in Philippine Standard Time.</p>
+
+  <h3>9.1 Report Sections</h3>
+  <table>
+    <thead><tr><th>Section</th><th>Title</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td>I</td><td><strong>Executive Summary</strong></td><td>Headline cards with progress meters: Stall Occupancy Rate, Active Tenancies, Applications Pending, Collection Efficiency Rate, Open Violations &amp; Demerit Points</td></tr>
+      <tr><td>II</td><td><strong>Stall Utilization</strong></td><td>Stacked bar chart of stalls by section and status + status summary table with exact counts and proportion bars</td></tr>
+      <tr><td>III</td><td><strong>Applicant Processing</strong></td><td>Pipeline table by status (Pending Review, Incomplete, No BP, Approved, Rejected) with counts and filing shares</td></tr>
+      <tr><td>IV</td><td><strong>Tenancy &amp; Rental Coverage</strong></td><td>Table by market section: total stalls, occupied, tenant count, monthly rent roll, section occupancy %</td></tr>
+      <tr><td>V</td><td><strong>Utility Billing &amp; Collection</strong></td><td>Stacked bar chart + collection standing table (Electricity/Water consumption, billed, collected, outstanding)</td></tr>
+      <tr><td>VI</td><td><strong>Compliance &amp; Violations</strong></td><td>Summary metrics + table of recent violations with status badges</td></tr>
+      <tr><td>VII</td><td><strong>Logbook Activity</strong></td><td>Breakdown of operational logs by type and share of total logbook entries</td></tr>
+    </tbody>
+  </table>
+
+  <h3>9.2 Exporting the Report</h3>
+  <p>Click the <code>Export Report</code> button to download a comprehensive JSON file (<code>civic-market-core-report.json</code>) containing all data underlying the report. This can be used for external analysis, archival, or sharing with other offices.</p>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>Live Data:</strong> The report is generated from live data. Every time you open the Analytics module, the report reflects the most current state of all records in the system.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--              CHAPTER 10: LOGBOOK                              -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">menu_book</span></div>
+    <div>
+      <span class="chapter-num">Chapter 10</span>
+      <span class="chapter-title">Logbook (Audit Trail)</span>
+    </div>
+  </div>
+
+  <p>The Logbook serves as the operational audit trail and daily activity ledger. It records inspections, incidents, collections, maintenance activities, and announcements.</p>
+
+  <h3>10.1 Log Types</h3>
+  <table>
+    <thead><tr><th>Type</th><th>Description</th><th>Color</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Inspection</strong></td><td>Stall inspections, permit checks</td><td><span class="badge badge-blue">Blue</span></td></tr>
+      <tr><td><strong>Incident</strong></td><td>Security incidents, complaints, disturbances</td><td><span class="badge badge-red">Red</span></td></tr>
+      <tr><td><strong>Maintenance</strong></td><td>Repairs, cleaning, facility upgrades</td><td><span class="badge badge-amber">Amber</span></td></tr>
+      <tr><td><strong>Collection</strong></td><td>Rent and utility bill collections</td><td><span class="badge badge-green">Green</span></td></tr>
+      <tr><td><strong>Announcement</strong></td><td>Public notices, schedule changes, advisories</td><td><span class="badge badge-gray">Gray</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>10.2 Automatic Logging</h3>
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>System-Generated Entries:</strong> The system automatically writes a structured logbook entry for every CRUD action — adding stalls, collecting rent, issuing utility bills, recording violations, appointing officers, issuing verification slips, and more. This creates a complete, tamper-evident audit trail of all market operations.</div>
+  </div>
+
+  <h3>10.3 Manual Log Entries</h3>
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Click "+ New Entry"</div>
+      Opens the new log entry form.
+    </div>
+    <div class="step">
+      <div class="step-title">Fill In Details</div>
+      <ul>
+        <li><strong>Log Type</strong> — Select from Inspection, Incident, Maintenance, Collection, or Announcement</li>
+        <li><strong>Details</strong> — Enter a description of the activity or event</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="step-title">Save</div>
+      The entry is timestamped with the current date and time and added to the logbook.
+    </div>
+  </div>
+
+  <h3>10.4 Filtering &amp; Export</h3>
+  <ul>
+    <li><strong>Date Filter</strong> — View logs from a specific recorded date</li>
+    <li><strong>Type Filter</strong> — Filter by log type (Inspection, Incident, etc.)</li>
+    <li><strong>Search</strong> — Search log details and type</li>
+    <li><code>Export Log</code> — Download all log entries as a CSV file</li>
+    <li><code>Print List</code> — Print the currently filtered log entries</li>
+  </ul>
+
+  <div class="callout callout-warning">
+    <span class="material-symbols-outlined">warning</span>
+    <div><strong>Audit Trail Integrity:</strong> When deleting a log entry, a safety warning reminds you that the logbook serves as an official audit trail. Deletions should only be done when absolutely necessary.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--           CHAPTER 11: MARKET ASSISTANT                        -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">forum</span></div>
+    <div>
+      <span class="chapter-num">Chapter 11</span>
+      <span class="chapter-title">Market Assistant (AI)</span>
+    </div>
+  </div>
+
+  <p>The Market Assistant is an offline intelligent querying tool that allows officers to ask plain-language questions about rent, stalls, bills, tenants, and violations — and receive accurate, data-driven answers.</p>
+
+  <h3>11.1 How It Works</h3>
+  <p>The assistant uses a <strong>two-tier engine</strong> to ensure accuracy:</p>
+
+  <h4>Tier 1 — Deterministic Pattern Matching</h4>
+  <p>Your question is first analyzed against keyword patterns for 12 core market intents. If a strong match is found, the system pulls the answer directly from the database using precise calculations — <em>no AI guessing</em>.</p>
+
+  <h4>Tier 2 — Local AI Model (Optional)</h4>
+  <p>If keywords don't match clearly, the system may use a local AI model running entirely on your computer to classify your intent. The AI can also rephrase factual answers into natural conversational language.</p>
+
+  <div class="callout callout-tip">
+    <span class="material-symbols-outlined">lightbulb</span>
+    <div><strong>Data Accuracy Guarantee:</strong> All figures (amounts, counts, names) are <em>never</em> generated by AI. They are always computed by the system's deterministic business logic. If the AI rephrases an answer and any number or name doesn't match the computed facts, the AI phrasing is automatically discarded and the verified record text is shown instead.</div>
+  </div>
+
+  <h3>11.2 What You Can Ask</h3>
+  <table>
+    <thead><tr><th>Intent</th><th>Example Questions</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Overdue Rent</strong></td><td>"Who has overdue rent?", "List overdue tenants"</td></tr>
+      <tr><td><strong>Unpaid Rent</strong></td><td>"Who hasn't paid rent this month?"</td></tr>
+      <tr><td><strong>Collected Rent</strong></td><td>"How much rent has been collected?"</td></tr>
+      <tr><td><strong>Tenant Payment</strong></td><td>"Has Maria Santos paid her rent?"</td></tr>
+      <tr><td><strong>Total Earnings</strong></td><td>"What are total market earnings?"</td></tr>
+      <tr><td><strong>Vacant Stalls</strong></td><td>"Which stalls are available?"</td></tr>
+      <tr><td><strong>Stall Status</strong></td><td>"What's the stall occupancy breakdown?"</td></tr>
+      <tr><td><strong>Unpaid Utilities</strong></td><td>"Are there unpaid electricity bills?"</td></tr>
+      <tr><td><strong>Meter Lookup</strong></td><td>"What's the meter number for Stall MS-01?"</td></tr>
+      <tr><td><strong>Tenant Lookup</strong></td><td>"Show me details for Juan Dela Cruz"</td></tr>
+      <tr><td><strong>Pending Applicants</strong></td><td>"How many pending applications?"</td></tr>
+      <tr><td><strong>Open Violations</strong></td><td>"Any open violations?"</td></tr>
+    </tbody>
+  </table>
+
+  <h3>11.3 Using the Assistant</h3>
+  <ul>
+    <li><strong>Suggestion Chips</strong> — Quick-tap pre-written questions for common queries</li>
+    <li><strong>Chat Input</strong> — Type your question in natural language in the composer bar</li>
+    <li><strong>Source Badges</strong> — Each answer shows its source:
+      <ul>
+        <li><span class="badge badge-green">From the records</span> — Direct database query</li>
+        <li><span class="badge badge-blue">Worded by model · figures verified</span> — AI phrased with verified data</li>
+        <li><span class="badge badge-amber">Model wording discarded</span> — AI response rejected; showing raw data</li>
+      </ul>
+    </li>
+    <li><strong>Navigation Buttons</strong> — Answers include buttons like "Open Tenants" or "Open Billing" for direct navigation to the relevant module</li>
+    <li><strong>Model Status</strong> — Header badge shows whether a local AI model is active (<span class="material-symbols-outlined icon-inline">neurology</span>) or records-only mode (<span class="material-symbols-outlined icon-inline">database</span>)</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--           CHAPTER 12: OFFICERS                                -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">account_tree</span></div>
+    <div>
+      <span class="chapter-num">Chapter 12</span>
+      <span class="chapter-title">Officers &amp; Organizational Board</span>
+    </div>
+  </div>
+
+  <p>The Officers module manages the organizational hierarchy and directory of municipal market officials, inspectors, collectors, and supervisors.</p>
+
+  <h3>12.1 Top Statistics</h3>
+  <ul>
+    <li><strong>Seats on the Board</strong> — Total officer positions defined</li>
+    <li><strong>Officers in Post</strong> — Actively filled positions</li>
+    <li><strong>On Leave</strong> — Officers currently on leave</li>
+    <li><strong>Vacant Seats</strong> — Unfilled positions</li>
+    <li><strong>Offices Represented</strong> — Count of unique offices in the hierarchy</li>
+  </ul>
+
+  <h3>12.2 Dual View Modes</h3>
+
+  <h4>Organizational Board View</h4>
+  <p>An interactive organizational chart tree displayed as a hierarchy with branching connector lines. Each node shows:</p>
+  <ul>
+    <li>Officer avatar with color gradient</li>
+    <li>Name and position title</li>
+    <li>Office name</li>
+    <li>Status tag: <span class="badge badge-green">Active</span>, <span class="badge badge-amber">On Leave</span>, or <span class="badge badge-gray">Vacant</span></li>
+    <li>Quick edit button</li>
+  </ul>
+
+  <h4>Directory View</h4>
+  <p>A tabular listing with columns: Officer (Name &amp; Position), Office, Reports To, Contact, Date Appointed, Status, and Actions. Includes an Office filter dropdown and pagination.</p>
+
+  <h3>12.3 Pre-seeded Board Positions</h3>
+  <table>
+    <thead><tr><th>Position</th><th>Office</th></tr></thead>
+    <tbody>
+      <tr><td>Municipal Mayor</td><td>Office of the Municipal Mayor</td></tr>
+      <tr><td>Market Board Chairperson</td><td>Market Board</td></tr>
+      <tr><td>Market Supervisor</td><td>Market Office</td></tr>
+      <tr><td>Assistant Market Supervisor</td><td>Market Office</td></tr>
+      <tr><td>Market Collector</td><td>Market Office</td></tr>
+      <tr><td>Market Inspector</td><td>Market Office</td></tr>
+      <tr><td>Records Officer</td><td>Market Office</td></tr>
+      <tr><td>Sanitary Inspector</td><td>Municipal Health Office</td></tr>
+      <tr><td>Licensing Officer</td><td>Business Permit &amp; Licensing Office</td></tr>
+      <tr><td>Market Treasurer / Cashier</td><td>Municipal Treasurer's Office</td></tr>
+    </tbody>
+  </table>
+
+  <h3>12.4 Adding &amp; Editing Officers</h3>
+  <p>Click <code>+ Add Officer</code> to open the officer form with the following fields:</p>
+  <table class="field-table">
+    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>Position</td><td>Job title (e.g., Market Inspector)</td></tr>
+      <tr><td>Office</td><td>Select from existing offices or enter a custom office name</td></tr>
+      <tr><td>Held By</td><td>Name of the person filling the position</td></tr>
+      <tr><td>Status</td><td>Active, On Leave, or Vacant</td></tr>
+      <tr><td>Reports To</td><td>Select superior officer from an indented tree dropdown</td></tr>
+      <tr><td>Date Appointed</td><td>Date of appointment to the position</td></tr>
+      <tr><td>Mobile Number</td><td>Contact phone number</td></tr>
+      <tr><td>Email</td><td>Email address</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>Hierarchy Safety:</strong> The system automatically prevents circular dependencies, self-references, and orphaned seats. When an officer is deleted, all their subordinates are automatically reassigned to the deleted officer's superior to maintain a valid organizational tree.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--         CHAPTER 13: VERIFICATION SLIPS                        -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">fact_check</span></div>
+    <div>
+      <span class="chapter-num">Chapter 13</span>
+      <span class="chapter-title">Stall / Space Verification Slips</span>
+    </div>
+  </div>
+
+  <p>Verification Slips are official clearance documents issued by the Market Office to stallholders. These slips are presented to the <strong>Business Permit &amp; Licensing Office (BPLO)</strong> for business permit issuance or renewal.</p>
+
+  <h3>13.1 Accessing the Verification Slip Feature</h3>
+  <p>There are two ways to issue a verification slip:</p>
+  <ul>
+    <li>From <strong>Stall Management</strong> — Click the <code>Stall / Space Verification</code> button in the header, or the <span class="material-symbols-outlined icon-inline">fact_check</span> icon on a specific stall row</li>
+    <li>From <strong>Stall Details View</strong> — Click the "Issue Verification Slip" button</li>
+  </ul>
+
+  <h3>13.2 Issuing a Verification Slip</h3>
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Select Purpose</div>
+      Choose either:
+      <ul>
+        <li><strong>Renewal</strong> — For existing lessees renewing their business permits (auto-ticks relevant checklist items)</li>
+        <li><strong>Issuance</strong> — For new lessees obtaining their first business permit</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="step-title">Fill In Slip Details</div>
+      <ul>
+        <li><strong>Issued By</strong> — Market Supervisor name (remembered across sessions)</li>
+        <li><strong>Issued To</strong> — Stallholder's name (auto-filled if launched from a specific stall)</li>
+        <li><strong>Section</strong> — Market section (auto-filled)</li>
+        <li><strong>Stall No.</strong> — Stall number (auto-filled)</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="step-title">Check Requirements</div>
+      Tick the applicable items from the 8-point checklist:
+      <ol>
+        <li>Latest Business Permit (Original)</li>
+        <li>DTI Registration</li>
+        <li>OR of Last Monthly Rental Paid</li>
+        <li>OR of Last Electric/Water Bill Paid</li>
+        <li>Meat Inspector's Clearance</li>
+        <li>Existing Lessee</li>
+        <li>Inspection of Stall</li>
+        <li>New Lessee</li>
+      </ol>
+      <p>An "Others" field allows entering additional custom requirements.</p>
+    </div>
+    <div class="step">
+      <div class="step-title">Select Slips Per Sheet</div>
+      Choose how many slips to print per A4 sheet: <strong>1</strong>, <strong>2</strong>, or <strong>4</strong> slips.
+    </div>
+    <div class="step">
+      <div class="step-title">Print</div>
+      Click <code>Print</code> to generate the verification slip(s). Each slip includes a unique <strong>control number</strong> (e.g., SSV-001, SSV-002), date issued, and a validity period of <strong>7 days</strong>.
+    </div>
+  </div>
+
+  <div class="callout callout-note">
+    <span class="material-symbols-outlined">info</span>
+    <div><strong>Control Number Tracking:</strong> Every verification slip receives a sequential control number that is stored permanently in the system. Control numbers are never reused, even if slips are deleted, ensuring complete audit traceability.</div>
+  </div>
+
+  <h4>Printed Slip Contents</h4>
+  <p>The printed verification slip includes:</p>
+  <ul>
+    <li>Official Tanauan Market Office seal</li>
+    <li>Control number</li>
+    <li>Purpose (Issuance or Renewal)</li>
+    <li>Stallholder name, section, and stall number</li>
+    <li>Checked requirements list</li>
+    <li>Date Issued and Valid Until dates</li>
+    <li>Validity notice: "This slip is valid for seven (7) days from the date of issue"</li>
+    <li>Signature line for the Market Supervisor</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--           CHAPTER 14: SETTINGS                                -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">settings</span></div>
+    <div>
+      <span class="chapter-num">Chapter 14</span>
+      <span class="chapter-title">Settings &amp; Data Management</span>
+    </div>
+  </div>
+
+  <p>The Settings module provides system information, database metrics, and tools for backup, import, and reset operations.</p>
+
+  <h3>14.1 System Information</h3>
+  <table class="field-table">
+    <thead><tr><th>Information</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>Application Version</td><td>v1.0</td></tr>
+      <tr><td>Storage Type</td><td>Local Browser Storage</td></tr>
+      <tr><td>Total Record Count</td><td>Aggregate count of records across all data tables</td></tr>
+      <tr><td>Last Saved</td><td>Timestamp of the most recent automatic save</td></tr>
+    </tbody>
+  </table>
+
+  <h3>14.2 Quick Stats</h3>
+  <p>A summary card showing current counts: Total Stalls, Active Tenants, Pending Applicants, Utility Bills, Open Violations, and Unpaid Utilities.</p>
+
+  <h3>14.3 Data Management</h3>
+
+  <h4>Export All Data</h4>
+  <p>Click <code>Export All Data</code> to download the entire database as a JSON file (<code>civic-market-core-report.json</code>). This file can be used for external analysis, archival, or transferring data to another workstation.</p>
+
+  <h4>Import Data</h4>
+  <div class="steps">
+    <div class="step">
+      <div class="step-title">Click "Import Data"</div>
+      A file picker will open.
+    </div>
+    <div class="step">
+      <div class="step-title">Select a Backup File</div>
+      Choose a previously exported JSON backup file. The system will validate the file schema.
+    </div>
+    <div class="step">
+      <div class="step-title">Review the Import Preview</div>
+      A confirmation modal displays the exact record counts that will be replaced in each data table.
+    </div>
+    <div class="step">
+      <div class="step-title">Confirm Import</div>
+      Click <code>Confirm</code> to replace the current data with the imported records.
+    </div>
+  </div>
+
+  <div class="callout callout-danger">
+    <span class="material-symbols-outlined">error</span>
+    <div><strong>Data Replacement Warning:</strong> Importing data will completely replace all current records. Make sure to export a backup of your current data before importing.</div>
+  </div>
+
+  <h4>Reset to Defaults</h4>
+  <p>Click <code>Reset to Defaults</code> to purge all data and reload the default seed data. A confirmation dialog with a danger warning will appear. This action:</p>
+  <ul>
+    <li>Clears all localStorage data (<code>pmrms-state-v9</code>, <code>pmrms-id-counters</code>)</li>
+    <li>Reloads the default market data (pre-seeded stalls, officers, etc.)</li>
+    <li>Cannot be undone unless you have a prior backup</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--             CHAPTER 15: SUPPORT                               -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">help</span></div>
+    <div>
+      <span class="chapter-num">Chapter 15</span>
+      <span class="chapter-title">Support &amp; Help Center</span>
+    </div>
+  </div>
+
+  <p>The Support module provides operator documentation, system verification tools, full backup/restore capabilities, and contact information for technical support.</p>
+
+  <h3>15.1 Overview Cards</h3>
+  <ul>
+    <li><strong>User Guide</strong> — Quick reference for common operations</li>
+    <li><strong>Contact Support</strong> — Direct links to the development team</li>
+    <li><strong>System Updates</strong> — Current version information (v1.0)</li>
+    <li><strong>Data Privacy</strong> — Confirmation that the system is 100% local with zero external telemetry</li>
+  </ul>
+
+  <h3>15.2 Backup &amp; Restore</h3>
+
+  <h4>Download Full Backup</h4>
+  <p>Click <code>Download Full Backup</code> to generate a complete database backup file named <code>pmrms-backup-YYYY-MM-DD.json</code>. This includes all stalls, tenants, applicants, bills, violations, officers, logbook entries, and verification slip records.</p>
+
+  <div class="callout callout-tip">
+    <span class="material-symbols-outlined">lightbulb</span>
+    <div><strong>Regular Backups:</strong> We recommend downloading a backup at least weekly, or before any major data changes. Store backups on a USB drive or separate folder for safekeeping.</div>
+  </div>
+
+  <h4>Upload Backup File</h4>
+  <p>Click <code>Upload Backup File</code> to restore the database from a previously downloaded backup. A status alert will confirm successful restoration.</p>
+
+  <h3>15.3 Contact Information</h3>
+  <p>The development team can be reached through the following contacts:</p>
+  <table>
+    <thead><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Jon Jon Albao</strong></td><td>jonjonalbao65@gmail.com</td><td>+63 919 845 1397</td></tr>
+      <tr><td><strong>Kyra Joyce Tondo</strong></td><td>kyrajoycet@gmail.com</td><td>+63 916 425 8038</td></tr>
+      <tr><td><strong>Shila Mae Marteja</strong></td><td>shilamaemarteja18@gmail.com</td><td>+63 985 452 8964</td></tr>
+    </tbody>
+  </table>
+
+  <h3>15.4 Frequently Asked Questions</h3>
+  <p>The Support page includes an accordion-style FAQ section with 11 detailed operational guides covering:</p>
+  <table>
+    <thead><tr><th>#</th><th>FAQ Topic</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>How to add a new stall to the market</td></tr>
+      <tr><td>2</td><td>How to review an applicant and check requirements</td></tr>
+      <tr><td>3</td><td>How electricity meter computation works</td></tr>
+      <tr><td>4</td><td>How water meter computation works</td></tr>
+      <tr><td>5</td><td>How late surcharges are applied</td></tr>
+      <tr><td>6</td><td>How to record and resolve a violation citation</td></tr>
+      <tr><td>7</td><td>How to export reports and analytics data</td></tr>
+      <tr><td>8</td><td>How to transfer data between workstations</td></tr>
+      <tr><td>9</td><td>How to issue a verification slip</td></tr>
+      <tr><td>10</td><td>How to manage the organizational board</td></tr>
+      <tr><td>11</td><td>How to back up and restore system data</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<!--           APPENDIX A: BUSINESS RULES                          -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">rule</span></div>
+    <div>
+      <span class="chapter-num">Appendix A</span>
+      <span class="chapter-title">Business Rules Quick Reference</span>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Rule</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Monotonic ID Counters</strong></td>
+        <td>All IDs (STL, TEN, APP, UTL, VIO, OFC, SSV, LOG) are sequentially assigned and never reused — even after deletion. This prevents historical misattribution.</td>
+      </tr>
+      <tr>
+        <td><strong>20% Early Rent Discount</strong></td>
+        <td>Paying rent on or before the due day (default: 5th, max: 28th) earns a 20% discount. The net collected amount and discount value are stored separately as permanent records.</td>
+      </tr>
+      <tr>
+        <td><strong>Dynamic Late Surcharges</strong></td>
+        <td>Electricity: 3.35% surcharge; Water: 10% surcharge. Calculated at print time when the due date has passed. The original ledger amount is never altered.</td>
+      </tr>
+      <tr>
+        <td><strong>Stall-Tenant Linking</strong></td>
+        <td>Assigning a tenant marks a stall as "Occupied". Moving a tenant releases their previous stall to "Available". Deleting an occupied stall is blocked.</td>
+      </tr>
+      <tr>
+        <td><strong>Organizational Hierarchy Safety</strong></td>
+        <td>Circular dependencies, self-references, and orphaned seats are automatically prevented. Deleting an officer reassigns their subordinates to the deleted officer's superior.</td>
+      </tr>
+      <tr>
+        <td><strong>Edit Pattern ("Blank Means Keep")</strong></td>
+        <td>All edit forms open with blank inputs displaying current values as placeholders. Only explicitly typed fields are updated on save.</td>
+      </tr>
+      <tr>
+        <td><strong>Verification Slip Validity</strong></td>
+        <td>All verification slips are strictly valid for 7 days from the date of issuance.</td>
+      </tr>
+      <tr>
+        <td><strong>Duplicate Bill Detection</strong></td>
+        <td>The system warns if a utility bill already exists for the same stall, utility type, and billing period.</td>
+      </tr>
+      <tr>
+        <td><strong>Philippine Standard Time</strong></td>
+        <td>All dates and times use PHT (Asia/Manila, GMT+8). The live clock and all timestamped entries reflect this timezone.</td>
+      </tr>
+      <tr>
+        <td><strong>Offline Operation</strong></td>
+        <td>The system makes zero network requests. All fonts, icons, and data are stored locally. Internet is never required.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<!--           APPENDIX B: TROUBLESHOOTING                         -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">build</span></div>
+    <div>
+      <span class="chapter-num">Appendix B</span>
+      <span class="chapter-title">Troubleshooting &amp; FAQ</span>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>The application won't start</strong></td>
+        <td>Ensure Windows 10 or later is installed. Try right-clicking the application shortcut and selecting "Run as administrator". If the issue persists, reinstall the application.</td>
+      </tr>
+      <tr>
+        <td><strong>Data appears missing after reopening</strong></td>
+        <td>Data is stored in <code>%APPDATA%\Tanauan Public Market System</code>. If you cleared your browser/app data, you may need to restore from a backup file using the Support page.</td>
+      </tr>
+      <tr>
+        <td><strong>Cannot delete a stall</strong></td>
+        <td>Stalls that are currently occupied by an active tenant cannot be deleted. First release or reassign the tenant through the Tenant Records module, then delete the stall.</td>
+      </tr>
+      <tr>
+        <td><strong>Print output is misaligned</strong></td>
+        <td>Ensure your printer is set to A4 paper size with Portrait orientation. In the print dialog, set margins to "Default" or "None" and make sure "Scale to fit" is disabled.</td>
+      </tr>
+      <tr>
+        <td><strong>Rent discount was not applied</strong></td>
+        <td>The 20% discount only applies when rent is collected on or before the tenant's due day. Check the tenant's Rent Due Day setting in their record details.</td>
+      </tr>
+      <tr>
+        <td><strong>Search returns no results</strong></td>
+        <td>Ensure your search term matches the field you're searching (name, ID, section, etc.). Try clearing filters first, as active filters may limit search scope.</td>
+      </tr>
+      <tr>
+        <td><strong>Transfer data to another computer</strong></td>
+        <td>Use <strong>Support → Download Full Backup</strong> to export your data. Copy the backup file to the new computer via USB drive. Open the app on the new computer and use <strong>Support → Upload Backup File</strong> to restore.</td>
+      </tr>
+      <tr>
+        <td><strong>Market Assistant shows "Records only" mode</strong></td>
+        <td>This means no local AI model is loaded. The assistant still works fully using direct database queries. To enable AI phrasing, place a compatible GGUF model in the <code>resources/models</code> folder.</td>
+      </tr>
+      <tr>
+        <td><strong>Notifications bell shows wrong count</strong></td>
+        <td>Notification counts are calculated live from current data. If counts seem incorrect, check that the underlying records (overdue rent, pending applications, etc.) are up to date.</td>
+      </tr>
+      <tr>
+        <td><strong>Application is running slowly</strong></td>
+        <td>Close other applications to free system resources. If the database has grown very large, consider exporting data for archival and resetting to defaults for the new period.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<!--           APPENDIX C: CONTACTS                                -->
+<!-- ============================================================ -->
+<div class="page chapter">
+  <div class="chapter-header">
+    <div class="chapter-icon"><span class="material-symbols-outlined">contact_phone</span></div>
+    <div>
+      <span class="chapter-num">Appendix C</span>
+      <span class="chapter-title">Contact Information</span>
+    </div>
+  </div>
+
+  <p>For technical support, bug reports, or feature requests, please contact the development team:</p>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">person</span> Jon Jon Albao</div>
+      <p>
+        <span class="material-symbols-outlined icon-inline" style="font-size:14px;">email</span> jonjonalbao65@gmail.com<br>
+        <span class="material-symbols-outlined icon-inline" style="font-size:14px;">phone</span> +63 919 845 1397
+      </p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">person</span> Kyra Joyce Tondo</div>
+      <p>
+        <span class="material-symbols-outlined icon-inline" style="font-size:14px;">email</span> kyrajoycet@gmail.com<br>
+        <span class="material-symbols-outlined icon-inline" style="font-size:14px;">phone</span> +63 916 425 8038
+      </p>
+    </div>
+  </div>
+  <div class="feature-grid" style="max-width:50%;">
+    <div class="feature-card">
+      <div class="feature-card-title"><span class="material-symbols-outlined">person</span> Shila Mae Marteja</div>
+      <p>
+        <span class="material-symbols-outlined icon-inline" style="font-size:14px;">email</span> shilamaemarteja18@gmail.com<br>
+        <span class="material-symbols-outlined icon-inline" style="font-size:14px;">phone</span> +63 985 452 8964
+      </p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div style="text-align:center; margin-top:40px; padding: 32px; background: linear-gradient(160deg, var(--sidebar-start) 0%, var(--sidebar-mid) 55%, var(--sidebar-end) 100%); border-radius: var(--radius); color: white;">
+    <img src="../public/logo.jpg" alt="Municipal Seal" style="width:64px; height:64px; border-radius:50%; border:3px solid var(--sidebar-gold); object-fit:cover; margin-bottom:12px;">
+    <div style="font-size:14pt; font-weight:800; margin-bottom:4px;">Public Market Rental Monitoring System</div>
+    <div style="font-size:10pt; color:var(--sidebar-gold-light);">Municipality of Tanauan, Leyte &nbsp;·&nbsp; Market Office</div>
+    <div style="font-size:9pt; color:rgba(255,255,255,0.6); margin-top:12px;">Version 1.0 &nbsp;·&nbsp; © 2026 All Rights Reserved</div>
+  </div>
+</div>
+
+</body>
+</html>

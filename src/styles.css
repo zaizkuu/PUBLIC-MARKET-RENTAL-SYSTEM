@@ -61,7 +61,7 @@
 
   /* Font */
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   color: var(--color-text);
   background: var(--color-bg);
@@ -131,7 +131,7 @@ ul, ol {
   font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-  font-size: 22px;
+  font-size: 25.5px;
   line-height: 1;
   vertical-align: middle;
 }
@@ -191,7 +191,7 @@ ul, ol {
 }
 
 .brand-info h1 {
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 700;
   color: var(--sidebar-text-active);
   line-height: 1.3;
@@ -199,7 +199,7 @@ ul, ol {
 }
 
 .brand-info p {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -240,7 +240,7 @@ ul, ol {
   gap: 12px;
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--sidebar-text);
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease,
@@ -273,7 +273,7 @@ ul, ol {
 }
 
 .nav-item .material-symbols-outlined {
-  font-size: 20px;
+  font-size: 23px;
   flex-shrink: 0;
   transition: transform 0.15s ease;
 }
@@ -365,7 +365,7 @@ ul, ol {
   top: 50%;
   transform: translateY(-50%);
   color: var(--color-text-tertiary);
-  font-size: 20px;
+  font-size: 23px;
 }
 
 .search-input {
@@ -374,7 +374,7 @@ ul, ol {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
   background: var(--color-bg);
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -430,7 +430,7 @@ ul, ol {
   color: white;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   overflow: hidden;
   cursor: pointer;
@@ -448,7 +448,7 @@ ul, ol {
   padding: 9px 18px;
   background: var(--color-primary);
   color: white;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   border-radius: var(--radius-full);
   transition: all 0.15s ease;
@@ -464,7 +464,7 @@ ul, ol {
 }
 
 .btn-primary .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .btn-outline {
@@ -474,7 +474,7 @@ ul, ol {
   padding: 9px 18px;
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
@@ -488,7 +488,7 @@ ul, ol {
 }
 
 .btn-outline .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .btn-outline-sm {
@@ -498,7 +498,7 @@ ul, ol {
   padding: 6px 14px;
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -530,7 +530,7 @@ ul, ol {
 }
 
 .page-title {
-  font-size: 27px;
+  font-size: 31px;
   font-weight: 800;
   color: var(--color-text);
   letter-spacing: -0.02em;
@@ -538,7 +538,7 @@ ul, ol {
 }
 
 .page-subtitle {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text-secondary);
   margin-top: 4px;
 }
@@ -607,7 +607,7 @@ ul, ol {
    value rather than from history, so it implied a trend the system never
    recorded. A split of the same total is smaller and actually true. */
 .stat-caption {
-  font-size: 12.5px;
+  font-size: 14.5px;
   font-weight: 500;
   color: var(--color-text-secondary);
   line-height: 1.4;
@@ -624,7 +624,7 @@ ul, ol {
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -639,7 +639,7 @@ ul, ol {
   border-radius: var(--radius-full);
   background: var(--color-bg);
   color: var(--color-text-tertiary);
-  font-size: 18px !important;
+  font-size: 20.5px !important;
   transition: transform 0.2s ease;
 }
 
@@ -669,7 +669,7 @@ ul, ol {
 }
 
 .stat-fraction {
-  font-size: 16px;
+  font-size: 18.5px;
   font-weight: 400;
   color: var(--color-text-secondary);
   margin-left: 2px;
@@ -691,7 +691,7 @@ ul, ol {
 }
 
 .stat-trend {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   margin-top: auto;
   padding-top: 8px;
@@ -719,7 +719,7 @@ ul, ol {
   background: none;
   text-align: left;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-primary);
   margin-top: auto;
@@ -777,7 +777,7 @@ ul, ol {
 .panel-title {
   position: relative;
   padding-left: 12px;
-  font-size: 16px;
+  font-size: 18.5px;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -805,7 +805,7 @@ ul, ol {
 
 .panel-caption {
   padding-left: 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-secondary);
 }
 
@@ -837,7 +837,7 @@ ul, ol {
 .graph-scale {
   position: relative;
   flex: 0 0 var(--graph-scale-width);
-  font-size: 11px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
 }
@@ -901,7 +901,7 @@ ul, ol {
   left: 50%;
   transform: translateX(-50%);
   margin-bottom: 5px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
@@ -957,7 +957,7 @@ ul, ol {
   align-items: center;
   gap: 1px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--color-text-secondary);
   text-align: center;
@@ -972,7 +972,7 @@ ul, ol {
 }
 
 .graph-axis-label small {
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--color-text-tertiary);
 }
@@ -991,7 +991,7 @@ ul, ol {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--color-text-secondary);
 }
@@ -1022,12 +1022,12 @@ ul, ol {
   justify-content: center;
   gap: 8px;
   padding: 40px 20px;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-tertiary);
 }
 
 .graph-empty .material-symbols-outlined {
-  font-size: 30px;
+  font-size: 34.5px;
   color: var(--color-border);
 }
 
@@ -1092,7 +1092,7 @@ ul, ol {
 }
 
 .earnings-label {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1100,7 +1100,7 @@ ul, ol {
 }
 
 .earnings-value {
-  font-size: 32px;
+  font-size: 37px;
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.02em;
@@ -1108,7 +1108,7 @@ ul, ol {
 }
 
 .earnings-basis {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
 }
 
@@ -1149,13 +1149,13 @@ ul, ol {
 }
 
 .earnings-figure-label {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text-secondary);
 }
 
 .earnings-figure-value {
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--color-text);
@@ -1165,7 +1165,7 @@ ul, ol {
 .earnings-figure-value.success { color: var(--color-success); }
 
 .earnings-figure-basis {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-tertiary);
 }
 
@@ -1177,13 +1177,13 @@ ul, ol {
   gap: 16px;
   padding: 14px 16px;
   border-top: 2px solid var(--color-text);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .earnings-total strong {
-  font-size: 22px;
+  font-size: 25.5px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -1215,12 +1215,12 @@ ul, ol {
   gap: 8px;
   height: 100%;
   padding: 24px 20px;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-tertiary);
 }
 
 .activity-empty .material-symbols-outlined {
-  font-size: 30px;
+  font-size: 34.5px;
   color: var(--color-border);
 }
 
@@ -1252,7 +1252,7 @@ ul, ol {
 }
 
 .activity-icon .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .activity-icon.blue {
@@ -1276,7 +1276,7 @@ ul, ol {
 }
 
 .activity-text {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text);
   line-height: 1.5;
 }
@@ -1287,7 +1287,7 @@ ul, ol {
 
 .activity-time {
   display: block;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-tertiary);
   margin-top: 2px;
 }
@@ -1307,7 +1307,7 @@ ul, ol {
 
 .data-table th {
   padding: 13px 16px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1319,7 +1319,7 @@ ul, ol {
 
 .data-table td {
   padding: 14px 16px;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text);
   border-bottom: 1px solid var(--color-border-light);
   vertical-align: middle;
@@ -1380,6 +1380,22 @@ ul, ol {
   outline-offset: 2px;
 }
 
+/* The early-payment discount, sitting under the rent badge. Green when it has
+   actually been given, quiet grey when it is still only on offer. */
+.rent-discount-tag {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--color-success);
+}
+
+.rent-discount-tag.muted {
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+}
+
 /* Month picker in a filter row — a labelled input rather than a bare box, so
    it is not mistaken for another dropdown. */
 .filter-month {
@@ -1390,7 +1406,7 @@ ul, ol {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--color-text-secondary);
 }
@@ -1399,7 +1415,7 @@ ul, ol {
   border: none;
   background: none;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text);
   padding: 3px 0;
@@ -1425,7 +1441,7 @@ ul, ol {
   border: none;
   background: none;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-primary);
   cursor: pointer;
@@ -1450,7 +1466,7 @@ ul, ol {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-full);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: white;
   flex-shrink: 0;
@@ -1478,17 +1494,17 @@ ul, ol {
 
 .applicant-info .name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text);
 }
 
 .applicant-info .phone {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-tertiary);
 }
 
 .req-text {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
@@ -1502,7 +1518,7 @@ ul, ol {
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.5;
   border: 1px solid transparent;
@@ -1592,7 +1608,7 @@ ul, ol {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
   background: var(--color-surface);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-secondary);
   transition: all 0.15s ease;
@@ -1615,7 +1631,7 @@ ul, ol {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--color-text);
   appearance: none;
@@ -1637,7 +1653,7 @@ ul, ol {
 
 .table-info {
   margin-left: auto;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
 }
 
@@ -1657,7 +1673,7 @@ ul, ol {
 
 .pagination-info {
   margin-right: auto;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
   padding-left: 4px;
 }
@@ -1669,7 +1685,7 @@ ul, ol {
   align-items: center;
   justify-content: center;
   padding: 0 8px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
@@ -1706,7 +1722,7 @@ ul, ol {
 /* Stands in for the numbered buttons on a compact pagination bar. */
 .page-position {
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
@@ -1737,7 +1753,7 @@ ul, ol {
   top: 50%;
   transform: translateY(-50%);
   color: var(--color-text-tertiary);
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .search-field input {
@@ -1745,7 +1761,7 @@ ul, ol {
   padding: 8px 12px 8px 36px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  font-size: 13px;
+  font-size: 15px;
   background: var(--color-surface);
   transition: border-color 0.15s;
 }
@@ -1782,12 +1798,12 @@ ul, ol {
 }
 
 .stat-pill span {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text-secondary);
 }
 
 .stat-pill strong {
-  font-size: 18px;
+  font-size: 20.5px;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -1841,7 +1857,7 @@ ul, ol {
 }
 
 .report-office {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.10em;
   text-transform: uppercase;
@@ -1849,14 +1865,14 @@ ul, ol {
 }
 
 .report-title {
-  font-size: 22px;
+  font-size: 25.5px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--color-text);
 }
 
 .report-meta {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -1892,7 +1908,7 @@ ul, ol {
   border-radius: var(--radius-sm);
   background: var(--color-primary-bg);
   color: var(--color-primary);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -1903,14 +1919,14 @@ ul, ol {
 }
 
 .report-section-title h3 {
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 700;
   letter-spacing: 0.01em;
   color: var(--color-text);
 }
 
 .report-section-title p {
-  font-size: 12.5px;
+  font-size: 14.5px;
   color: var(--color-text-secondary);
   margin-top: 1px;
 }
@@ -1941,7 +1957,7 @@ ul, ol {
 }
 
 .report-figure-label {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -1949,7 +1965,7 @@ ul, ol {
 }
 
 .report-figure-value {
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
@@ -1961,7 +1977,7 @@ ul, ol {
 .report-figure-value.danger { color: var(--color-danger); }
 
 .report-figure-basis {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-secondary);
 }
 
@@ -2000,7 +2016,7 @@ ul, ol {
 
 .report-panel-head {
   padding: 12px 20px 0;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2032,13 +2048,13 @@ ul, ol {
 .report-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .report-table th {
   padding: 11px 20px;
   text-align: left;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2060,7 +2076,7 @@ ul, ol {
 
 .report-table td small {
   display: block;
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--color-text-tertiary);
   margin-top: 1px;
 }
@@ -2096,7 +2112,7 @@ ul, ol {
 
 .report-table tfoot td.share {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-secondary);
 }
 
@@ -2140,7 +2156,7 @@ ul, ol {
 .report-share span {
   flex: 0 0 52px;
   text-align: right;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
@@ -2148,7 +2164,7 @@ ul, ol {
 
 .report-note {
   padding: 12px 20px 16px;
-  font-size: 12.5px;
+  font-size: 14.5px;
   color: var(--color-text-secondary);
 }
 
@@ -2161,13 +2177,13 @@ ul, ol {
   border-left: 3px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
 
 .report-footer .material-symbols-outlined {
-  font-size: 20px;
+  font-size: 23px;
   color: var(--color-text-tertiary);
 }
 
@@ -2191,7 +2207,7 @@ ul, ol {
 }
 
 .log-date {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-secondary);
   white-space: nowrap;
@@ -2206,13 +2222,13 @@ ul, ol {
 }
 
 .log-time {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .log-type {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2220,7 +2236,7 @@ ul, ol {
 }
 
 .log-details {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text-secondary);
 }
 
@@ -2259,7 +2275,7 @@ ul, ol {
   border-radius: 50%;
   background: var(--color-primary-bg);
   color: var(--color-primary-light);
-  font-size: 32px !important;
+  font-size: 37px !important;
   margin-bottom: 14px;
 }
 
@@ -2339,7 +2355,7 @@ ul, ol {
 }
 
 .modal-header h3 {
-  font-size: 17px;
+  font-size: 19.5px;
   font-weight: 700;
   color: var(--color-text);
   margin: 0;
@@ -2352,7 +2368,7 @@ ul, ol {
   height: 32px;
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
-  font-size: 20px;
+  font-size: 23px;
   transition: all 0.15s;
 }
 
@@ -2397,7 +2413,7 @@ ul, ol {
 }
 
 .form-label {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-secondary);
 }
@@ -2408,7 +2424,7 @@ ul, ol {
   padding: 9px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text);
   background: var(--color-surface);
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -2464,7 +2480,7 @@ ul, ol {
 }
 
 .detail-label {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2472,7 +2488,7 @@ ul, ol {
 }
 
 .detail-value {
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 500;
   color: var(--color-text);
 }
@@ -2500,14 +2516,14 @@ ul, ol {
   color: white;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   animation: slideUp 0.25s ease;
   min-width: 280px;
 }
 
 .toast .material-symbols-outlined {
-  font-size: 20px;
+  font-size: 23px;
   color: #4ade80;
 }
 
@@ -2519,7 +2535,7 @@ ul, ol {
   font-family: inherit;
   color: rgba(255,255,255,0.6);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .toast-close:hover {
@@ -2550,7 +2566,7 @@ ul, ol {
 .settings-section-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--color-border-light);
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -2572,12 +2588,12 @@ ul, ol {
 }
 
 .settings-item-label {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text);
 }
 
 .settings-item-value {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--color-text-secondary);
   font-weight: 500;
 }
@@ -2590,7 +2606,7 @@ ul, ol {
 }
 
 .settings-lead {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.6;
   color: var(--color-text-secondary);
   margin-bottom: 16px;
@@ -2607,13 +2623,13 @@ ul, ol {
   border-left: 3px solid var(--color-warning);
   border-radius: var(--radius-sm);
   background: var(--color-bg);
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.55;
   color: var(--color-text-secondary);
 }
 
 .settings-note .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
   flex-shrink: 0;
   color: var(--color-warning);
 }
@@ -2625,7 +2641,7 @@ ul, ol {
   padding: 9px 18px;
   background: var(--color-danger);
   color: white;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   border-radius: var(--radius-full);
   transition: all 0.15s ease;
@@ -2664,18 +2680,18 @@ ul, ol {
 }
 
 .support-card .material-symbols-outlined {
-  font-size: 40px;
+  font-size: 46px;
   color: var(--color-primary);
 }
 
 .support-card h4 {
-  font-size: 16px;
+  font-size: 18.5px;
   font-weight: 600;
   margin: 0;
 }
 
 .support-card p {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
@@ -2711,7 +2727,7 @@ ul, ol {
   border-radius: var(--radius-full);
   display: grid;
   place-items: center;
-  font-size: 16px;
+  font-size: 18.5px;
   font-weight: 700;
   color: white;
   flex-shrink: 0;
@@ -2731,7 +2747,7 @@ ul, ol {
 }
 
 .contact-name {
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -2740,12 +2756,12 @@ ul, ol {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
 }
 
 .contact-detail .material-symbols-outlined {
-  font-size: 15px;
+  font-size: 17.5px;
   color: var(--color-text-tertiary);
 }
 
@@ -2783,14 +2799,14 @@ ul, ol {
 }
 
 .backup-info h4 {
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 600;
   color: var(--color-text);
   margin: 0 0 4px;
 }
 
 .backup-info p {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
@@ -2798,13 +2814,13 @@ ul, ol {
 
 .backup-meta {
   margin-top: 6px !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   color: var(--color-text-tertiary) !important;
   font-weight: 500;
 }
 
 .backup-icon {
-  font-size: 36px !important;
+  font-size: 41.5px !important;
   flex-shrink: 0;
   padding: 10px;
   border-radius: var(--radius-md);
@@ -2840,7 +2856,7 @@ ul, ol {
   gap: 8px;
   padding: 12px 16px;
   border-radius: var(--radius-md);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   margin-top: 16px;
   animation: slideUp 0.25s ease;
@@ -2859,7 +2875,7 @@ ul, ol {
 }
 
 .restore-status .material-symbols-outlined {
-  font-size: 20px;
+  font-size: 23px;
 }
 
 .faq-list {
@@ -2894,13 +2910,13 @@ ul, ol {
   text-align: left;
   cursor: pointer;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .faq-answer {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
   margin-top: 8px;
   line-height: 1.6;
@@ -2933,7 +2949,7 @@ ul, ol {
 }
 
 .search-clear .material-symbols-outlined {
-  font-size: 16px;
+  font-size: 18.5px;
 }
 
 .search-input:disabled {
@@ -2971,7 +2987,7 @@ ul, ol {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2988,7 +3004,7 @@ ul, ol {
   border-radius: var(--radius-full);
   background: var(--color-primary);
   color: #fff;
-  font-size: 11px;
+  font-size: 12.5px;
 }
 
 .notif-row {
@@ -3018,18 +3034,18 @@ ul, ol {
 }
 
 .notif-row strong {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .notif-sub {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-secondary);
 }
 
 .notif-row .material-symbols-outlined {
-  font-size: 20px;
+  font-size: 23px;
   flex-shrink: 0;
   color: var(--color-text-secondary);
 }
@@ -3040,7 +3056,7 @@ ul, ol {
 .notif-empty {
   padding: 28px 16px;
   text-align: center;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-tertiary);
 }
 
@@ -3063,14 +3079,14 @@ ul, ol {
   gap: 6px;
   padding: 7px 14px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-secondary);
   transition: background 0.15s, color 0.15s;
 }
 
 .utility-toggle-btn .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .utility-toggle-btn:hover {
@@ -3135,7 +3151,7 @@ ul, ol {
 }
 
 .calc-summary-head .material-symbols-outlined {
-  font-size: 28px;
+  font-size: 32px;
 }
 
 .calc-summary-head > div {
@@ -3145,12 +3161,12 @@ ul, ol {
 }
 
 .calc-summary-head strong {
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 700;
 }
 
 .calc-summary-head span {
-  font-size: 12px;
+  font-size: 14px;
   opacity: 0.9;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3163,7 +3179,7 @@ ul, ol {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 4px;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
   border-bottom: 1px dashed var(--color-border);
 }
@@ -3186,6 +3202,27 @@ ul, ol {
   color: var(--color-primary);
 }
 
+/* The late surcharge, called out in the running total so it is not mistaken
+   for part of the ordinary charge. */
+.calc-row.warning {
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-sm);
+  padding-left: 8px;
+  padding-right: 8px;
+  color: #92400e;
+}
+
+.calc-row.warning strong {
+  color: var(--color-warning);
+}
+
+.calc-surcharge-note {
+  margin: 0 4px 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
 .calc-total {
   display: flex;
   align-items: center;
@@ -3196,7 +3233,7 @@ ul, ol {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -3204,7 +3241,7 @@ ul, ol {
 }
 
 .calc-total strong {
-  font-size: 22px;
+  font-size: 25.5px;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--color-primary);
@@ -3220,12 +3257,12 @@ ul, ol {
   border-radius: var(--radius-md);
   background: var(--color-danger-bg);
   color: var(--color-danger);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
 }
 
 .calc-error .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .calc-actions {
@@ -3241,13 +3278,13 @@ ul, ol {
   gap: 5px;
   padding: 3px 10px;
   border-radius: var(--radius-full);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .utility-tag .material-symbols-outlined {
-  font-size: 15px;
+  font-size: 17.5px;
 }
 
 .utility-tag.electricity {
@@ -3312,7 +3349,7 @@ ul, ol {
 }
 
 .row-icon-btn .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 .action-link.danger {
@@ -3335,13 +3372,13 @@ ul, ol {
 }
 
 .bill-history-head h4 {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--color-text);
 }
 
 .bill-history-head span {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-success);
 }
@@ -3351,7 +3388,7 @@ ul, ol {
 }
 
 .bill-history-empty {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-tertiary);
   padding: 12px 0;
 }
@@ -3364,7 +3401,7 @@ ul, ol {
 .mini-table th {
   padding: 8px 10px;
   text-align: left;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -3374,7 +3411,7 @@ ul, ol {
 
 .mini-table td {
   padding: 9px 10px;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
   border-bottom: 1px solid var(--color-border-light);
 }
@@ -3384,7 +3421,7 @@ ul, ol {
 }
 
 .detail-value.strong {
-  font-size: 17px;
+  font-size: 19.5px;
   font-weight: 700;
   color: var(--color-primary);
 }
@@ -3405,7 +3442,7 @@ ul, ol {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
   background: var(--color-bg);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -3457,7 +3494,7 @@ ul, ol {
 }
 
 .req-row .req-mark {
-  font-size: 20px;
+  font-size: 23px;
   flex-shrink: 0;
   color: var(--color-text-tertiary);
   transition: color 0.15s ease;
@@ -3476,7 +3513,7 @@ ul, ol {
 .req-name {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 15.5px;
   font-weight: 500;
   color: var(--color-text-secondary);
 }
@@ -3488,7 +3525,7 @@ ul, ol {
 
 .req-state {
   flex: 0 0 auto;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3508,7 +3545,7 @@ ul, ol {
 }
 
 .req-mark {
-  font-size: 17px !important;
+  font-size: 19.5px !important;
 }
 
 .req-mark.done {
@@ -3521,7 +3558,7 @@ ul, ol {
 
 .req-marks .req-text {
   margin-left: 6px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text-secondary);
 }
@@ -3556,7 +3593,7 @@ ul, ol {
   border-radius: var(--radius-full);
   background: var(--color-success);
   color: #fff;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   transition: background 0.15s;
 }
@@ -3577,7 +3614,7 @@ ul, ol {
   gap: 6px;
   padding: 9px 18px;
   background: var(--color-surface);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
@@ -3611,7 +3648,7 @@ ul, ol {
 
 .btn-success .material-symbols-outlined,
 .btn-danger .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 /* Approval → tenancy handoff banner */
@@ -3626,7 +3663,7 @@ ul, ol {
 }
 
 .approved-banner .material-symbols-outlined {
-  font-size: 24px;
+  font-size: 27.5px;
   color: var(--color-success);
   flex-shrink: 0;
 }
@@ -3639,13 +3676,13 @@ ul, ol {
 }
 
 .approved-banner strong {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--color-text);
 }
 
 .approved-banner span {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-secondary);
 }
 
@@ -3654,7 +3691,7 @@ ul, ol {
    ============================================================ */
 
 .form-hint {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-tertiary);
   line-height: 1.4;
 }
@@ -3672,12 +3709,12 @@ ul, ol {
   border-radius: var(--radius-md);
   background: var(--color-danger-bg);
   color: var(--color-danger);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
 }
 
 .form-error .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
 }
 
 /* ============================================================
@@ -3950,7 +3987,7 @@ ul, ol {
   gap: 12px;
 }
 .form-section-head h4 {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -3972,7 +4009,7 @@ ul, ol {
 }
 
 .form-section-note {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--color-text-secondary);
 }
@@ -3982,7 +4019,7 @@ ul, ol {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg);
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-tertiary);
   text-align: center;
 }
@@ -3996,13 +4033,13 @@ ul, ol {
 .keeper-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .keeper-table th {
   padding: 9px 14px;
   text-align: left;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -4064,7 +4101,7 @@ ul, ol {
 }
 
 .keeper-panel-title {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -4072,7 +4109,7 @@ ul, ol {
 }
 
 .keeper-panel-note {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-text-tertiary);
 }
 
@@ -4113,7 +4150,7 @@ ul, ol {
 
 
 .link-btn .material-symbols-outlined {
-  font-size: 16px;
+  font-size: 18.5px;
   vertical-align: -3px;
   margin-right: 2px;
 }
@@ -4122,7 +4159,7 @@ ul, ol {
   border: none;
   padding: 0;
   transition: color 0.15s, opacity 0.15s;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-primary);
   cursor: pointer;
@@ -4145,12 +4182,12 @@ ul, ol {
   border: 1px dashed var(--color-border);
   background: var(--color-bg);
   color: var(--color-text-secondary);
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.45;
 }
 
 .save-note .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 20.5px;
   flex-shrink: 0;
   color: var(--color-text-tertiary);
 }
@@ -4203,7 +4240,7 @@ ul, ol {
 }
 .record-title {
   font-family: Georgia, 'Times New Roman', 'Nimbus Roman', serif;
-  font-size: 21px;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--color-text);
@@ -4211,7 +4248,7 @@ ul, ol {
 }
 .record-subtitle {
   margin-top: 7px;
-  font-size: 12.5px;
+  font-size: 14.5px;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--color-text-secondary);
@@ -4230,7 +4267,7 @@ ul, ol {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 13.5px;
+  font-size: 15.5px;
   font-weight: 700;
   letter-spacing: 0.01em;
   color: var(--color-text);
@@ -4242,7 +4279,7 @@ ul, ol {
   flex: 1;
 }
 .record-section-title .material-symbols-outlined {
-  font-size: 18px !important;
+  font-size: 20.5px !important;
   color: var(--color-primary);
   letter-spacing: normal;
 }
@@ -4264,14 +4301,14 @@ ul, ol {
   min-width: 0;
 }
 .record-label {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-secondary);
 }
 .record-value {
-  font-size: 15px;
+  font-size: 17.5px;
   font-weight: 600;
   line-height: 1.5;
   color: var(--color-text);
@@ -4290,7 +4327,7 @@ ul, ol {
   padding: 14px 16px;
   border-radius: var(--radius-sm, 6px);
   background: var(--color-bg);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.65;
   color: var(--color-text-secondary);
 }
@@ -4307,14 +4344,14 @@ ul, ol {
   border-top: 2px solid var(--color-border);
 }
 .record-total span {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--color-text-secondary);
 }
 .record-total strong {
-  font-size: 22px;
+  font-size: 25.5px;
   font-weight: 700;
   line-height: 1.2;
   color: var(--color-primary);
@@ -4337,7 +4374,7 @@ ul, ol {
   border-bottom: none;
 }
 .record-check .material-symbols-outlined {
-  font-size: 20px !important;
+  font-size: 23px !important;
   color: var(--color-text-tertiary);
 }
 .record-check.done .material-symbols-outlined {
@@ -4346,12 +4383,12 @@ ul, ol {
 .record-check-label {
   flex: 1;
   min-width: 0;
-  font-size: 14.5px;
+  font-size: 16.5px;
   font-weight: 600;
   color: var(--color-text);
 }
 .record-check-state {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -4599,10 +4636,10 @@ ul, ol {
   color: var(--color-warning);
 }
 .confirm-icon .material-symbols-outlined {
-  font-size: 23px !important;
+  font-size: 26.5px !important;
 }
 .confirm-title {
-  font-size: 17px;
+  font-size: 19.5px;
   font-weight: 700;
   line-height: 1.35;
   color: var(--color-text);
@@ -4615,7 +4652,7 @@ ul, ol {
 }
 .confirm-body p {
   margin: 0;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.65;
   color: var(--color-text-secondary);
 }
@@ -4644,7 +4681,7 @@ ul, ol {
   background: none !important;
   border: none;
   border-radius: 0;
-  font-size: 13.5px;
+  font-size: 15.5px;
   font-weight: 600;
   letter-spacing: 0;
   /* Text only — no rule, dot, or chip. The colour is the highlight. */
@@ -4685,7 +4722,7 @@ ul, ol {
 
 /* In the record sheets the status sits alone in the header. */
 .record-header .badge {
-  font-size: 14px;
+  font-size: 16px;
   padding-top: 4px;
 }
 
@@ -4722,7 +4759,7 @@ ul, ol {
   background: var(--color-primary-bg);
 }
 .search-result > .material-symbols-outlined {
-  font-size: 21px !important;
+  font-size: 24px !important;
   color: var(--btn-primary-bg);
   flex-shrink: 0;
 }
@@ -4734,17 +4771,17 @@ ul, ol {
   min-width: 0;
 }
 .search-result-label {
-  font-size: 14.5px;
+  font-size: 16.5px;
   font-weight: 600;
   color: var(--color-text);
 }
 .search-result-detail {
-  font-size: 12.5px;
+  font-size: 14.5px;
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .search-result-kind {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -4752,7 +4789,7 @@ ul, ol {
   white-space: nowrap;
 }
 .search-result-go {
-  font-size: 20px !important;
+  font-size: 23px !important;
   color: var(--color-text-tertiary);
   flex-shrink: 0;
 }
@@ -4779,7 +4816,7 @@ ul, ol {
 .btn-outline-sm,
 .upload-btn {
   border-radius: var(--radius-btn);
-  font-size: 13.5px;
+  font-size: 15.5px;
   font-weight: 600;
   letter-spacing: 0.012em;
 }
@@ -4839,7 +4876,7 @@ ul, ol {
 .btn-success .material-symbols-outlined,
 .btn-outline-success .material-symbols-outlined,
 .btn-outline-danger .material-symbols-outlined {
-  font-size: 17px;
+  font-size: 19.5px;
 }
 
 /* Search fields match the other inputs instead of floating as capsules. */
@@ -4856,7 +4893,7 @@ ul, ol {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 12.5px;
+  font-size: 14.5px;
   font-weight: 500;
   line-height: 1.5;
 }
@@ -4934,7 +4971,7 @@ ul, ol {
 }
 
 .modal-subtitle {
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.45;
   font-weight: 500;
   color: var(--color-text-secondary);
@@ -4950,13 +4987,13 @@ ul, ol {
   border-left: 3px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-bg);
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.55;
   color: var(--color-text-secondary);
 }
 
 .dialog-note .material-symbols-outlined {
-  font-size: 17px;
+  font-size: 19.5px;
   flex-shrink: 0;
   color: var(--color-text-tertiary);
 }
@@ -4964,6 +5001,17 @@ ul, ol {
 .dialog-note strong {
   font-weight: 700;
   color: var(--color-text);
+}
+
+.dialog-note.warning {
+  border-color: rgba(217, 119, 6, 0.3);
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-bg);
+  color: #92400e;
+}
+
+.dialog-note.warning .material-symbols-outlined {
+  color: var(--color-warning);
 }
 
 /* ============================================================
@@ -5177,10 +5225,27 @@ ul, ol {
   font-size: 11px;
 }
 
+/* The surcharge line, weighted so a tenant reading the quarter sees at once
+   that the total is not just consumption. Sized in the receipt's own scale —
+   this whole section is laid out against a real A4 sheet, not the screen. */
+.receipt-line.surcharge span,
+.receipt-line.surcharge strong {
+  font-weight: 700;
+}
+
 .receipt-status {
   margin-top: 3px;
   font-size: 7px;
   letter-spacing: 0.02em;
+}
+
+.receipt-surcharge-note {
+  margin-top: 2px;
+  padding: 2px 4px;
+  border: 1px solid #000;
+  font-size: 6.4px;
+  line-height: 1.3;
+  font-weight: 600;
 }
 
 .receipt-notes {
@@ -5249,6 +5314,316 @@ ul, ol {
   color: #333;
 }
 
+/* ---------- Stall / space verification slip ----------
+
+   The paper pad this replaces was a quarter-sheet with a boxed rule around it,
+   and the office cuts these the same way. The rule is printed rather than left
+   to the cut, so a slip trimmed a little crooked still looks like a document. */
+
+.slip-sheet {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: var(--sheet-width);
+  height: var(--sheet-height);
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.slip {
+  display: flex;
+  flex-direction: column;
+  margin: 3mm;
+  padding: 3.5mm 4mm;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1.2px solid #000;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 7.6px;
+  line-height: 1.34;
+  color: #000;
+  background: #fff;
+}
+
+.slip-blank {
+  border: none;
+  background: #fff;
+}
+
+.slip-masthead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #000;
+}
+
+.slip-seal {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.slip-identity {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.slip-identity span {
+  font-size: 6.2px;
+  letter-spacing: 0.02em;
+}
+
+.slip-identity strong {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* The number is the whole point of a controlled slip, so it is set apart and
+   is the one thing on the quarter that is allowed to shout. */
+.slip-control {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.slip-control-label {
+  font-size: 6.4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.slip-control-no {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0 3px;
+  border-bottom: 1.2px solid #000;
+}
+
+.slip-title {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.slip-subtitle {
+  margin: 0 0 4px;
+  font-size: 7px;
+  font-style: italic;
+  text-align: center;
+}
+
+.slip-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+}
+
+.slip-date {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.slip-date span {
+  font-size: 6.2px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.slip-date strong {
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.slip-party {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 5px 0;
+}
+
+/* Label and rule on one line, the way the pad has them, so a blank slip can be
+   written on and a filled one reads as the same document. */
+.slip-field {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 7.4px;
+}
+
+.slip-field-label {
+  flex: 0 0 auto;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 6.6px;
+}
+
+.slip-field-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 0.8px solid #000;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* An empty field still needs the rule to be tall enough to write on. */
+.slip-field-value.blank {
+  min-height: 9px;
+}
+
+.slip-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5px;
+  flex: 1 1 auto;
+}
+
+.slip-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 7.2px;
+  line-height: 1.3;
+}
+
+.slip-box {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.5px;
+  border: 1px solid #000;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* A drawn tick rather than a glyph — it survives any printer's font handling,
+   and colour-adjust keeps it from being dropped by a greyscale driver. */
+.slip-box.ticked::after {
+  content: '';
+  position: absolute;
+  left: 1.4px;
+  top: -0.6px;
+  width: 2.6px;
+  height: 5.4px;
+  border: solid #000;
+  border-width: 0 1.2px 1.2px 0;
+  transform: rotate(42deg);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.slip-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.slip-others {
+  display: inline-block;
+  min-width: 44px;
+  border-bottom: 0.8px solid #000;
+  font-weight: 700;
+}
+
+.slip-others.blank {
+  min-width: 62px;
+}
+
+/* Restating the lapse date in words is deliberate: the pair of dates above is
+   read as a form field, this reads as a condition, and the licensing clerk is
+   looking for one of the two. */
+.slip-validity {
+  margin: 4px 0 0;
+  padding: 2.5px 3px;
+  border: 0.8px solid #000;
+  font-size: 6.8px;
+  text-align: center;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.slip-foot {
+  margin-top: 5px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.slip-sign {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 58%;
+}
+
+.slip-sign-name {
+  font-size: 7.6px;
+  font-weight: 700;
+  min-height: 9px;
+  text-align: center;
+}
+
+.slip-sign-rule {
+  display: block;
+  width: 100%;
+  border-top: 0.8px solid #000;
+  margin-top: 1px;
+}
+
+.slip-sign-role {
+  font-size: 6.4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The checklist as it appears in the dialog, not on paper. */
+.slip-checkgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+}
+
+.slip-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.slip-checkbox input {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .slip-checkgrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Print preview ---------- */
 
 .print-setup {
@@ -5281,19 +5656,505 @@ ul, ol {
   margin-bottom: calc(-38% - 20px);
 }
 
-.print-preview-scale .receipt-sheet {
+.print-preview-scale .receipt-sheet,
+.print-preview-scale .slip-sheet {
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-md);
   flex: 0 0 auto;
+}
+
+/* The zoomable variant drives its scale from the `zoom` property set inline,
+   which reflows — so it needs neither the transform nor the negative-margin
+   claw-back the fixed-scale version above depends on. */
+.print-preview-scale.zoomable {
+  transform: none;
+  margin-bottom: 0;
+}
+
+/* ---------- Zoomable receipt preview ---------- */
+
+.print-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.print-preview-count {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.print-preview-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Tabular figures stop the toolbar shifting as the percentage changes width. */
+.print-preview-level {
+  min-width: 52px;
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.print-preview-viewport {
+  overflow: auto;
+  max-height: 46vh;
+  padding: 4px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+}
+
+/* Fullscreen is an in-page overlay, not the Fullscreen API — the app is
+   already in its own desktop window. */
+.print-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0 20px;
+  background: var(--color-bg);
+}
+
+.print-fullscreen-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 0 20px;
+}
+
+.print-fullscreen-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.print-fullscreen-title .material-symbols-outlined {
+  font-size: 26px;
+  color: var(--color-primary);
+}
+
+.print-fullscreen-title > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.print-fullscreen-title strong {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.print-fullscreen-title span {
+  font-size: 13.5px;
+  color: var(--color-text-secondary);
+}
+
+.print-fullscreen-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* In fullscreen the preview is the whole page, so it takes the leftover
+   height instead of the dialog's capped 46vh. */
+.print-preview.fullscreen {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 20px;
+  max-height: none;
+}
+
+.print-preview.fullscreen .print-preview-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
 }
 
 @media (max-width: 900px) {
   .print-setup {
     grid-template-columns: 1fr;
   }
+
+  .print-preview-toolbar {
+    justify-content: center;
+  }
+}
+
+/* ---------- Batch selection for printing ---------- */
+
+.batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--color-primary-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.batch-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.batch-count .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.batch-sheets {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.batch-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.data-table th.check-col,
+.data-table td.check-col {
+  width: 40px;
+  padding-right: 0;
+  text-align: center;
+}
+
+.check-col input[type='checkbox'] {
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.check-col input[type='checkbox']:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.data-table tbody tr.row-selected {
+  background: var(--color-primary-bg);
 }
 
 /* ---------- On paper ---------- */
+
+
+/* ============================================================
+   Officers — the market office board
+   ============================================================ */
+
+/* Board or directory. The pair reads as one control rather than two buttons,
+   so it is obvious only one of them is showing at a time. */
+.view-toggle {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.view-toggle-btn .material-symbols-outlined {
+  font-size: 20.5px;
+}
+
+.view-toggle-btn:hover {
+  color: var(--color-text);
+}
+
+.view-toggle-btn.active {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* A seat nobody holds. Said in words rather than left as an empty cell, so a
+   blank in the directory is never mistaken for missing data. */
+.seat-vacant {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.avatar-initials.vacant {
+  background: var(--color-bg);
+  color: var(--color-text-tertiary);
+  border: 1px dashed var(--color-border);
+}
+
+/* ---------- The chart ---------- */
+
+/* The board is as wide as the office is, which on a market office with six
+   collectors under one supervisor is wider than the panel. It scrolls
+   sideways inside its own box rather than stretching the page. */
+.org-board {
+  padding: 24px 4px 8px;
+}
+
+.org-board-scroll {
+  overflow-x: auto;
+  padding: 4px 20px 20px;
+}
+
+/* Each level is a row of boxes centred under its parent. The connectors are
+   drawn with borders on the list items rather than with SVG, so they follow
+   the boxes however the office arranges them. */
+.org-level {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.org-level-root {
+  align-items: flex-start;
+}
+
+.org-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  padding-top: 22px;
+}
+
+/* The stub rising from a box to the rail above it. The root level has nothing
+   above it, so its stubs and rails are suppressed. */
+.org-node::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1.5px;
+  height: 22px;
+  background: var(--color-border);
+}
+
+/* The horizontal rail joining siblings. Half of it is drawn on the first
+   child and half on the last, so a lone child gets no rail at all — just the
+   straight stub down from its parent. */
+.org-node::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  height: 1.5px;
+  background: var(--color-border);
+}
+
+.org-node:first-child::after {
+  left: 50%;
+  right: -10px;
+}
+
+.org-node:last-child::after {
+  left: -10px;
+  right: 50%;
+}
+
+.org-node:not(:first-child):not(:last-child)::after {
+  left: -10px;
+  right: -10px;
+}
+
+.org-node:only-child::after {
+  display: none;
+}
+
+.org-level-root > .org-node {
+  padding-top: 0;
+}
+
+.org-level-root > .org-node::before,
+.org-level-root > .org-node::after {
+  display: none;
+}
+
+/* The stub dropping from a box to the level below it. */
+.org-node > .org-level {
+  position: relative;
+  margin-top: 22px;
+}
+
+.org-node > .org-level::before {
+  content: '';
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  width: 1.5px;
+  height: 22px;
+  background: var(--color-border);
+}
+
+.org-card {
+  width: 208px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.org-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.org-card.vacant {
+  border-style: dashed;
+  background: var(--color-bg);
+}
+
+.org-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.org-card-main .avatar-initials {
+  flex-shrink: 0;
+}
+
+.org-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.org-card-name {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.org-card.vacant .org-card-name {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  font-weight: 600;
+}
+
+.org-card-position {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  line-height: 1.3;
+}
+
+.org-card-office {
+  font-size: 12.5px;
+  color: var(--color-text-tertiary);
+  line-height: 1.3;
+}
+
+.org-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 8px 12px;
+  min-height: 26px;
+}
+
+.org-card-tag {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.org-card-tag.leave {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.org-card-edit {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Under a narrow window the chart stops trying to centre itself and simply
+   runs left to right inside its scroller — a squeezed chart is unreadable,
+   a scrolled one is not. */
+@media (max-width: 900px) {
+  .org-level {
+    gap: 14px;
+  }
+
+  .org-card {
+    width: 178px;
+  }
+}
+
+/* A seat's own reports, listed on its record sheet. */
+.record-list {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 15.5px;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+}
+
 
 /* ============================================================
    Printed register
@@ -5451,6 +6312,31 @@ ul, ol {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+
+  /* Verification slips sheet the same way — one A4 per sheet of four, and a
+     slip is never allowed to break across a page. */
+  .slip-sheet {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .slip-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .slip {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* The seal and the drawn ticks are the two marks a greyscale driver is most
+     likely to throw away, and both are what make the slip look official. */
+  .slip-seal,
+  .slip-box.ticked::after {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 
 /* ============================================================
@@ -5470,7 +6356,7 @@ ul, ol {
 }
 
 .market-clock > .material-symbols-outlined {
-  font-size: 19px;
+  font-size: 22px;
   color: var(--color-text-tertiary);
 }
 
@@ -5485,7 +6371,7 @@ ul, ol {
   display: flex;
   align-items: baseline;
   gap: 5px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
@@ -5493,7 +6379,7 @@ ul, ol {
 }
 
 .market-clock-time abbr {
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--color-text-tertiary);
@@ -5502,7 +6388,7 @@ ul, ol {
 }
 
 .market-clock-date {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--color-text-secondary);
 }
@@ -5550,19 +6436,19 @@ ul, ol {
 }
 
 .assistant-intro > .material-symbols-outlined {
-  font-size: 40px;
+  font-size: 46px;
   color: var(--color-text-tertiary);
 }
 
 .assistant-intro h3 {
   margin: 8px 0 4px;
-  font-size: 17px;
+  font-size: 19.5px;
   font-weight: 700;
   color: var(--color-text);
 }
 
 .assistant-intro p {
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.55;
 }
 
@@ -5580,7 +6466,7 @@ ul, ol {
   border-radius: var(--radius-full);
   background: var(--color-surface);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 14.5px;
   font-weight: 500;
   color: var(--color-text);
   cursor: pointer;
@@ -5615,7 +6501,7 @@ ul, ol {
 }
 
 .assistant-text {
-  font-size: 13.5px;
+  font-size: 15.5px;
   line-height: 1.55;
 }
 
@@ -5630,7 +6516,7 @@ ul, ol {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.5;
   color: var(--color-text-secondary);
 }
@@ -5655,14 +6541,14 @@ ul, ol {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--color-text-tertiary);
 }
 
 .assistant-source .material-symbols-outlined {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .assistant-jump {
@@ -5670,7 +6556,7 @@ ul, ol {
   border: none;
   background: none;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--color-primary);
   cursor: pointer;
@@ -5695,7 +6581,7 @@ ul, ol {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 15.5px;
   color: var(--color-text);
 }
 
@@ -5713,7 +6599,7 @@ ul, ol {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
-  font-size: 12.5px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--color-text-secondary);
 }
@@ -5725,5 +6611,5 @@ ul, ol {
 }
 
 .assistant-model .material-symbols-outlined {
-  font-size: 17px;
+  font-size: 19.5px;
 }
