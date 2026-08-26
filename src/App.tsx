@@ -20,11 +20,22 @@ type ModuleKey =
   | 'violations'
   | 'analytics'
   | 'logbook'
+  | 'officers'
   | 'settings'
   | 'support';
 
-type ApplicantStatus = 'Pending Review' | 'Incomplete' | 'Approved' | 'Rejected';
-type StallStatus = 'Occupied' | 'Available' | 'Maintenance';
+/* 'No BP' is a sitting stallholder the occupancy survey marked X in the WITH
+   BP column — trading without a business permit. It is not a stage of an
+   application, it is a compliance flag that clears when the permit is filed. */
+type ApplicantStatus = 'Pending Review' | 'Incomplete' | 'Approved' | 'Rejected' | 'No BP';
+/* 'Temporarily Closed' and 'Abandoned' come straight off the occupancy sheet:
+   a closed stall is still held by its tenant, an abandoned one is not yet
+   released. Neither is Available — the stall cannot be reassigned as it stands. */
+type StallStatus = 'Occupied' | 'Available' | 'Maintenance' | 'Temporarily Closed' | 'Closed' | 'Abandoned';
+
+/* Whether a business permit was sighted for the stall on the last survey.
+   'Not Recorded' is its own answer — the sheet leaves the column blank. */
+type PermitStatus = 'With BP' | 'No BP' | 'Not Recorded';
 
 type ViolationStatus = 'Open' | 'Resolved';
 
@@ -44,20 +55,87 @@ type PrintReceipt = { bill: UtilityBill; label: string };
    different bills tiled onto the same sheets. */
 type PrintRequest = { bills: UtilityBill[]; single: boolean };
 
+/* ---------- Stall / space verification ----------
+
+   The slip the market office hands a stallholder to take to the licensing
+   office. It is what says the stall is really theirs, that the rent and the
+   utilities are settled, and that nothing is outstanding against it — the
+   licensing office will not issue or renew a business permit without one.
+
+   Whether it is a first permit or a renewal is the same slip with a different
+   set of boxes ticked, which is how the paper pad has always worked. */
+type VerificationPurpose = 'Issuance' | 'Renewal';
+
+type VerificationSlip = {
+  /* The number on the leaf. Its whole point is that a slip presented at the
+     licensing office can be traced back to the one this office issued. */
+  controlNo: string;
+  purpose: VerificationPurpose;
+  issuedTo: string;
+  section: string;
+  stallNo: string;
+  /* Which of the checklist lines were ticked, by their exact printed wording. */
+  checked: string[];
+  /* The write-in on the "Others" line. */
+  others: string;
+  dateIssued: string;
+  validUntil: string;
+  issuedBy: string;
+};
+
+/* A whole register laid out for paper — every row a page is showing, not the
+   ten of them on screen. The active filters carry into the print, so a single
+   market section is printed by filtering to it first, which is how the office
+   keeps its occupancy sheets. */
+type RegisterJob = {
+  title: string;
+  subtitle: string;
+  columns: string[];
+  rows: string[][];
+  printedAt: string;
+};
+
 type ModalType =
   | null
   | 'add-stall' | 'add-applicant' | 'add-tenant' | 'add-log' | 'assign-stall' | 'add-violation'
+  | 'add-officer'
   | 'view-stall' | 'view-applicant' | 'view-tenant' | 'view-bill' | 'view-violation'
-  | 'edit-tenant' | 'edit-stall' | 'edit-applicant' | 'edit-violation'
+  | 'view-officer'
+  | 'edit-tenant' | 'edit-stall' | 'edit-applicant' | 'edit-violation' | 'edit-officer'
   | 'confirm-logout' | 'confirm-reset' | 'confirm-delete-bill' | 'confirm-delete-stall'
   | 'confirm-delete-tenant' | 'confirm-delete-applicant' | 'confirm-delete-log'
-  | 'confirm-delete-violation';
+  | 'confirm-delete-violation' | 'confirm-delete-officer';
+
+/* ---------- The market office's own people ----------
+
+   An officer is a seat on the organizational board, not a user account. The
+   board is drawn from `reportsTo`, which holds another officer's id, so the
+   office arranges its own hierarchy rather than the app assuming one. A seat
+   with no name on it is a vacancy the board still has to show. */
+type OfficerStatus = 'Active' | 'On Leave' | 'Vacant';
+
+type Officer = {
+  id: string;
+  name: string;
+  position: string;
+  office: string;
+  /* Another officer's id, or '' for a seat at the head of the board. */
+  reportsTo: string;
+  phone: string;
+  email: string;
+  status: OfficerStatus;
+  /* When this person took the seat, as YYYY-MM-DD. Blank when not recorded. */
+  appointed: string;
+};
 
 type Applicant = {
   id: string;
   name: string;
   phone: string;
-  stallType: string;
+  /* The stall this record concerns: the vacancy an applicant asked for, or
+     the stall a sitting holder already occupies while working off a missing
+     requirement. Absent when no particular stall has been settled on. */
+  stallId?: string;
   status: ApplicantStatus;
   dateApplied: string;
   requirements: string[];
@@ -79,8 +157,14 @@ type RentPayment = {
   period: string;
   paidOn: string;
   /* What was actually collected, kept as its own figure so a later change to
-     the monthly rent never rewrites what a past month was paid. */
+     the monthly rent never rewrites what a past month was paid. Already net of
+     `discount` — this is the peso figure that went in the drawer. */
   amount: number;
+  /* The early-payment discount taken off, if the month was settled on or
+     before its due date. Held separately so a past payment can still show why
+     it came to less than the monthly rent, and so changing the discount rate
+     later never rewrites what an earlier month was actually given. */
+  discount: number;
 };
 
 /* The meters serving a tenant's stall, by utility. The number is a property of
@@ -109,7 +193,11 @@ type Stall = {
   section: string;
   tenant: string;
   status: StallStatus;
+  permit: PermitStatus;
   lastInspection: string;
+  /* Anything the occupancy sheet noted in the margin — a deceased former
+     tenant, a newly issued stall. Empty for most rows. */
+  note: string;
 };
 
 type Violation = {
@@ -143,7 +231,12 @@ type UtilityBill = {
   currentReading: number;
   consumption: number;
   rate: number;
-  fixedCharge: number;
+  /* `amount` is the usage charge alone (consumption × rate) — the market
+     dropped the fixed/service charge, so it no longer has a second component
+     to add in. A late surcharge is deliberately not folded in here: it is not
+     something a bill is ever "worth" in the record, only something a receipt
+     picks up at the moment it happens to be printed past the due date. See
+     `surchargeAmount`. */
   amount: number;
   status: BillStatus;
   dateIssued: string;
@@ -172,11 +265,16 @@ type ActivityItem = {
    Constants
    ============================================================ */
 
-const ITEMS_PER_PAGE = 5;
+const ITEMS_PER_PAGE = 10;
 const MAX_ACTIVITIES = 50;
 const SECTIONS = ['Meat & Poultry', 'Fish & Seafood', 'Vegetables & Fruits', 'Dry Goods'];
+const STALL_STATUSES: StallStatus[] = ['Occupied', 'Available', 'Maintenance', 'Temporarily Closed', 'Closed', 'Abandoned'];
+const PERMIT_STATUSES: PermitStatus[] = ['With BP', 'No BP', 'Not Recorded'];
+/* A stall in one of these states is spoken for — it cannot be let to anyone
+   else, whether or not the tenant is trading today. */
+const HELD_STATUSES: StallStatus[] = ['Occupied', 'Temporarily Closed', 'Closed', 'Abandoned'];
+const countStatus = (stalls: Stall[], status: StallStatus) => stalls.filter((s) => s.status === status).length;
 const KEEPER_RELATIONS = ['Self (tenant tends the stall)', 'Spouse', 'Child', 'Parent', 'Sibling', 'Other Relative', 'Hired Helper'];
-const STALL_TYPES = ['Produce (Wet)', 'Dry Goods', 'Vegetables', 'Fish & Seafood', 'Meat & Poultry'];
 const LOG_TYPES = ['Inspection', 'Incident', 'Maintenance', 'Collection', 'Announcement'];
 const VIOLATION_ISSUES = [
   'Late document submission',
@@ -200,6 +298,59 @@ const RECEIPTS_PER_SHEET = 4;
 /* Which copy each of the four is, when one bill is issued in duplicate or more.
    The office keeps its own copy of anything a tenant is handed. */
 const RECEIPT_COPY_LABELS = ["Tenant's Copy", 'Market Office Copy', "Treasurer's Copy", 'File Copy'];
+
+/* Print-preview zoom. FIT is the scale at which a whole A4 sheet sits inside
+   the dialog; 1 is the sheet at its true printed size, which is what the
+   Actual size button snaps to for checking small print on a receipt. */
+const FIT_ZOOM = 0.62;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2;
+
+/* Four verification slips to an A4 sheet as well, cut apart into a pad. */
+const SLIPS_PER_SHEET = 4;
+
+/* Who last issued a verification slip, kept the same way the receipt printer's
+   name is — typed once a shift rather than once a slip. */
+const verifiedByKey = 'pmrms-verified-by';
+
+/* The checklist, in the order the printed pad has it. The wording is the
+   office's own and is reproduced exactly, because a licensing clerk reads the
+   slip against the pad they already know — the one correction is "Clearance",
+   which the printed pad has misspelled. */
+const VERIFICATION_CHECKLIST = [
+  'Latest Business Permit (Original)',
+  'DTI Registration',
+  'OR of Last Monthly Rental Paid',
+  'OR of Last Electric/Water Bill Paid',
+  "Meat Inspector's Clearance",
+  'Existing Lessee',
+  'Inspection of Stall',
+  'New Lessee',
+];
+
+/* What each errand ticks by default. A renewal is an existing lessee proving
+   the year just past was paid up; a first issuance is a new lessee whose stall
+   has to be inspected before anything is signed. Meat clearance is left to the
+   counter either way — it only applies to the meat and poultry section. */
+const VERIFICATION_DEFAULTS: Record<VerificationPurpose, string[]> = {
+  Renewal: [
+    'Latest Business Permit (Original)',
+    'OR of Last Monthly Rental Paid',
+    'OR of Last Electric/Water Bill Paid',
+    'Existing Lessee',
+  ],
+  Issuance: [
+    'DTI Registration',
+    'OR of Last Monthly Rental Paid',
+    'Inspection of Stall',
+    'New Lessee',
+  ],
+};
+
+/* A slip is good for one week. Long enough to get to the licensing office,
+   short enough that the standing it certifies cannot have gone stale — a stall
+   can fall behind on rent in a month, so a month-old slip proves nothing. */
+const VERIFICATION_VALID_DAYS = 7;
 
 /* ---------- Philippine time ----------
 
@@ -250,89 +401,551 @@ const DEFAULT_RENT_DUE_DAY = 5;
 /* Every month has a 28th, so a due day is never dragged forward in February. */
 const MAX_RENT_DUE_DAY = 28;
 
+/* Settling a month's rent on or before its due date earns this much off, as a
+   percentage of the monthly rent — the market's incentive for paying early.
+   Unlike the utility surcharge, this IS recorded on the payment: a discount
+   changes what was actually collected, so the ledger has to hold it. */
+const EARLY_RENT_DISCOUNT_PCT = 20;
+
+/* What the office collects before an application is complete. The contract of
+   lease is last because it is last in fact: Title VII, Section 31 has the
+   successful applicant sign it, so the box is ticked once the signed copy is
+   back over the counter, after the rest of the papers are in. Approving an
+   application does not wait on it — Approved and Rejected are set by hand and
+   `deriveStatus` leaves them alone. */
 const REQUIREMENTS = [
+  'Business Permit',
   'Barangay Clearance',
   'Community Tax Certificate (Cedula)',
   'Health / Sanitary Permit',
   '2x2 ID Photo',
+  'Signed Contract of Lease',
 ];
 
 const UTILITY_TYPES: UtilityType[] = ['Electricity', 'Water'];
 
-const UTILITY_PRESETS: Record<UtilityType, { rate: number; fixedCharge: number; unit: string; icon: string }> = {
-  Electricity: { rate: 11.5, fixedCharge: 150, unit: 'kWh', icon: 'bolt' },
-  Water: { rate: 25, fixedCharge: 80, unit: 'm³', icon: 'water_drop' },
+const UTILITY_PRESETS: Record<UtilityType, { rate: number; unit: string; icon: string }> = {
+  Electricity: { rate: 11.5, unit: 'kWh', icon: 'bolt' },
+  Water: { rate: 25, unit: 'cu.m', icon: 'water_drop' },
 };
+
+/* Late-payment surcharge, as a percentage of the bill — the market's fee
+   schedule penalizes an overdue electricity connection differently from an
+   overdue water one. Kept as the plain percentage (not the 0.0335 fraction)
+   so a receipt can print "3.35%" straight off the constant with no rounding
+   artifact from multiplying it back out. See `surchargeAmount`. */
+const SURCHARGE_RATES: Record<UtilityType, number> = {
+  Electricity: 3.35,
+  Water: 10,
+};
+
+/* ---------- The market office ---------- */
+
+const OFFICER_STATUSES: OfficerStatus[] = ['Active', 'On Leave', 'Vacant'];
+/* The offices a market seat can belong to. Free text is allowed on the form —
+   this list is only what the picker offers first. */
+const OFFICE_UNITS = [
+  'Office of the Municipal Mayor',
+  'Market Office',
+  'Market Board',
+  'Municipal Treasurer’s Office',
+  'Business Permit & Licensing Office',
+  'Municipal Health Office',
+  'Municipal Engineering Office',
+  'Sangguniang Bayan',
+];
 
 /* ============================================================
    Initial Data
    ============================================================ */
 
-/* Rent standing for a seeded tenant. The demo register opens with both settled
-   and outstanding months so the paid / unpaid / overdue states are all visible
-   without anyone having to click first. */
-function seedRent(paid: boolean, amount: number, meters: MeterNumbers, dueDay = DEFAULT_RENT_DUE_DAY): Pick<Tenant, 'meters' | 'rentDueDay' | 'rentPayments'> {
-  const period = currentPeriod();
-  return {
-    meters,
-    rentDueDay: dueDay,
-    rentPayments: paid ? { [period]: { period, paidOn: `${period}-03`, amount } } : {},
-  };
-}
+/* The register opens on the 2026 Status of Market Occupancy surveys for
+   Tanauan, Leyte — Meat Section (July 20, 2026), Kakanin (July 21, 2026),
+   Fish Section (July 22, 2026) and Fruits & Vegetable Section (July 23, 2026).
+   Every stall below is a row of one of those sheets; nothing here is
+   illustrative. The Kakanin sheet is filed under Dry Goods, which is why its
+   stalls keep a KK- number and say so in their note. */
 
 const initialState = {
-  applicants: [
-    { id: 'APP-001', name: 'Juan Santos', phone: '09171234567', stallType: 'Produce (Wet)', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 12, 2023', requirements: [...REQUIREMENTS] },
-    { id: 'APP-002', name: 'Maria Reyes', phone: '09209876543', stallType: 'Dry Goods', status: 'Incomplete' as ApplicantStatus, dateApplied: 'Oct 14, 2023', requirements: REQUIREMENTS.slice(0, 2) },
-    { id: 'APP-003', name: 'Liza Cruz', phone: '09185551234', stallType: 'Vegetables', status: 'Approved' as ApplicantStatus, dateApplied: 'Oct 10, 2023', requirements: [...REQUIREMENTS] },
-    { id: 'APP-004', name: 'Pedro Garcia', phone: '09153337890', stallType: 'Fish & Seafood', status: 'Pending Review' as ApplicantStatus, dateApplied: 'Oct 16, 2023', requirements: REQUIREMENTS.slice(0, 3) },
-    { id: 'APP-005', name: 'Ana Villanueva', phone: '09224445678', stallType: 'Meat & Poultry', status: 'Rejected' as ApplicantStatus, dateApplied: 'Oct 8, 2023', requirements: REQUIREMENTS.slice(0, 1) },
-  ] satisfies Applicant[],
+  applicants: [] as Applicant[],
   tenants: [
-    { id: 'TEN-001', name: 'Maria Santos', phone: '09172221100', stallId: 'A-001', section: 'Meat & Poultry', rent: 5000, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 5000, { Electricity: 'EM-1042', Water: 'WM-2211' }) },
-    { id: 'TEN-002', name: 'Juan Dela Cruz', phone: '09183332211', stallId: 'A-002', section: 'Fish & Seafood', rent: 4500, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 4500, { Electricity: 'EM-1043', Water: 'WM-2212' }) },
-    { id: 'TEN-003', name: 'Liza Reyes', phone: '09204443322', stallId: 'B-015', section: 'Dry Goods', rent: 3500, status: 'Active', barangay: '', keepers: [], ...seedRent(false, 3500, { Electricity: 'EM-1044', Water: 'WM-2213' }) },
-    { id: 'TEN-004', name: "Rosa's Butchery", phone: '09215554433', stallId: 'M-101', section: 'Meat & Poultry', rent: 5500, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 5500, { Electricity: 'EM-1101', Water: 'WM-2301' }) },
-    { id: 'TEN-005', name: 'Green Farm Organics', phone: '09226665544', stallId: 'V-045', section: 'Vegetables & Fruits', rent: 4000, status: 'Active', barangay: '', keepers: [], ...seedRent(false, 4000, { Electricity: 'EM-1045', Water: 'WM-2214' }) },
-    { id: 'TEN-006', name: 'Deep Blue Catch', phone: '09157776655', stallId: 'F-012', section: 'Fish & Seafood', rent: 4200, status: 'Expiring Soon', barangay: '', keepers: [], ...seedRent(false, 4200, { Electricity: 'EM-1012', Water: 'WM-2012' }) },
-    { id: 'TEN-007', name: 'Santos General Store', phone: '09198887766', stallId: 'D-203', section: 'Dry Goods', rent: 3800, status: 'Active', barangay: '', keepers: [], ...seedRent(true, 3800, { Electricity: 'EM-1203', Water: 'WM-2203' }) },
+    { id: 'TEN-001', name: 'LOTEYRO, LEEMAR', phone: '', stallId: 'MS-01', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-002', name: 'LIPAYON, LORENA', phone: '', stallId: 'MS-02', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-003', name: 'EMOYLAN, CAROLINE', phone: '', stallId: 'MS-03', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-004', name: 'BORREL, FERDINAND', phone: '', stallId: 'MS-04', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-005', name: 'GAMEZ, GEMMA BERDAN', phone: '', stallId: 'MS-05', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-006', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-06', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-007', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-07', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-008', name: 'GEVEN, MA. FATIMA VALLER', phone: '', stallId: 'MS-08', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-009', name: 'AUCILA, GILBERT NIRZA', phone: '', stallId: 'MS-09', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-010', name: 'CAMERO, DESIDERIO NUEVAS', phone: '', stallId: 'MS-12', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-011', name: 'BANEZ, CELESTE A', phone: '', stallId: 'MS-17', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-012', name: 'RIZALDO BIGOY', phone: '', stallId: 'MS-20', section: 'Meat & Poultry', rent: 0, status: 'Abandoned', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-013', name: 'LIPAYON, GERRY INDIC', phone: '', stallId: 'MS-21', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-014', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-22', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-015', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-23', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-016', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-24', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-017', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-25', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-018', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-27', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-019', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-28', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-020', name: 'GEVEN, FATIMA VALLER', phone: '', stallId: 'MS-29', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-021', name: 'OGRIMEN, EDUARDO LACE', phone: '', stallId: 'MS-31', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-022', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-32', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-023', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-33', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-024', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-34', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-025', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-35', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-026', name: 'MAGDUA, CHARLES GODWIN ALMERIA', phone: '', stallId: 'MS-36', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-027', name: 'BIGOY, REGIE', phone: '', stallId: 'MS-37', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-028', name: 'TERADO, JINGJING MORALITA', phone: '', stallId: 'MS-38', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-029', name: 'ODTUHAN, AIZA SONGALIA', phone: '', stallId: 'MS-40', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-030', name: 'GERILLA, LEODEGARIO DUMASIG', phone: '', stallId: 'MS-41', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-031', name: 'LIPAYON, ROMEO L', phone: '', stallId: 'MS-44', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-032', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-01', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-033', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-02', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-034', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-03', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-035', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-04', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-036', name: 'MAGDUA, ASHLEY SIBYL AGUILLON', phone: '', stallId: 'CS-05', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-037', name: 'CERVANTES, JOSE PERCIVAL ESPADA', phone: '', stallId: 'CS-06', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-038', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-07', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-039', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-08', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-040', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-09', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-041', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-10', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-042', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-11', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-043', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-12', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-044', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-13', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-045', name: 'LAURINO, MARITES RABINA', phone: '', stallId: 'CS-14', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-046', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-16', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-047', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-17', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-048', name: 'TIZON, ELIZA ALMERIA', phone: '', stallId: 'CS-18', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-049', name: 'LANZA, VILMA ALBAO', phone: '', stallId: 'CS-19', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-050', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-20', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-051', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-21', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-052', name: 'LONZAGA, MARTHA MACARAY', phone: '', stallId: 'CS-22', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-053', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-01', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-054', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-02', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-055', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-03', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-056', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-04', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-057', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-05', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-058', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-06', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-059', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-07', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-060', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-08', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-061', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-09', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-062', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-10', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-063', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-11', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-064', name: 'MARABUT, MYRA SORILA', phone: '', stallId: 'FV-12', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-065', name: 'ESTEMBER, CHERIEMAE HEMBRA', phone: '', stallId: 'FV-13', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-066', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-14', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-067', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-15', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-068', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-16', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-069', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-17', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-070', name: 'PELINO, FLORENTINA ANCHITA', phone: '', stallId: 'FV-18', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-071', name: 'MAGDUA, GENEVIEVE BUHAWE', phone: '', stallId: 'FV-19', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-072', name: 'GUARDAYA, MA. LOURCEL GARCIA', phone: '', stallId: 'FV-20', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-073', name: 'VERTUDES, KATE MARABUT', phone: '', stallId: 'FV-21', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-074', name: 'TELEMBAN, ESMERALDA', phone: '', stallId: 'FV-22', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-075', name: 'SALCEDO, SOFIA MARIE', phone: '', stallId: 'FV-23', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-076', name: 'SALCEDO, SHAINE MARIE HEMBRA', phone: '', stallId: 'FV-24', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-077', name: 'GARCIA, ROBERTO III CORNEJO', phone: '', stallId: 'FV-25', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-078', name: 'CAMPOSANO, LISA MOLINA', phone: '', stallId: 'FV-26', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-079', name: 'ZIALCITA, SHERYL', phone: '', stallId: 'FV-27', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-080', name: 'LAGARTO, MARY JEAN', phone: '', stallId: 'FV-28', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-081', name: 'TOLIBAS, ROSELYN LANTAJO', phone: '', stallId: 'FV-29', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-082', name: 'PARANAS, LYN C', phone: '', stallId: 'FV-30', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-083', name: 'GARCIA, VELMA CINCO', phone: '', stallId: 'FV-31', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-084', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-32', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-085', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-33', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-086', name: 'PODOL, RAMIL M', phone: '', stallId: 'FV-34', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-087', name: 'ALBAO, DARWIN', phone: '', stallId: 'FV-35', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-088', name: 'VILLERO, ESTER FARON', phone: '', stallId: 'FV-36', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-089', name: 'MODESTO, JADE', phone: '', stallId: 'FV-37', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-090', name: 'MODESTO, JADE', phone: '', stallId: 'FV-38', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-091', name: 'VILLERO, CRISANTA CASIO', phone: '', stallId: 'FV-39', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-092', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-40', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-093', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-41', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-094', name: 'RELLONA, EVANGELINE ALBA', phone: '', stallId: 'FV-42', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-095', name: 'ANOS, DIANNE CORRAL', phone: '', stallId: 'FV-43', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-096', name: 'BLASE, MARICEL LASE', phone: '', stallId: 'FV-44', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-097', name: 'AMISTOSO, JONATHAN', phone: '', stallId: 'FV-45', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-098', name: 'DUMALAORON, ESTELITA MESIAS', phone: '', stallId: 'FV-46', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-099', name: 'ROYERAS, FRANCISCO CINCO', phone: '', stallId: 'FV-47', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-100', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-48', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-101', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-49', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-102', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-50', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-103', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-51', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-104', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-52', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-105', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-53', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-106', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-54', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-107', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-55', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-108', name: 'CATAN, ROSARIO V.', phone: '', stallId: 'FV-56', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-109', name: 'DANGCO, JAMEL ROSE PEREZ', phone: '', stallId: 'FV-57', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-110', name: 'BOCO, ORFIEL RECOTE', phone: '', stallId: 'FV-58', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-111', name: 'SOLANO, WILSON S', phone: '', stallId: 'FV-59', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-112', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-60', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-113', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-61', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-114', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-62', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-115', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-63', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-116', name: 'OLGUIRA, ANGEILA MAE L.', phone: '', stallId: 'FV-64', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-117', name: 'OLGUIRA, CARMILO RUEL L.', phone: '', stallId: 'FV-65', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-118', name: 'VILLEGAS, KAREN GRACE M', phone: '', stallId: 'FV-66', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-119', name: 'LAMOSTE, REY CAYANES', phone: '', stallId: 'FV-67', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-120', name: 'ALVAREZ, RUBY DEOANNE MACEDA', phone: '', stallId: 'FV-68', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-121', name: 'BETASOLO, GENEVIEVE TOLIBAS', phone: '', stallId: 'FV-69', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-122', name: 'RECOSANA, ROMEL NOLASCO', phone: '', stallId: 'FV-70', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-123', name: 'BOCO, IVY RICOTE', phone: '', stallId: 'FV-71', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-124', name: 'MARTOS, SYLDY', phone: '', stallId: 'FV-72', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-125', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-73', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-126', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-74', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-127', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-75', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-128', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-76', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-129', name: 'LANCANAN, ISABELITA BALMES', phone: '', stallId: 'FV-77', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-130', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-78', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-131', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-79', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-132', name: 'CAIMOY, GENEVIEVE OPERIO', phone: '', stallId: 'FV-80', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-133', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-81', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-134', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-82', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-135', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-83', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-136', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-84', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-137', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-85', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-138', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-86', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-139', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-87', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-140', name: 'DUQUILLA, IRENE TESTON', phone: '', stallId: 'FV-88', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-141', name: 'BASIHAN, JOSEPHINE', phone: '', stallId: 'FV-89', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-142', name: 'DUZON, DULCE CORAZON TAYANES', phone: '', stallId: 'FS-01', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-143', name: 'MORANTE, ELSA TAYANES', phone: '', stallId: 'FS-02', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-144', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-03', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-145', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-04', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-146', name: 'ESPADA, EVELYN BALTAZAR', phone: '', stallId: 'FS-05', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-147', name: 'CRISOLOGO, CRISPIN SINDAY', phone: '', stallId: 'FS-06', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-148', name: 'SABALZA, DARLYNA', phone: '', stallId: 'FS-07', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-149', name: 'PALABIO, FRANCISCO GHRAY JR. ORDAME', phone: '', stallId: 'FS-08', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-150', name: 'MONSAGA, MICHELLE LERIOS', phone: '', stallId: 'FS-09', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-151', name: 'ORDAME, RINE LERIOS', phone: '', stallId: 'FS-10', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-152', name: 'ORDAME, RICARDO LERIOS', phone: '', stallId: 'FS-11', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-153', name: 'LAURENTE, KAREN CALIPAYAN', phone: '', stallId: 'FS-12', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-154', name: 'COSTIMIANO, BENECIO', phone: '', stallId: 'FS-13', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-155', name: 'LABRADO, RESHILE', phone: '', stallId: 'FS-14', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-156', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-15', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-157', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-16', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-158', name: 'ABANO, HAIDE TAYANES', phone: '', stallId: 'FS-17', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-159', name: 'ABANO, DENNIS ALMADEN', phone: '', stallId: 'FS-18', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-160', name: 'PLABA, JOVITA', phone: '', stallId: 'FS-19', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-161', name: 'BARCILLA, LAILA BADE', phone: '', stallId: 'FS-20', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-162', name: 'ABANAG, ALMA', phone: '', stallId: 'FS-21', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-163', name: 'ABANAG, DANILO ABADIANO', phone: '', stallId: 'FS-22', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-164', name: 'ORDAME, CHARINA MELO', phone: '', stallId: 'FS-23', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-165', name: 'AGUILLON, MARIA CLARISS CAJEPE', phone: '', stallId: 'FS-24', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-166', name: 'PLABA, PRINCESS CABE', phone: '', stallId: 'FS-25', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-167', name: 'AGUILLON, SANDRO LABRADO', phone: '', stallId: 'FS-26', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-168', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-28', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-169', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-29', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-170', name: 'GARCIA, REGINE', phone: '', stallId: 'FS-33', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-171', name: 'AVILA, DAISY BAHIA', phone: '', stallId: 'FS-34', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-172', name: 'TAYANES, ARIEL VERUTIAO', phone: '', stallId: 'FS-35', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-173', name: 'TAYANES, JENNIFER CAINDOY', phone: '', stallId: 'FS-36', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-174', name: 'ABANDO, KIRBY ASDILLA', phone: '', stallId: 'FS-37', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-175', name: 'AGUILAR, JOEL FUENTES', phone: '', stallId: 'FS-38', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-176', name: 'AGUILAR, JOVE', phone: '', stallId: 'FS-39', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-177', name: 'IMPORTA, SONNY LUIS', phone: '', stallId: 'FS-40', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-178', name: 'ALBAO, NICANORA LAGO', phone: '', stallId: 'FS-41', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-179', name: 'AGUILAR, GLENN FUENTES', phone: '', stallId: 'FS-42', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-180', name: 'AGUILAR, GLORIA', phone: '', stallId: 'FS-43', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-181', name: 'ABAS, FELISA TIBE', phone: '', stallId: 'FS-44', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-182', name: 'ABANDO, JOEY B.', phone: '', stallId: 'FS-45', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-183', name: 'CANDELA, MARILYN ORDAME', phone: '', stallId: 'FS-46', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-184', name: 'FLORES, MELVIN', phone: '', stallId: 'FS-47', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-185', name: 'MELO, RENALYN', phone: '', stallId: 'FS-48', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-186', name: 'MELO, MELBA', phone: '', stallId: 'FS-49', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-187', name: 'PARDALES, ABELARDO NAPOLES', phone: '', stallId: 'FS-50', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-188', name: 'BAGUISA, MERLY ABANG', phone: '', stallId: 'FS-51', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-189', name: 'BAGUISA, COLITA ABANAG', phone: '', stallId: 'FS-52', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-190', name: 'TOMANDA, DANIEL OGARO', phone: '', stallId: 'FS-53', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-191', name: 'DUZON, MILO LOPEZ', phone: '', stallId: 'FS-54', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-192', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-55', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-193', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-56', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-194', name: 'SALAÑO, JEFER JOHN ABON', phone: '', stallId: 'FS-57', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-195', name: 'UBALDO, NILDA', phone: '', stallId: 'FS-58', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-196', name: 'VERTUDES, ERIC', phone: '', stallId: 'FS-59', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-197', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-01', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-198', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-02', section: 'Dry Goods', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-199', name: 'DUZON, DULCE CORAZON/MELODY TAYANES', phone: '', stallId: 'KK-03', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-200', name: 'FLORES, CATHERINE VERONA', phone: '', stallId: 'KK-04', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-201', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-05', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-202', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-06', section: 'Dry Goods', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-203', name: 'MEDRANO, MARTHY PALARON', phone: '', stallId: 'KK-07', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-204', name: 'AGUILLON, MARY JOY DELA CERNA', phone: '', stallId: 'KK-08', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-205', name: 'ELARDO, ROSARIO', phone: '', stallId: 'KK-09', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-206', name: 'ESLABAN, JULIFE PERALTA', phone: '', stallId: 'KK-10', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-207', name: 'REDONA, NARCISA', phone: '', stallId: 'KK-11', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-208', name: 'PERALTA, ERVIN PAULO MAQUILAN', phone: '', stallId: 'KK-12', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-209', name: 'CESAR, RHODORA LAMATA', phone: '', stallId: 'KK-13', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-210', name: 'LERIOS, NORIDAN', phone: '', stallId: 'KK-14', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-211', name: 'MODESTO, JADE', phone: '', stallId: 'KK-15', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
   ] satisfies Tenant[] as Tenant[],
   stalls: [
-    { id: 'M-101', section: 'Meat & Poultry', tenant: "Rosa's Butchery", status: 'Occupied' as StallStatus, lastInspection: 'Oct 12, 2023' },
-    { id: 'M-102', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, lastInspection: '-' },
-    { id: 'V-045', section: 'Vegetables & Fruits', tenant: 'Green Farm Organics', status: 'Occupied' as StallStatus, lastInspection: 'Oct 10, 2023' },
-    { id: 'F-012', section: 'Fish & Seafood', tenant: 'Deep Blue Catch', status: 'Maintenance' as StallStatus, lastInspection: 'Oct 15, 2023' },
-    { id: 'D-203', section: 'Dry Goods', tenant: 'Santos General Store', status: 'Occupied' as StallStatus, lastInspection: 'Sep 28, 2023' },
-    { id: 'M-103', section: 'Meat & Poultry', tenant: 'Fresh Cuts Co.', status: 'Occupied' as StallStatus, lastInspection: 'Oct 5, 2023' },
-    { id: 'V-046', section: 'Vegetables & Fruits', tenant: 'Vacant', status: 'Available' as StallStatus, lastInspection: '-' },
-    { id: 'D-204', section: 'Dry Goods', tenant: 'Vacant', status: 'Available' as StallStatus, lastInspection: '-' },
+    { id: 'MS-01', section: 'Meat & Poultry', tenant: 'LOTEYRO, LEEMAR', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-02', section: 'Meat & Poultry', tenant: 'LIPAYON, LORENA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-03', section: 'Meat & Poultry', tenant: 'EMOYLAN, CAROLINE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-04', section: 'Meat & Poultry', tenant: 'BORREL, FERDINAND', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-05', section: 'Meat & Poultry', tenant: 'GAMEZ, GEMMA BERDAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-06', section: 'Meat & Poultry', tenant: 'SALVE, NIDA MONTE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-07', section: 'Meat & Poultry', tenant: 'SALVE, NIDA MONTE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-08', section: 'Meat & Poultry', tenant: 'GEVEN, MA. FATIMA VALLER', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-09', section: 'Meat & Poultry', tenant: 'AUCILA, GILBERT NIRZA', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-10', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-11', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-12', section: 'Meat & Poultry', tenant: 'CAMERO, DESIDERIO NUEVAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-13', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-14', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-15', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-16', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-17', section: 'Meat & Poultry', tenant: 'BANEZ, CELESTE A', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-18', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-19', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-20', section: 'Meat & Poultry', tenant: 'RIZALDO BIGOY', status: 'Abandoned' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: 'Recorded on the sheet as ABANDONED; occupant entered as RIZALDO / BIGOY.' },
+    { id: 'MS-21', section: 'Meat & Poultry', tenant: 'LIPAYON, GERRY INDIC', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-22', section: 'Meat & Poultry', tenant: 'EMOYLAN, CAROLINE ALMERIA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-23', section: 'Meat & Poultry', tenant: 'EMOYLAN, CAROLINE ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-24', section: 'Meat & Poultry', tenant: 'ORINGO, JAIME COBACHA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-25', section: 'Meat & Poultry', tenant: 'ORINGO, JAIME COBACHA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-26', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: 'Former tenant DIORICO — recorded as deceased.' },
+    { id: 'MS-27', section: 'Meat & Poultry', tenant: 'BIGOY, RONALYN CORRALES', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-28', section: 'Meat & Poultry', tenant: 'BIGOY, RONALYN CORRALES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-29', section: 'Meat & Poultry', tenant: 'GEVEN, FATIMA VALLER', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-30', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-31', section: 'Meat & Poultry', tenant: 'OGRIMEN, EDUARDO LACE', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-32', section: 'Meat & Poultry', tenant: 'LANZA, LEO CAYUBIT', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-33', section: 'Meat & Poultry', tenant: 'LANZA, LEO CAYUBIT', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-34', section: 'Meat & Poultry', tenant: 'ALMADEN, MARY ANN KEMPIS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-35', section: 'Meat & Poultry', tenant: 'ALMADEN, MARY ANN KEMPIS', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-36', section: 'Meat & Poultry', tenant: 'MAGDUA, CHARLES GODWIN ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-37', section: 'Meat & Poultry', tenant: 'BIGOY, REGIE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: 'Marked New on the sheet.' },
+    { id: 'MS-38', section: 'Meat & Poultry', tenant: 'TERADO, JINGJING MORALITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-39', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-40', section: 'Meat & Poultry', tenant: 'ODTUHAN, AIZA SONGALIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-41', section: 'Meat & Poultry', tenant: 'GERILLA, LEODEGARIO DUMASIG', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-42', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-43', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-44', section: 'Meat & Poultry', tenant: 'LIPAYON, ROMEO L', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'MS-45', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'MS-46', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'CS-01', section: 'Meat & Poultry', tenant: 'ARCENA, BABY JANE TOLIBAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-02', section: 'Meat & Poultry', tenant: 'ARCENA, BABY JANE TOLIBAS', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-03', section: 'Meat & Poultry', tenant: 'LONZAGA, MANUEL, JR. AGUIRRE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-04', section: 'Meat & Poultry', tenant: 'LONZAGA, MANUEL, JR. AGUIRRE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-05', section: 'Meat & Poultry', tenant: 'MAGDUA, ASHLEY SIBYL AGUILLON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-06', section: 'Meat & Poultry', tenant: 'CERVANTES, JOSE PERCIVAL ESPADA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-07', section: 'Meat & Poultry', tenant: 'VILLERO, JETRO FARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-08', section: 'Meat & Poultry', tenant: 'VILLERO, JETRO FARON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-09', section: 'Meat & Poultry', tenant: 'CERVANTES, SOLEDAD LLEGE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-10', section: 'Meat & Poultry', tenant: 'CERVANTES, SOLEDAD LLEGE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-11', section: 'Meat & Poultry', tenant: 'MAGDUA, ALWIN AMARILLA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-12', section: 'Meat & Poultry', tenant: 'DAPITAN, ELAINE ANGELICA ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-13', section: 'Meat & Poultry', tenant: 'DAPITAN, ELAINE ANGELICA ALMERIA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-14', section: 'Meat & Poultry', tenant: 'LAURINO, MARITES RABINA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-15', section: 'Meat & Poultry', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'CS-16', section: 'Meat & Poultry', tenant: 'MAGDUA, ALWIN AMARILLA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-17', section: 'Meat & Poultry', tenant: 'MAGDUA, ALWIN AMARILLA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-18', section: 'Meat & Poultry', tenant: 'TIZON, ELIZA ALMERIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-19', section: 'Meat & Poultry', tenant: 'LANZA, VILMA ALBAO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-20', section: 'Meat & Poultry', tenant: 'RIPALDA, CHRISTINE MAE FARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-21', section: 'Meat & Poultry', tenant: 'RIPALDA, CHRISTINE MAE FARON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'CS-22', section: 'Meat & Poultry', tenant: 'LONZAGA, MARTHA MACARAY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
+    { id: 'FV-01', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JOCELYN ROSENDE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-02', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JOCELYN ROSENDE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-03', section: 'Vegetables & Fruits', tenant: 'SACLAY, JULIETA REDOÑA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-04', section: 'Vegetables & Fruits', tenant: 'SACLAY, JULIETA REDOÑA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 1' },
+    { id: 'FV-05', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-06', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-07', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-08', section: 'Vegetables & Fruits', tenant: 'LADAN, MAE MERLYN ANCHITA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-09', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JACQUILINE ROSENDE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-10', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JACQUILINE ROSENDE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-11', section: 'Vegetables & Fruits', tenant: 'CINCO, MA. JACQUILINE ROSENDE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-12', section: 'Vegetables & Fruits', tenant: 'MARABUT, MYRA SORILA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-13', section: 'Vegetables & Fruits', tenant: 'ESTEMBER, CHERIEMAE HEMBRA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-14', section: 'Vegetables & Fruits', tenant: 'CANAYON, MADELYN SUYOM', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-15', section: 'Vegetables & Fruits', tenant: 'CANAYON, MADELYN SUYOM', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-16', section: 'Vegetables & Fruits', tenant: 'MARTOS, SYLVIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-17', section: 'Vegetables & Fruits', tenant: 'MARTOS, SYLVIA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-18', section: 'Vegetables & Fruits', tenant: 'PELINO, FLORENTINA ANCHITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-19', section: 'Vegetables & Fruits', tenant: 'MAGDUA, GENEVIEVE BUHAWE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-20', section: 'Vegetables & Fruits', tenant: 'GUARDAYA, MA. LOURCEL GARCIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-21', section: 'Vegetables & Fruits', tenant: 'VERTUDES, KATE MARABUT', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-22', section: 'Vegetables & Fruits', tenant: 'TELEMBAN, ESMERALDA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 2' },
+    { id: 'FV-23', section: 'Vegetables & Fruits', tenant: 'SALCEDO, SOFIA MARIE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-24', section: 'Vegetables & Fruits', tenant: 'SALCEDO, SHAINE MARIE HEMBRA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-25', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO III CORNEJO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-26', section: 'Vegetables & Fruits', tenant: 'CAMPOSANO, LISA MOLINA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-27', section: 'Vegetables & Fruits', tenant: 'ZIALCITA, SHERYL', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-28', section: 'Vegetables & Fruits', tenant: 'LAGARTO, MARY JEAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-29', section: 'Vegetables & Fruits', tenant: 'TOLIBAS, ROSELYN LANTAJO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-30', section: 'Vegetables & Fruits', tenant: 'PARANAS, LYN C', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-31', section: 'Vegetables & Fruits', tenant: 'GARCIA, VELMA CINCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-32', section: 'Vegetables & Fruits', tenant: 'UDTOHAN, NEIL ALBAO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-33', section: 'Vegetables & Fruits', tenant: 'UDTOHAN, NEIL ALBAO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-34', section: 'Vegetables & Fruits', tenant: 'PODOL, RAMIL M', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-35', section: 'Vegetables & Fruits', tenant: 'ALBAO, DARWIN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-36', section: 'Vegetables & Fruits', tenant: 'VILLERO, ESTER FARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-37', section: 'Vegetables & Fruits', tenant: 'MODESTO, JADE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-38', section: 'Vegetables & Fruits', tenant: 'MODESTO, JADE', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-39', section: 'Vegetables & Fruits', tenant: 'VILLERO, CRISANTA CASIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 3' },
+    { id: 'FV-40', section: 'Vegetables & Fruits', tenant: 'PONFERRADA, VICTORINO CINCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-41', section: 'Vegetables & Fruits', tenant: 'PONFERRADA, VICTORINO CINCO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-42', section: 'Vegetables & Fruits', tenant: 'RELLONA, EVANGELINE ALBA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-43', section: 'Vegetables & Fruits', tenant: 'ANOS, DIANNE CORRAL', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-44', section: 'Vegetables & Fruits', tenant: 'BLASE, MARICEL LASE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-45', section: 'Vegetables & Fruits', tenant: 'AMISTOSO, JONATHAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-46', section: 'Vegetables & Fruits', tenant: 'DUMALAORON, ESTELITA MESIAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-47', section: 'Vegetables & Fruits', tenant: 'ROYERAS, FRANCISCO CINCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-48', section: 'Vegetables & Fruits', tenant: 'CAMINO, CHENEE MARABUT', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-49', section: 'Vegetables & Fruits', tenant: 'CAMINO, CHENEE MARABUT', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-50', section: 'Vegetables & Fruits', tenant: 'MARABUT, MYLENE SORILA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-51', section: 'Vegetables & Fruits', tenant: 'MARABUT, MYLENE SORILA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-52', section: 'Vegetables & Fruits', tenant: 'MENAYA, ROY G', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-53', section: 'Vegetables & Fruits', tenant: 'MENAYA, ROY G', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-54', section: 'Vegetables & Fruits', tenant: 'NERJA, NERLY ANDO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-55', section: 'Vegetables & Fruits', tenant: 'NERJA, NERLY ANDO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-56', section: 'Vegetables & Fruits', tenant: 'CATAN, ROSARIO V.', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-57', section: 'Vegetables & Fruits', tenant: 'DANGCO, JAMEL ROSE PEREZ', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-58', section: 'Vegetables & Fruits', tenant: 'BOCO, ORFIEL RECOTE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-59', section: 'Vegetables & Fruits', tenant: 'SOLANO, WILSON S', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-60', section: 'Vegetables & Fruits', tenant: 'CORDERO, MARIA NILDA P.', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-61', section: 'Vegetables & Fruits', tenant: 'CORDERO, MARIA NILDA P.', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-62', section: 'Vegetables & Fruits', tenant: 'YEPES, OSCAR MENDIOLA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-63', section: 'Vegetables & Fruits', tenant: 'YEPES, OSCAR MENDIOLA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-64', section: 'Vegetables & Fruits', tenant: 'OLGUIRA, ANGEILA MAE L.', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-65', section: 'Vegetables & Fruits', tenant: 'OLGUIRA, CARMILO RUEL L.', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-66', section: 'Vegetables & Fruits', tenant: 'VILLEGAS, KAREN GRACE M', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-67', section: 'Vegetables & Fruits', tenant: 'LAMOSTE, REY CAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Row 4' },
+    { id: 'FV-68', section: 'Vegetables & Fruits', tenant: 'ALVAREZ, RUBY DEOANNE MACEDA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-69', section: 'Vegetables & Fruits', tenant: 'BETASOLO, GENEVIEVE TOLIBAS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-70', section: 'Vegetables & Fruits', tenant: 'RECOSANA, ROMEL NOLASCO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-71', section: 'Vegetables & Fruits', tenant: 'BOCO, IVY RICOTE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-72', section: 'Vegetables & Fruits', tenant: 'MARTOS, SYLDY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-73', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-74', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-75', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-76', section: 'Vegetables & Fruits', tenant: 'GASING, NESTOR MAGALLON', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-77', section: 'Vegetables & Fruits', tenant: 'LANCANAN, ISABELITA BALMES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-78', section: 'Vegetables & Fruits', tenant: 'OPERIO, JENEFER CHUCA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-79', section: 'Vegetables & Fruits', tenant: 'OPERIO, JENEFER CHUCA', status: 'Occupied' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-80', section: 'Vegetables & Fruits', tenant: 'CAIMOY, GENEVIEVE OPERIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-81', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO II CORNEJO', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-82', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO II CORNEJO', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-83', section: 'Vegetables & Fruits', tenant: 'GARCIA, ROBERTO II CORNEJO', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-84', section: 'Vegetables & Fruits', tenant: 'PEPITO, ROSELYN RICARTE', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-85', section: 'Vegetables & Fruits', tenant: 'PEPITO, ROSELYN RICARTE', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-86', section: 'Vegetables & Fruits', tenant: 'MENDIOLA, ALDWIN G.', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-87', section: 'Vegetables & Fruits', tenant: 'MENDIOLA, ALDWIN G.', status: 'Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-88', section: 'Vegetables & Fruits', tenant: 'DUQUILLA, IRENE TESTON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FV-89', section: 'Vegetables & Fruits', tenant: 'BASIHAN, JOSEPHINE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 23, 2026', note: 'Other' },
+    { id: 'FS-01', section: 'Fish & Seafood', tenant: 'DUZON, DULCE CORAZON TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-02', section: 'Fish & Seafood', tenant: 'MORANTE, ELSA TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-03', section: 'Fish & Seafood', tenant: 'CREER, HERSHEY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-04', section: 'Fish & Seafood', tenant: 'CREER, HERSHEY', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-05', section: 'Fish & Seafood', tenant: 'ESPADA, EVELYN BALTAZAR', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-06', section: 'Fish & Seafood', tenant: 'CRISOLOGO, CRISPIN SINDAY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-07', section: 'Fish & Seafood', tenant: 'SABALZA, DARLYNA', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-08', section: 'Fish & Seafood', tenant: 'PALABIO, FRANCISCO GHRAY JR. ORDAME', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-09', section: 'Fish & Seafood', tenant: 'MONSAGA, MICHELLE LERIOS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-10', section: 'Fish & Seafood', tenant: 'ORDAME, RINE LERIOS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: 'Marked New on the sheet.' },
+    { id: 'FS-11', section: 'Fish & Seafood', tenant: 'ORDAME, RICARDO LERIOS', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-12', section: 'Fish & Seafood', tenant: 'LAURENTE, KAREN CALIPAYAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-13', section: 'Fish & Seafood', tenant: 'COSTIMIANO, BENECIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-14', section: 'Fish & Seafood', tenant: 'LABRADO, RESHILE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-15', section: 'Fish & Seafood', tenant: 'GERILLA, JOHN DRANDREB', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-16', section: 'Fish & Seafood', tenant: 'GERILLA, JOHN DRANDREB', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-17', section: 'Fish & Seafood', tenant: 'ABANO, HAIDE TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-18', section: 'Fish & Seafood', tenant: 'ABANO, DENNIS ALMADEN', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-19', section: 'Fish & Seafood', tenant: 'PLABA, JOVITA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-20', section: 'Fish & Seafood', tenant: 'BARCILLA, LAILA BADE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-21', section: 'Fish & Seafood', tenant: 'ABANAG, ALMA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-22', section: 'Fish & Seafood', tenant: 'ABANAG, DANILO ABADIANO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-23', section: 'Fish & Seafood', tenant: 'ORDAME, CHARINA MELO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-24', section: 'Fish & Seafood', tenant: 'AGUILLON, MARIA CLARISS CAJEPE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-25', section: 'Fish & Seafood', tenant: 'PLABA, PRINCESS CABE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-26', section: 'Fish & Seafood', tenant: 'AGUILLON, SANDRO LABRADO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-27', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-28', section: 'Fish & Seafood', tenant: 'CINCO, JANITH ABANO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-29', section: 'Fish & Seafood', tenant: 'CINCO, JANITH ABANO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-30', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-31', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-32', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: 'Row left entirely blank on the sheet — no tenant and no status recorded.' },
+    { id: 'FS-33', section: 'Fish & Seafood', tenant: 'GARCIA, REGINE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-34', section: 'Fish & Seafood', tenant: 'AVILA, DAISY BAHIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-35', section: 'Fish & Seafood', tenant: 'TAYANES, ARIEL VERUTIAO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-36', section: 'Fish & Seafood', tenant: 'TAYANES, JENNIFER CAINDOY', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-37', section: 'Fish & Seafood', tenant: 'ABANDO, KIRBY ASDILLA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-38', section: 'Fish & Seafood', tenant: 'AGUILAR, JOEL FUENTES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-39', section: 'Fish & Seafood', tenant: 'AGUILAR, JOVE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-40', section: 'Fish & Seafood', tenant: 'IMPORTA, SONNY LUIS', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-41', section: 'Fish & Seafood', tenant: 'ALBAO, NICANORA LAGO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-42', section: 'Fish & Seafood', tenant: 'AGUILAR, GLENN FUENTES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-43', section: 'Fish & Seafood', tenant: 'AGUILAR, GLORIA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-44', section: 'Fish & Seafood', tenant: 'ABAS, FELISA TIBE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-45', section: 'Fish & Seafood', tenant: 'ABANDO, JOEY B.', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-46', section: 'Fish & Seafood', tenant: 'CANDELA, MARILYN ORDAME', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-47', section: 'Fish & Seafood', tenant: 'FLORES, MELVIN', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-48', section: 'Fish & Seafood', tenant: 'MELO, RENALYN', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-49', section: 'Fish & Seafood', tenant: 'MELO, MELBA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-50', section: 'Fish & Seafood', tenant: 'PARDALES, ABELARDO NAPOLES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-51', section: 'Fish & Seafood', tenant: 'BAGUISA, MERLY ABANG', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-52', section: 'Fish & Seafood', tenant: 'BAGUISA, COLITA ABANAG', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-53', section: 'Fish & Seafood', tenant: 'TOMANDA, DANIEL OGARO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-54', section: 'Fish & Seafood', tenant: 'DUZON, MILO LOPEZ', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-55', section: 'Fish & Seafood', tenant: 'DE LA CRUZ, LYZA/CORAZON AVILA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-56', section: 'Fish & Seafood', tenant: 'DE LA CRUZ, LYZA/CORAZON AVILA', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-57', section: 'Fish & Seafood', tenant: 'SALAÑO, JEFER JOHN ABON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-58', section: 'Fish & Seafood', tenant: 'UBALDO, NILDA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-59', section: 'Fish & Seafood', tenant: 'VERTUDES, ERIC', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 22, 2026', note: '' },
+    { id: 'FS-60', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-61', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-62', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'FS-63', section: 'Fish & Seafood', tenant: 'Vacant', status: 'Available' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: '-', note: '' },
+    { id: 'KK-01', section: 'Dry Goods', tenant: 'ARELLANO, JOEL ASTILLERO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 1.' },
+    { id: 'KK-02', section: 'Dry Goods', tenant: 'ARELLANO, JOEL ASTILLERO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 2.' },
+    { id: 'KK-03', section: 'Dry Goods', tenant: 'DUZON, DULCE CORAZON/MELODY TAYANES', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 3.' },
+    { id: 'KK-04', section: 'Dry Goods', tenant: 'FLORES, CATHERINE VERONA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 4.' },
+    { id: 'KK-05', section: 'Dry Goods', tenant: 'FLORES, JACQUILINE NOVIO', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 5.' },
+    { id: 'KK-06', section: 'Dry Goods', tenant: 'FLORES, JACQUILINE NOVIO', status: 'Temporarily Closed' as StallStatus, permit: 'Not Recorded' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 6.' },
+    { id: 'KK-07', section: 'Dry Goods', tenant: 'MEDRANO, MARTHY PALARON', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 7.' },
+    { id: 'KK-08', section: 'Dry Goods', tenant: 'AGUILLON, MARY JOY DELA CERNA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 8.' },
+    { id: 'KK-09', section: 'Dry Goods', tenant: 'ELARDO, ROSARIO', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 9.' },
+    { id: 'KK-10', section: 'Dry Goods', tenant: 'ESLABAN, JULIFE PERALTA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 10.' },
+    { id: 'KK-11', section: 'Dry Goods', tenant: 'REDONA, NARCISA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 11.' },
+    { id: 'KK-12', section: 'Dry Goods', tenant: 'PERALTA, ERVIN PAULO MAQUILAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 12.' },
+    { id: 'KK-13', section: 'Dry Goods', tenant: 'CESAR, RHODORA LAMATA', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 13.' },
+    { id: 'KK-14', section: 'Dry Goods', tenant: 'LERIOS, NORIDAN', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 14.' },
+    { id: 'KK-15', section: 'Dry Goods', tenant: 'MODESTO, JADE', status: 'Occupied' as StallStatus, permit: 'With BP' as PermitStatus, lastInspection: 'Jul 21, 2026', note: 'Kakanin sheet, row 15.' },
   ] satisfies Stall[],
-  violations: [
-    { id: 'VIO-001', tenant: 'Juan Santos', issue: 'Late document submission', status: 'Open' as ViolationStatus, points: 1, dateRecorded: '2023-10-12', dateResolved: '', notes: '' },
-    { id: 'VIO-002', tenant: 'Liza Reyes', issue: 'Improper stall cleanup', status: 'Resolved' as ViolationStatus, points: 2, dateRecorded: '2023-10-05', dateResolved: '2023-10-09', notes: 'Stall cleared and re-inspected.' },
-    { id: 'VIO-003', tenant: 'Deep Blue Catch', issue: 'Health code violation', status: 'Open' as ViolationStatus, points: 3, dateRecorded: '2023-10-15', dateResolved: '', notes: 'Chilled storage below required temperature.' },
-  ] satisfies Violation[],
+  violations: [] as Violation[],
 
-  utilities: [
-    { id: 'UTL-001', type: 'Electricity' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', meterNumber: 'EM-1101', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 1240, currentReading: 1512, consumption: 272, rate: 11.5, fixedCharge: 150, amount: 3278, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'Refrigeration units running 24/7.' },
-    { id: 'UTL-002', type: 'Water' as UtilityType, stallId: 'M-101', tenantId: 'TEN-004', tenantName: "Rosa's Butchery", section: 'Meat & Poultry', meterNumber: 'WM-2301', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 84, currentReading: 103, consumption: 19, rate: 25, fixedCharge: 80, amount: 555, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-003', type: 'Electricity' as UtilityType, stallId: 'V-045', tenantId: 'TEN-005', tenantName: 'Green Farm Organics', section: 'Vegetables & Fruits', meterNumber: 'EM-1045', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 640, currentReading: 745, consumption: 105, rate: 11.5, fixedCharge: 150, amount: 1357.5, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-    { id: 'UTL-004', type: 'Water' as UtilityType, stallId: 'F-012', tenantId: 'TEN-006', tenantName: 'Deep Blue Catch', section: 'Fish & Seafood', meterNumber: 'WM-2012', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 210, currentReading: 268, consumption: 58, rate: 25, fixedCharge: 80, amount: 1530, status: 'Unpaid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: 'High usage — check for leaking hose.' },
-    { id: 'UTL-005', type: 'Electricity' as UtilityType, stallId: 'D-203', tenantId: 'TEN-007', tenantName: 'Santos General Store', section: 'Dry Goods', meterNumber: 'EM-1203', period: '2023-09', periodStart: '2023-09-01', periodEnd: '2023-09-30', previousReading: 320, currentReading: 388, consumption: 68, rate: 11.5, fixedCharge: 150, amount: 932, status: 'Paid' as BillStatus, dateIssued: '2023-10-01', dueDate: '2023-10-15', notes: '' },
-  ] satisfies UtilityBill[],
+  /* The market office's own board, seeded as the seats rather than the people
+     — the office types in who holds each one. A seat stays on the board while
+     it is vacant, because the post exists whether or not anybody holds it. */
+  officers: [
+    { id: 'OFC-001', name: '', position: 'Municipal Mayor', office: 'Office of the Municipal Mayor', reportsTo: '', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-002', name: '', position: 'Market Board Chairperson', office: 'Market Board', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-003', name: '', position: 'Market Supervisor', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-004', name: '', position: 'Assistant Market Supervisor', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-005', name: '', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-006', name: '', position: 'Market Inspector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-007', name: '', position: 'Records Officer', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-008', name: '', position: 'Sanitary Inspector', office: 'Municipal Health Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-009', name: '', position: 'Licensing Officer', office: 'Business Permit & Licensing Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-010', name: '', position: 'Market Treasurer / Cashier', office: 'Municipal Treasurer’s Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+  ] satisfies Officer[],
 
-  logs: [
-    { id: 'LOG-001', date: todayIso(), time: '08:15 AM', type: 'Inspection', details: 'Morning walkthrough for Section A completed.' },
-    { id: 'LOG-002', date: todayIso(), time: '09:42 AM', type: 'Incident', details: 'Vendor boundary dispute resolved between M-101 and M-102.' },
-    { id: 'LOG-003', date: todayIso(), time: '11:05 AM', type: 'Maintenance', details: 'Leaking pipe reported in Restroom C — plumber dispatched.' },
-    { id: 'LOG-004', date: todayIso(), time: '01:30 PM', type: 'Collection', details: 'Monthly rent collected from Section D tenants.' },
-    { id: 'LOG-005', date: todayIso(), time: '03:15 PM', type: 'Inspection', details: 'Fire safety equipment inspection for Zones B and C.' },
-  ] satisfies LogEntry[],
-  activities: [
-    { id: 'ACT-2', icon: 'person_add', iconColor: 'red', highlight: 'New Applicant', text: ' submitted requirements for Stall B-04.', time: '1 hour ago' },
-    { id: 'ACT-3', icon: 'warning', iconColor: 'amber', highlight: 'Maintenance', text: ' reported plumbing issue near Zone C.', time: '3 hours ago' },
-    { id: 'ACT-4', icon: 'check_circle', iconColor: 'green', highlight: 'Health inspection', text: ' passed for Meat Section.', time: 'Yesterday' },
-  ] satisfies ActivityItem[],
+  utilities: [] as UtilityBill[],
+
+  /* Every stall/space verification slip this office has issued. A slip is a
+     controlled document — the licensing office may ring up to ask whether
+     number 042 is really ours and who it was written for — so the register is
+     kept rather than the number simply being burned off a counter. */
+  verifications: [] as VerificationSlip[],
+
+  logs: [] as LogEntry[],
+  activities: [] as ActivityItem[],
 };
 
 type AppState = typeof initialState;
@@ -350,6 +963,7 @@ const navigation: Array<{ key: ModuleKey; label: string; icon: string }> = [
   { key: 'violations', label: 'Violations', icon: 'gavel' },
   { key: 'analytics', label: 'Analytics', icon: 'analytics' },
   { key: 'logbook', label: 'Logbook', icon: 'menu_book' },
+  { key: 'officers', label: 'Officers', icon: 'account_tree' },
 ];
 
 const searchPlaceholders: Record<ModuleKey, string> = {
@@ -361,11 +975,12 @@ const searchPlaceholders: Record<ModuleKey, string> = {
   violations: 'Search violation ID, tenant, or issue...',
   analytics: 'Search is not used on Analytics',
   logbook: 'Search log details or type...',
+  officers: 'Search officer name, position, or office...',
   settings: 'Search is not used on Settings',
   support: 'Search is not used on Support',
 };
 
-const searchableModules: ModuleKey[] = ['dashboard', 'stalls', 'tenants', 'applicants', 'utilities', 'violations', 'logbook'];
+const searchableModules: ModuleKey[] = ['dashboard', 'stalls', 'tenants', 'applicants', 'utilities', 'violations', 'logbook', 'officers'];
 
 /* ============================================================
    Helpers
@@ -380,7 +995,7 @@ function normalizeApplicant(raw: Applicant): Applicant {
     id: raw.id,
     name: raw.name,
     phone: raw.phone,
-    stallType: raw.stallType,
+    stallId: typeof raw.stallId === 'string' ? raw.stallId : undefined,
     status: raw.status,
     dateApplied: raw.dateApplied,
     requirements,
@@ -417,10 +1032,15 @@ function normalizeTenant(raw: Tenant): Tenant {
       const period = /^\d{4}-\d{2}$/.test(key) ? key : text(value?.period).slice(0, 7);
       if (!/^\d{4}-\d{2}$/.test(period)) return;
       const amount = Number(value?.amount);
+      const discount = Number(value?.discount);
       rentPayments[period] = {
         period,
         paidOn: typeof value?.paidOn === 'string' ? value.paidOn : '',
         amount: Number.isFinite(amount) ? amount : Number(raw?.rent) || 0,
+        /* A payment recorded before the discount existed keeps a discount of
+           zero. It is not back-dated into one: that month really was collected
+           in full, and inventing a discount now would falsify the ledger. */
+        discount: Number.isFinite(discount) && discount > 0 ? discount : 0,
       };
     });
   }
@@ -443,7 +1063,12 @@ function normalizeTenant(raw: Tenant): Tenant {
 }
 
 /* Bills used to carry only the month they covered. An older bill keeps that
-   month and is read as running from its first day to its last. */
+   month and is read as running from its first day to its last.
+
+   Bills also used to carry a fixed/service charge, folded into `amount`
+   before the market dropped that charge. An old bill's `amount` is left
+   exactly as recorded — it was genuinely billed at that figure — and any
+   leftover `fixedCharge` key from before is simply never read again. */
 function normalizeBill(raw: UtilityBill): UtilityBill {
   const period = typeof raw?.period === 'string' && raw.period ? raw.period.slice(0, 7) : currentPeriod();
   const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -453,6 +1078,95 @@ function normalizeBill(raw: UtilityBill): UtilityBill {
   return { ...raw, meterNumber, period: periodOf(periodEnd) || period, periodStart, periodEnd };
 }
 
+/* A stall saved before the occupancy sheet was imported carries no permit or
+   note. A missing permit is 'Not Recorded' — the sheet's own answer for a
+   blank cell — never an assumption that the stall has no permit. */
+function normalizeStall(s: Stall): Stall {
+  const loose = s as Partial<Stall>;
+  return {
+    ...s,
+    permit: PERMIT_STATUSES.includes(loose.permit as PermitStatus) ? (loose.permit as PermitStatus) : 'Not Recorded',
+    note: typeof loose.note === 'string' ? loose.note : '',
+  };
+}
+
+/* An officer read back from storage or an imported backup. Every field is
+   forced to the shape the rest of the app relies on: a bad `reportsTo` would
+   otherwise drop a seat off the board, and an unknown status would fall
+   through every badge and filter. `reportsTo` is only checked for shape here;
+   it is resolved against the other officers in `linkOfficers`, which is the
+   only place that can see the whole board at once. */
+function normalizeOfficer(raw: Officer): Officer {
+  const loose = (raw ?? {}) as Partial<Officer>;
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const name = str(loose.name);
+  const status = OFFICER_STATUSES.includes(loose.status as OfficerStatus) ? (loose.status as OfficerStatus) : 'Active';
+  return {
+    id: str(loose.id),
+    name,
+    position: str(loose.position),
+    office: str(loose.office),
+    reportsTo: str(loose.reportsTo),
+    phone: digitsOnly(str(loose.phone)),
+    email: str(loose.email),
+    /* Vacancy is not a status somebody can be in — it is what a seat with
+       nobody in it is. Naming a seat makes it Active unless the record says
+       the holder is away; emptying it makes it vacant again. */
+    status: name ? (status === 'Vacant' ? 'Active' : status) : 'Vacant',
+    appointed: /^\d{4}-\d{2}-\d{2}$/.test(str(loose.appointed)) ? str(loose.appointed) : '',
+  };
+}
+
+/* Makes the board a tree that can actually be walked. Four things can go
+   wrong with `reportsTo` and all four are repaired here rather than left for
+   the renderer to trip over:
+
+     - a seat reporting to an id no longer on the board (its superior was
+       deleted) is lifted to the head of the board;
+     - a seat reporting to itself is lifted the same way;
+     - a cycle — A under B, B under A — is cut at the seats that are actually
+       in it, and only those. A seat that merely reports into a cycle keeps
+       its superior, because once the cycle is cut that link is sound again;
+     - a seat with a blank or duplicated id is dropped, because two seats
+       sharing an id make every lookup in the module ambiguous.
+
+   The result is always a forest: every seat is reachable from some head. */
+function linkOfficers(list: Officer[]): Officer[] {
+  const seenIds = new Set<string>();
+  const board: Officer[] = [];
+  for (const officer of list) {
+    if (!officer.id || seenIds.has(officer.id)) continue;
+    seenIds.add(officer.id);
+    board.push({ ...officer });
+  }
+  const byId = new Map(board.map((o) => [o.id, o]));
+
+  // Self-references and superiors that are not on the board.
+  for (const officer of board) {
+    if (officer.reportsTo && (officer.reportsTo === officer.id || !byId.has(officer.reportsTo))) {
+      officer.reportsTo = '';
+    }
+  }
+
+  /* Cut only the seats that close a cycle. Walking up from a seat and
+     arriving back at that same seat is what says it is in one; meeting some
+     other seat twice means the loop is further up, and whichever seat closes
+     it will be cut when the walk reaches it. Links already cut are visible to
+     later walks, so one pass settles the whole board. */
+  for (const officer of board) {
+    const walked = new Set<string>();
+    let cursor = officer.reportsTo ? byId.get(officer.reportsTo) : undefined;
+    while (cursor) {
+      if (cursor.id === officer.id) { officer.reportsTo = ''; break; }
+      if (walked.has(cursor.id)) break;
+      walked.add(cursor.id);
+      cursor = cursor.reportsTo ? byId.get(cursor.reportsTo) : undefined;
+    }
+  }
+
+  return board;
+}
+
 function mergeState(input: unknown): AppState {
   const parsed = (input && typeof input === 'object' ? input : {}) as Partial<AppState>;
   const pick = <K extends keyof AppState>(key: K): AppState[K] =>
@@ -460,9 +1174,10 @@ function mergeState(input: unknown): AppState {
   return {
     applicants: pick('applicants').map(normalizeApplicant),
     tenants: pick('tenants').map(normalizeTenant),
+    officers: linkOfficers(pick('officers').map(normalizeOfficer)),
     logs: pick('logs').map((l) => ({ ...l, date: typeof l?.date === 'string' ? l.date : '' })),
     activities: pick('activities').slice(0, MAX_ACTIVITIES),
-    stalls: pick('stalls'),
+    stalls: pick('stalls').map(normalizeStall),
     violations: pick('violations').map((v) => ({
       ...v,
       points: Math.max(0, Number(v?.points) || 0),
@@ -471,6 +1186,11 @@ function mergeState(input: unknown): AppState {
       notes: typeof v?.notes === 'string' ? v.notes : '',
     })),
     utilities: pick('utilities').map(normalizeBill),
+    verifications: pick('verifications').map((v) => ({
+      ...v,
+      checked: Array.isArray(v?.checked) ? v.checked : [],
+      others: typeof v?.others === 'string' ? v.others : '',
+    })),
   };
 }
 
@@ -503,9 +1223,30 @@ function submittedCount(a: Applicant) {
   return REQUIREMENTS.filter((r) => a.requirements.includes(r)).length;
 }
 
+/* Ticking Business Permit on an application is the office recording that the
+   permit is in hand, so the stall it names stops reading No BP without anyone
+   having to go and edit the stall as well.
+
+   It only ever upgrades. Clearing the tick is treated as a correction to the
+   application, not as a permit being revoked on the stall — that is a
+   decision for the stall record, made deliberately. */
+function stallGainingPermit(stalls: Stall[], applicant: Applicant): Stall | undefined {
+  if (!applicant.stallId || !applicant.requirements.includes('Business Permit')) return undefined;
+  return stalls.find((st) => st.id === applicant.stallId && st.permit !== 'With BP');
+}
+
+function applyPermitFromApplicant(stalls: Stall[], applicant: Applicant): Stall[] {
+  if (!stallGainingPermit(stalls, applicant)) return stalls;
+  return stalls.map((st) => (st.id === applicant.stallId ? { ...st, permit: 'With BP' as PermitStatus } : st));
+}
+
 function deriveStatus(current: ApplicantStatus, requirements: string[]): ApplicantStatus {
   if (current === 'Approved' || current === 'Rejected') return current;
-  return REQUIREMENTS.every((r) => requirements.includes(r)) ? 'Pending Review' : 'Incomplete';
+  const settled = REQUIREMENTS.every((r) => requirements.includes(r)) ? 'Pending Review' : 'Incomplete';
+  /* Only a record already flagged No BP behaves this way, so a normal
+     application still runs Incomplete → Pending Review as it always did. */
+  if (current === 'No BP') return requirements.includes('Business Permit') ? settled : 'No BP';
+  return settled;
 }
 
 function toNumber(raw: string) {
@@ -655,13 +1396,30 @@ function resetIdCounters() {
   idCounters = {};
 }
 
-function nextId(prefix: string, existingIds: string[]) {
+/* The numbers that would be handed out next, without handing them out. The
+   verification preview needs this: the slip on screen has to show the control
+   number that will actually print, but a preview the officer backs out of must
+   not tear a number off the pad. Nothing is claimed until it prints. */
+function peekIds(prefix: string, existingIds: string[], count: number) {
   const nums = existingIds.map((id) => parseInt(id.replace(/\D/g, ''), 10)).filter((n) => !isNaN(n));
   const maxExisting = nums.length > 0 ? Math.max(...nums) : 0;
   const previous = typeof idCounters[prefix] === 'number' ? idCounters[prefix] : 0;
-  const next = Math.max(maxExisting, previous) + 1;
-  idCounters[prefix] = next;
-  return `${prefix}-${String(next).padStart(3, '0')}`;
+  const base = Math.max(maxExisting, previous);
+  return Array.from({ length: count }, (_, i) => `${prefix}-${String(base + i + 1).padStart(3, '0')}`);
+}
+
+/* Takes a run of numbers and moves the counter past them, so a sheet of four
+   slips claims four numbers in one go and the next sheet starts after them.
+   The counter belongs to the records, and is written out with them. */
+function claimIds(prefix: string, existingIds: string[], count: number) {
+  const ids = peekIds(prefix, existingIds, count);
+  if (ids.length === 0) return ids;
+  idCounters[prefix] = parseInt(ids[ids.length - 1].replace(/\D/g, ''), 10);
+  return ids;
+}
+
+function nextId(prefix: string, existingIds: string[]) {
+  return claimIds(prefix, existingIds, 1)[0];
 }
 
 /* ---------- Graph data ---------- */
@@ -670,6 +1428,9 @@ const STALL_STATUS_SERIES: GraphSeries[] = [
   { key: 'Occupied', label: 'Occupied', tone: 'occupied' },
   { key: 'Available', label: 'Available', tone: 'available' },
   { key: 'Maintenance', label: 'Maintenance', tone: 'maintenance' },
+  { key: 'Temporarily Closed', label: 'Temp. Closed', tone: 'closed' },
+  { key: 'Closed', label: 'Closed', tone: 'shut' },
+  { key: 'Abandoned', label: 'Abandoned', tone: 'abandoned' },
 ];
 
 const UTILITY_SERIES: GraphSeries[] = [
@@ -695,6 +1456,9 @@ function sectionOccupancyColumns(stalls: Stall[]): GraphColumn[] {
         Occupied: inSection.filter((s) => s.status === 'Occupied').length,
         Available: inSection.filter((s) => s.status === 'Available').length,
         Maintenance: inSection.filter((s) => s.status === 'Maintenance').length,
+        'Temporarily Closed': inSection.filter((s) => s.status === 'Temporarily Closed').length,
+        Closed: inSection.filter((s) => s.status === 'Closed').length,
+        Abandoned: inSection.filter((s) => s.status === 'Abandoned').length,
       },
     };
   });
@@ -777,6 +1541,28 @@ function rentPaymentFor(tenant: Tenant, period: string): RentPayment | undefined
   return tenant.rentPayments[period];
 }
 
+/* Whether a month settled on `paidOn` qualifies for the early-payment
+   discount. "Early" is on or before the due date — paying on the due date
+   itself still counts, which is how the office has always read it. */
+function qualifiesForRentDiscount(tenant: Tenant, period: string, paidOn: string) {
+  return !!paidOn && paidOn <= rentDueIso(tenant, period);
+}
+
+/* What the discount comes to for this tenant's monthly rent. Rounded to
+   centavos so the ledger never carries a fraction it cannot collect. */
+function rentDiscountAmount(rent: number) {
+  return Math.round(rent * (EARLY_RENT_DISCOUNT_PCT / 100) * 100) / 100;
+}
+
+/* What a month would cost this tenant if it were settled today — used by the
+   register and the tenant sheet to show the incentive while it is still
+   available, before anything is recorded. */
+function rentQuoteToday(tenant: Tenant, period: string) {
+  const early = qualifiesForRentDiscount(tenant, period, todayIso());
+  const discount = early ? rentDiscountAmount(tenant.rent) : 0;
+  return { early, discount, payable: Math.round((tenant.rent - discount) * 100) / 100 };
+}
+
 /* Unpaid rent turns overdue on its own the day after it falls due — nothing has
    to be run, clicked or rolled over for the register to go red. */
 function rentStatusOf(tenant: Tenant, period: string): RentStatus {
@@ -811,10 +1597,18 @@ function rentRollFor(tenants: Tenant[], period: string) {
   const due = tenants.reduce((s, t) => s + t.rent, 0);
   const paid = tenants.filter((t) => rentStatusOf(t, period) === 'Paid');
   const collected = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.amount ?? t.rent), 0);
+  const discounted = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.discount ?? 0), 0);
   return {
     due,
     collected,
-    outstanding: Math.max(0, due - collected),
+    /* Total early-payment discount given this month — the gap between the rent
+       roll and the cash, which is otherwise unexplained once discounts exist. */
+    discounted,
+    /* What is still owed, summed from the tenants who have not settled — not
+       `due - collected`. With an early-payment discount those two differ by the
+       discount given, so the subtraction would report a fully-collected month
+       as still partly outstanding. */
+    outstanding: tenants.filter((t) => rentStatusOf(t, period) !== 'Paid').reduce((s, t) => s + t.rent, 0),
     paidCount: paid.length,
     unpaidCount: tenants.length - paid.length,
     overdueCount: tenants.filter((t) => rentStatusOf(t, period) === 'Overdue').length,
@@ -867,15 +1661,28 @@ function periodDays(start: string, end: string) {
   return Math.round(ms / 86400000) + 1;
 }
 
-function computeBill(previousReading: number, currentReading: number, rate: number, fixedCharge: number) {
+function computeBill(previousReading: number, currentReading: number, rate: number) {
   const consumption = Math.max(0, currentReading - previousReading);
-  const usageCharge = consumption * rate;
-  const amount = Math.round((usageCharge + fixedCharge) * 100) / 100;
-  return { consumption, usageCharge, amount };
+  const amount = Math.round(consumption * rate * 100) / 100;
+  return { consumption, amount };
 }
 
 function isOverdue(bill: UtilityBill) {
   return bill.status === 'Unpaid' && !!bill.dueDate && bill.dueDate < todayIso();
+}
+
+/* The surcharge a bill picks up at the moment it is printed, not before. It is
+   `isOverdue` — the exact same test already driving the OVERDUE badge on the
+   Billing Records table — so a receipt's surcharge can never disagree with
+   what the office is looking at when it decides to print. A bill paid off
+   before it is ever printed late never carries one; printing the same overdue
+   bill twice adds it both times, because both are genuinely late. */
+function surchargeAmount(bill: UtilityBill) {
+  return isOverdue(bill) ? Math.round(bill.amount * (SURCHARGE_RATES[bill.type] / 100) * 100) / 100 : 0;
+}
+
+function amountWithSurcharge(bill: UtilityBill) {
+  return Math.round((bill.amount + surchargeAmount(bill)) * 100) / 100;
 }
 
 function lastReadingFor(bills: UtilityBill[], stallId: string, type: UtilityType) {
@@ -949,8 +1756,20 @@ function App({ boot }: { boot: BootData }) {
      hidden on screen and is the only thing the print stylesheet lets through. */
   const [printRequest, setPrintRequest] = useState<PrintRequest | null>(null);
   const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string } | null>(null);
+  const [registerJob, setRegisterJob] = useState<RegisterJob | null>(null);
+
+  /* Verification slips run the same two steps. `verifyRequest` carries the
+     stall the slip was started from, when it was started from one. */
+  const [verifyRequest, setVerifyRequest] = useState<{ stall?: Stall } | null>(null);
+  const [verifyJob, setVerifyJob] = useState<VerificationSlip[] | null>(null);
 
   const requestPrint = (bill: UtilityBill) => setPrintRequest({ bills: [bill], single: true });
+  /* A batch of different bills tiled onto sheets — one receipt each, no copy
+     labels, since each quarter goes to a different stall. */
+  const requestPrintBatch = (batch: UtilityBill[]) => {
+    if (batch.length === 0) { showToast('Select at least one bill to print'); return; }
+    setPrintRequest({ bills: batch, single: false });
+  };
 
   /* One tick so the receipt is laid out before the print dialog snapshots it.
      The body class is what narrows the print stylesheet down to the receipt —
@@ -973,19 +1792,113 @@ function App({ boot }: { boot: BootData }) {
     };
   }, [printJob]);
 
+  /* Printing files the bill. A receipt is the office's word that the charge
+     exists, so anything on the sheet that was still a draft goes onto the
+     record here, under the number it prints with — the bill numbers are
+     claimed at this moment and nowhere else, so a preview backed out of files
+     nothing. Bills already on record are reprinted, not re-filed. */
   const confirmPrint = (receipts: PrintReceipt[], printedBy: string) => {
     try { localStorage.setItem(printedByKey, printedBy); } catch { /* full storage must not stop a receipt printing */ }
-    setPrintJob({ receipts, printedBy, printedAt: manilaStamp() });
+
+    const onSheet = receipts.map((r) => r.bill);
+    const pending = unsavedBills(onSheet);
+    const numbered = numberBills(onSheet, claimIds('UTL', state.utilities.map((b) => b.id), pending.length));
+    const filed = [...numbered.values()];
+    /* Every copy of a bill picks up the number its original was just given. */
+    const printed = receipts.map((r) => ({ ...r, bill: numbered.get(r.bill) ?? r.bill }));
+
+    if (filed.length > 0) {
+      setState((p) => ({
+        ...p,
+        /* Newest first, the order `addBill` files a single bill in. */
+        utilities: [...filed.slice().reverse(), ...p.utilities],
+        activities: filed.reduce((acc, b) => withActivity(acc, UTILITY_PRESETS[b.type].icon, b.type === 'Electricity' ? 'amber' : 'blue', `${b.type} bill ${b.id}`, ` of ${money(b.amount)} issued to stall ${b.stallId} on printing.`), p.activities),
+        logs: filed.reduce((acc, b) => [...acc, makeLog(acc, 'Collection', `${b.type} bill ${b.id} (${billPeriodText(b)}) issued to stall ${b.stallId}${b.tenantName ? ` — ${b.tenantName}` : ''}: ${money(b.amount)}. Filed on printing.`)], p.logs),
+      }));
+    }
+
+    setPrintJob({ receipts: printed, printedBy, printedAt: manilaStamp() });
     setPrintRequest(null);
     const sheets = Math.ceil(receipts.length / RECEIPTS_PER_SHEET);
-    showToast(`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`);
+    const sent = `${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`;
+    showToast(filed.length === 0
+      ? sent
+      : `${sent} — ${filed.length === 1 ? `bill ${filed[0].id} saved to records` : `${filed.length} bills saved to records (${filed[0].id}–${filed[filed.length - 1].id})`}`);
   };
+
+  /* The control numbers are torn off the pad here and nowhere else — a preview
+     that was cancelled leaves the counter where it was. Each slip goes onto the
+     register as it is numbered, so the office can answer for any number that
+     comes back to it later. */
+  const confirmVerification = (drafts: Omit<VerificationSlip, 'controlNo'>[]) => {
+    if (drafts.length === 0) return;
+    const issuedBy = drafts[0].issuedBy;
+    try { localStorage.setItem(verifiedByKey, issuedBy); } catch { /* full storage must not stop a slip printing */ }
+
+    const numbers = claimIds('SSV', state.verifications.map((v) => v.controlNo), drafts.length);
+    const slips: VerificationSlip[] = drafts.map((d, i) => ({ ...d, controlNo: numbers[i] }));
+    const span = slips.length === 1 ? slips[0].controlNo : `${slips[0].controlNo}–${slips[slips.length - 1].controlNo}`;
+    const forWhom = slips[0].issuedTo
+      ? `${slips[0].issuedTo}${slips[0].stallNo ? ` (stall ${slips[0].stallNo})` : ''}`
+      : 'blank, to be filled in at the counter';
+
+    setState((p) => ({
+      ...p,
+      verifications: [...p.verifications, ...slips],
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `Stall/space verification ${span} issued for business permit ${slips[0].purpose.toLowerCase()} — ${forWhom}. Valid until ${formatIsoDate(slips[0].validUntil)}.`)],
+      activities: withActivity(p.activities, 'fact_check', 'blue', span, ` issued for business permit ${slips[0].purpose.toLowerCase()}.`),
+    }));
+
+    setVerifyJob(slips);
+    setVerifyRequest(null);
+    showToast(`Verification ${span} issued and sent to print`);
+  };
+
+  /* Same two-step as a receipt, and the job is dropped when the dialog closes
+     so a later plain Ctrl+P does not silently reprint a numbered slip. */
+  useEffect(() => {
+    if (!verifyJob) return;
+    document.body.classList.add('printing');
+    const finish = () => setVerifyJob(null);
+    window.addEventListener('afterprint', finish);
+    const timer = window.setTimeout(() => window.print(), 80);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('afterprint', finish);
+      document.body.classList.remove('printing');
+    };
+  }, [verifyJob]);
 
   const showToast = useCallback((message: string) => {
     const id = ++toastSeq.current;
     setToasts((prev) => [...prev, { id, message }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
+
+  /* Every list page prints through here, so one sheet layout serves them all. */
+  const printRegister = useCallback((title: string, subtitle: string, columns: string[], rows: string[][]) => {
+    if (rows.length === 0) {
+      showToast('Nothing to print — no records match the current filters');
+      return;
+    }
+    setRegisterJob({ title, subtitle, columns, rows, printedAt: manilaStamp() });
+  }, [showToast]);
+
+  /* Same two-step as a receipt: lay the sheet out, let the print stylesheet cut
+     everything else away, then drop it so a later plain Ctrl+P prints the
+     screen rather than silently reprinting this register. */
+  useEffect(() => {
+    if (!registerJob) return;
+    document.body.classList.add('printing');
+    const finish = () => setRegisterJob(null);
+    window.addEventListener('afterprint', finish);
+    const timer = window.setTimeout(() => window.print(), 80);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('afterprint', finish);
+      document.body.classList.remove('printing');
+    };
+  }, [registerJob]);
 
   /* Every change to the records is written straight back to storage. The short
      delay collapses a burst of edits into one write; the guard makes sure a
@@ -1064,6 +1977,7 @@ function App({ boot }: { boot: BootData }) {
   const liveTenant = (t: Tenant) => state.tenants.find((x) => x.id === t.id) ?? t;
   const liveApplicant = (a: Applicant) => state.applicants.find((x) => x.id === a.id) ?? a;
   const liveViolation = (v: Violation) => state.violations.find((x) => x.id === v.id) ?? v;
+  const liveOfficer = (o: Officer) => state.officers.find((x) => x.id === o.id) ?? o;
 
   const withActivity = (list: ActivityItem[], icon: string, iconColor: string, highlight: string, text: string): ActivityItem[] =>
     [{ id: `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, icon, iconColor, highlight, text, time: 'Just now' }, ...list].slice(0, MAX_ACTIVITIES);
@@ -1072,7 +1986,20 @@ function App({ boot }: { boot: BootData }) {
     ({ id: nextId('LOG', existing.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type, details });
 
   const addStall = (stall: Stall) => { setState((p) => ({ ...p, stalls: [...p.stalls, stall], activities: withActivity(p.activities, 'storefront', 'blue', stall.id, ` added as new stall in ${stall.section}.`) })); showToast(`Stall ${stall.id} added successfully`); closeModal(); };
-  const addApplicant = (app: Applicant) => { setState((p) => ({ ...p, applicants: [...p.applicants, app], activities: withActivity(p.activities, 'person_add', 'green', app.name, ` applied for ${app.stallType} stall.`) })); showToast(`Applicant ${app.name} added successfully`); closeModal(); };
+  const addApplicant = (app: Applicant) => {
+    const permitted = stallGainingPermit(state.stalls, app);
+    setState((p) => ({
+      ...p,
+      applicants: [...p.applicants, app],
+      stalls: applyPermitFromApplicant(p.stalls, app),
+      activities: withActivity(p.activities, 'person_add', 'green', app.name, ` applied${app.stallId ? ` for stall ${app.stallId}` : ''}.`),
+      ...(permitted
+        ? { logs: [...p.logs, makeLog(p.logs, 'Announcement', `Stall ${permitted.id} recorded as With BP from application ${app.id} (${app.name}).`)] }
+        : {}),
+    }));
+    showToast(permitted ? `Applicant ${app.name} added — stall ${permitted.id} is now With BP` : `Applicant ${app.name} added successfully`);
+    closeModal();
+  };
   const addLog = (l: LogEntry) => { setState((p) => ({ ...p, logs: [...p.logs, l] })); showToast('Log entry added'); closeModal(); };
 
   const addTenant = (t: Tenant) => {
@@ -1109,12 +2036,20 @@ function App({ boot }: { boot: BootData }) {
     const tenant = state.tenants.find((t) => t.id === tenantId);
     if (!tenant || !!rentPaymentFor(tenant, period) === paid) return;
     const label = formatPeriod(period);
+    /* Settled today, so the discount is decided against today's date. It is
+       fixed onto the payment at this moment and never recomputed — the month
+       stays collected at what was actually taken, whatever the rate becomes. */
+    const paidOn = todayIso();
+    const early = qualifiesForRentDiscount(tenant, period, paidOn);
+    const discount = early ? rentDiscountAmount(tenant.rent) : 0;
+    const collected = Math.round((tenant.rent - discount) * 100) / 100;
+
     setState((p) => ({
       ...p,
       tenants: p.tenants.map((t) => {
         if (t.id !== tenantId) return t;
         const next = { ...t.rentPayments };
-        if (paid) next[period] = { period, paidOn: todayIso(), amount: t.rent };
+        if (paid) next[period] = { period, paidOn, amount: collected, discount };
         else delete next[period];
         return { ...t, rentPayments: next };
       }),
@@ -1123,13 +2058,19 @@ function App({ boot }: { boot: BootData }) {
         paid ? 'payments' : 'undo',
         paid ? 'green' : 'amber',
         tenant.name,
-        paid ? ` paid ${money(tenant.rent)} rent for ${label}.` : `'s rent for ${label} was set back to unpaid.`,
+        paid
+          ? ` paid ${money(collected)} rent for ${label}${early ? ` — ${EARLY_RENT_DISCOUNT_PCT}% early-payment discount applied.` : '.'}`
+          : `'s rent for ${label} was set back to unpaid.`,
       ),
       logs: [...p.logs, makeLog(p.logs, 'Collection', paid
-        ? `Rent for ${label} collected from ${tenant.name} (${tenant.id}${tenant.stallId && tenant.stallId !== '—' ? `, stall ${tenant.stallId}` : ''}): ${money(tenant.rent)}.`
+        ? `Rent for ${label} collected from ${tenant.name} (${tenant.id}${tenant.stallId && tenant.stallId !== '—' ? `, stall ${tenant.stallId}` : ''}): ${money(collected)}${early ? ` (${money(tenant.rent)} less ${EARLY_RENT_DISCOUNT_PCT}% early-payment discount of ${money(discount)}, settled on or before ${formatIsoDate(rentDueIso(tenant, period))})` : ''}.`
         : `Rent payment for ${label} by ${tenant.name} (${tenant.id}) was reversed.`)],
     }));
-    showToast(paid ? `${tenant.name} marked paid for ${label}` : `${tenant.name} marked unpaid for ${label}`);
+    showToast(paid
+      ? (early
+        ? `${tenant.name} paid ${money(collected)} for ${label} — ${EARLY_RENT_DISCOUNT_PCT}% early discount`
+        : `${tenant.name} marked paid for ${label}`)
+      : `${tenant.name} marked unpaid for ${label}`);
   };
 
   /* A meter number typed into the calculator for a tenant who has none on file
@@ -1153,17 +2094,23 @@ function App({ boot }: { boot: BootData }) {
     // save in the same session still logs against its true starting point.
     const previous = snapshot ?? state.applicants.find((a) => a.id === updated.id);
     const statusChanged = !!previous && previous.status !== updated.status;
+    const permitted = stallGainingPermit(state.stalls, updated);
     setState((p) => ({
       ...p,
       applicants: p.applicants.map((a) => (a.id === updated.id ? updated : a)),
+      stalls: applyPermitFromApplicant(p.stalls, updated),
       ...(log
         ? {
             activities: withActivity(p.activities, 'person_add', updated.status === 'Approved' ? 'green' : updated.status === 'Rejected' ? 'red' : 'amber', updated.name, statusChanged ? `'s application was marked ${updated.status}.` : `'s application details were updated.`),
-            logs: [...p.logs, makeLog(p.logs, 'Announcement', statusChanged && previous ? `Application ${updated.id} (${updated.name}) changed from ${previous.status} to ${updated.status}.` : `Application ${updated.id} (${updated.name}) was updated.`)],
+            logs: [
+              ...p.logs,
+              makeLog(p.logs, 'Announcement', statusChanged && previous ? `Application ${updated.id} (${updated.name}) changed from ${previous.status} to ${updated.status}.` : `Application ${updated.id} (${updated.name}) was updated.`),
+              ...(permitted ? [makeLog(p.logs, 'Announcement', `Stall ${permitted.id} recorded as With BP from application ${updated.id} (${updated.name}).`)] : []),
+            ],
           }
         : {}),
     }));
-    if (log) showToast(statusChanged ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
+    if (log) showToast(permitted ? `${updated.name} updated — stall ${permitted.id} is now With BP` : statusChanged ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
     if (promptAssign) setModal({ type: 'assign-stall', data: updated });
     else if (close) closeModal();
   };
@@ -1243,16 +2190,23 @@ function App({ boot }: { boot: BootData }) {
     const { log = true, close = true } = opts;
     setState((p) => {
       const occupant = p.tenants.find((t) => t.stallId === updated.id);
+      /* Released: the stall is being handed back, so the tenancy on it ends. */
+      const released = updated.status === 'Available' && !!occupant;
+      const stall = released ? { ...updated, tenant: 'Vacant' } : updated;
       return {
         ...p,
-        stalls: p.stalls.map((s) => (s.id === updated.id ? updated : s)),
-        tenants: occupant && occupant.section !== updated.section
-          ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section } : t))
-          : p.tenants,
+        stalls: p.stalls.map((s) => (s.id === updated.id ? stall : s)),
+        tenants: released
+          ? p.tenants.filter((t) => t.id !== occupant.id)
+          : occupant && occupant.section !== updated.section
+            ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section } : t))
+            : p.tenants,
         ...(log
           ? {
-              activities: withActivity(p.activities, 'storefront', 'blue', updated.id, ' was updated in stall management.'),
-              logs: [...p.logs, makeLog(p.logs, 'Maintenance', `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}.`)],
+              activities: withActivity(p.activities, 'storefront', released ? 'red' : 'blue', updated.id, released ? ` was released to Available; ${occupant.name} was removed from tenant records.` : ' was updated in stall management.'),
+              logs: [...p.logs, makeLog(p.logs, 'Maintenance', released
+                ? `Stall ${updated.id} was released to Available — tenant ${occupant.id} (${occupant.name}) was removed from tenant records.`
+                : `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}.`)],
             }
           : {}),
       };
@@ -1320,12 +2274,62 @@ function App({ boot }: { boot: BootData }) {
       .catch(() => showToast('Could not reset the records — please try again.'));
   };
 
+  /* ---------- The market office's board ---------- */
+
+  const addOfficer = (officer: Officer) => {
+    setState((p) => ({
+      ...p,
+      officers: linkOfficers([...p.officers, officer]),
+      activities: withActivity(p.activities, 'account_tree', 'blue', officer.position, ` was added to the market office board${officer.name ? ` — ${officer.name}` : ' as a vacant seat'}.`),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}) added to the office board${officer.name ? `: ${officer.name}` : ' as a vacant seat'}.`)],
+    }));
+    showToast(officer.name ? `${officer.name} added to the board` : `${officer.position} added as a vacant seat`);
+    closeModal();
+  };
+
+  const updateOfficer = (updated: Officer) => {
+    const previous = state.officers.find((o) => o.id === updated.id);
+    setState((p) => ({
+      ...p,
+      officers: linkOfficers(p.officers.map((o) => (o.id === updated.id ? updated : o))),
+      activities: withActivity(p.activities, 'account_tree', 'amber', updated.position, previous && previous.name !== updated.name
+        ? ` is now held by ${updated.name || 'nobody — the seat is vacant'}.`
+        : `'s details were updated.`),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', previous && previous.name !== updated.name
+        ? `${updated.position} (${updated.id}) changed from ${previous.name || 'vacant'} to ${updated.name || 'vacant'}.`
+        : `${updated.position} (${updated.id}) was updated on the office board.`)],
+    }));
+    showToast(`${updated.position} updated`);
+    closeModal();
+  };
+
+  /* Removing a seat must not orphan the seats under it: everyone who reported
+     to it is lifted to whoever it reported to, so the board stays one tree
+     and nobody quietly disappears off the bottom of it. */
+  const deleteOfficer = (officer: Officer) => {
+    const reassignTo = officer.reportsTo;
+    const reports = state.officers.filter((o) => o.reportsTo === officer.id);
+    setState((p) => ({
+      ...p,
+      officers: linkOfficers(
+        p.officers
+          .filter((o) => o.id !== officer.id)
+          .map((o) => (o.reportsTo === officer.id ? { ...o, reportsTo: reassignTo } : o)),
+      ),
+      activities: withActivity(p.activities, 'account_tree', 'red', officer.position, ' was removed from the office board.'),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}${officer.name ? ` — ${officer.name}` : ''}) removed from the office board.${reports.length > 0 ? ` ${reports.length} seat${reports.length === 1 ? '' : 's'} reassigned.` : ''}`)],
+    }));
+    showToast(`${officer.position} removed from the board`);
+    closeModal();
+  };
+
+
   const handleNewEntry = () => setModal({ type: 'add-log' });
 
   const handleLogout = () => setModal({ type: 'confirm-logout' });
 
   const downloadReport = () => {
-    downloadJSON({ generatedAt: new Date().toISOString(), summary: { tenants: state.tenants.length, applicants: state.applicants.length, stalls: state.stalls.length }, data: state }, 'civic-market-core-report.json');
+    downloadJSON({ generatedAt: new Date().toISOString(), summary: { tenants: state.tenants.length, applicants: state.applicants.length, stalls: state.stalls.length, officers: state.officers.length }, data: state }, 'civic-market-core-report.json');
     showToast('Report downloaded');
   };
 
@@ -1396,33 +2400,37 @@ function App({ boot }: { boot: BootData }) {
 
         <div className="page-content">
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onPrintBatch={(bs) => setPrintRequest({ bills: bs, single: false })} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Rate','Fixed Charge','Amount','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), String(b.rate), String(b.fixedCharge), b.amount.toFixed(2), b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
-          {active === 'stalls' && <StallManagementPage stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onEdit={(s) => setModal({ type: 'edit-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
-          {active === 'tenants' && <TenantRecordsPage tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onEdit={(t) => setModal({ type: 'edit-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
-          {active === 'applicants' && <ApplicantManagementPage applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
-          {active === 'violations' && <ViolationsPage violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
+          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
+          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
+          {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
+          {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Issue','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
-          {active === 'logbook' && <LogbookPage logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
+          {active === 'logbook' && <LogbookPage onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
+          {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, officerLabel(state.officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-office-board.csv'); showToast('Office board exported'); }} />}
           {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
       </main>
 
       {modal.type === 'add-stall' && <Modal title="Add New Stall" onClose={closeModal}><AddStallForm existingIds={state.stalls.map(s => s.id)} onSubmit={addStall} onCancel={closeModal} /></Modal>}
-      {modal.type === 'add-applicant' && <Modal title="Add New Applicant" onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-applicant' && <Modal title="Add New Applicant" onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} stalls={state.stalls} tenants={state.tenants} applicants={state.applicants} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-tenant' && <Modal title="Add New Tenant" wide onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
       {modal.type === 'assign-stall' && <Modal title="Assign Stall & Create Tenant" wide onClose={closeModal}><AssignStallForm applicant={modal.data as Applicant} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onSkip={closeModal} /></Modal>}
       {modal.type === 'add-log' && <Modal title="Add Log Entry" onClose={closeModal}><AddLogForm existingIds={state.logs.map(l => l.id)} onSubmit={addLog} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-officer' && <Modal title="Add Officer" subtitle="A seat on the market office board." wide onClose={closeModal}><OfficerForm officers={state.officers} onSubmit={addOfficer} onCancel={closeModal} /></Modal>}
+      {modal.type === 'edit-officer' && <Modal title="Edit Officer" subtitle="Update the seat, who holds it, and where it sits on the board." wide onClose={closeModal}><OfficerForm officers={state.officers} officer={liveOfficer(modal.data as Officer)} onSubmit={updateOfficer} onCancel={closeModal} /></Modal>}
+      {modal.type === 'view-officer' && <Modal title="Officer Details" sheet onClose={closeModal}><OfficerDetailView officer={liveOfficer(modal.data as Officer)} officers={state.officers} onEdit={() => setModal({ type: 'edit-officer', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'add-violation' && <Modal title="Record a Violation" wide onClose={closeModal}><ViolationForm existingIds={state.violations.map(v => v.id)} tenants={state.tenants} onSubmit={addViolation} onCancel={closeModal} /></Modal>}
-      {modal.type === 'view-violation' && <Modal title="Violation Details" wide onClose={closeModal}><ViolationDetailView violation={liveViolation(modal.data as Violation)} onEdit={() => setModal({ type: 'edit-violation', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-violation' && <Modal title="Violation Details" sheet onClose={closeModal}><ViolationDetailView violation={liveViolation(modal.data as Violation)} onEdit={() => setModal({ type: 'edit-violation', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-violation' && <Modal title="Edit Violation" wide onClose={closeModal}><ViolationEditForm violation={modal.data as Violation} current={liveViolation(modal.data as Violation)} tenants={state.tenants} onSave={updateViolation} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-stall' && <Modal title="Stall Details" wide onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-stall' && <Modal title="Stall Details" sheet onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onVerify={() => { const s = liveStall(modal.data as Stall); closeModal(); setVerifyRequest({ stall: s }); }} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-stall' && <Modal title="Edit Stall Details" wide onClose={closeModal}><StallEditForm stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onSave={updateStall} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-applicant' && <Modal title="Applicant Details" wide onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-applicant' && <Modal title="Applicant Details" sheet onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-tenant' && <Modal title="Tenant Details" wide onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-tenant' && <Modal title="Tenant Details" sheet onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-tenant' && <Modal title="Edit Tenant Details" wide onClose={closeModal}><TenantEditForm tenant={modal.data as Tenant} current={liveTenant(modal.data as Tenant)} tenants={state.tenants} stalls={state.stalls} onSave={updateTenant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" wide onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" sheet onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
       {modal.type === 'confirm-logout' && <ConfirmDialog icon="logout" iconStyle="warning" title="Log Out?" description="Are you sure you want to log out? All data is saved locally." confirmLabel="Log Out" onConfirm={() => { showToast('Logged out successfully'); closeModal(); }} onCancel={closeModal} />}
       {modal.type === 'confirm-reset' && <ConfirmDialog icon="delete_forever" iconStyle="danger" title="Reset All Data?" description="This will permanently reset all data to factory defaults. This cannot be undone." confirmLabel="Reset Data" confirmDanger onConfirm={resetData} onCancel={closeModal} />}
       {modal.type === 'confirm-delete-stall' && (() => {
@@ -1453,6 +2461,14 @@ function App({ boot }: { boot: BootData }) {
           description={`Application ${applicant.id} (${applicant.status}) will be permanently removed. This cannot be undone.`}
           confirmLabel="Delete Applicant" confirmDanger onConfirm={() => deleteApplicant(applicant)} onCancel={closeModal} />;
       })()}
+      {modal.type === 'confirm-delete-officer' && (() => {
+        const officer = modal.data as Officer;
+        const reports = state.officers.filter((o) => o.reportsTo === officer.id);
+        const superior = state.officers.find((o) => o.id === officer.reportsTo);
+        return <ConfirmDialog icon="person_remove" iconStyle="danger" title={`Remove ${officer.name || officer.position} from the board?`}
+          description={`${officer.position} (${officer.id}) will be removed from the market office board.${reports.length > 0 ? ` The ${reports.length} seat${reports.length === 1 ? '' : 's'} reporting to it will be moved under ${superior ? `${superior.position}` : 'the head of the board'}.` : ''} This cannot be undone.`}
+          confirmLabel="Remove Officer" confirmDanger onConfirm={() => deleteOfficer(officer)} onCancel={closeModal} />;
+      })()}
       {modal.type === 'confirm-delete-log' && (() => {
         const log = modal.data as LogEntry;
         return <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this log entry?"
@@ -1465,8 +2481,19 @@ function App({ boot }: { boot: BootData }) {
           description={`The ${violation.status.toLowerCase()} citation against ${violation.tenant} for "${violation.issue}" will be permanently removed from the register.${violation.status === 'Open' ? ' Resolve it instead if it was served and settled — delete only if it was recorded in error.' : ' Delete only if it was recorded in error; resolved citations are the register’s history.'} This cannot be undone.`}
           confirmLabel="Delete Violation" confirmDanger onConfirm={() => deleteViolation(violation)} onCancel={closeModal} />;
       })()}
-      {printRequest && <PrintPreviewDialog request={printRequest} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
+      {printRequest && <PrintPreviewDialog request={printRequest} billsOnRecord={state.utilities} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
       {printJob && <div className="print-area"><ReceiptSheets receipts={printJob.receipts} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
+      {registerJob && <div className="print-area"><RegisterSheet job={registerJob} /></div>}
+      {verifyRequest && (
+        <VerificationPrintDialog
+          stall={verifyRequest.stall}
+          tenantName={verifyRequest.stall ? (state.tenants.find((t) => t.stallId === verifyRequest.stall!.id)?.name ?? verifyRequest.stall.tenant) : undefined}
+          existingIds={state.verifications.map((v) => v.controlNo)}
+          onConfirm={confirmVerification}
+          onCancel={() => setVerifyRequest(null)}
+        />
+      )}
+      {verifyJob && <div className="print-area"><VerificationSheets slips={verifyJob} /></div>}
 
       {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
 
@@ -1527,12 +2554,14 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
       out.push({ key: `t${t.id}`, module: 'tenants', icon: 'groups', label: t.name, detail: `${t.id} \u00b7 Stall ${t.stallId} \u00b7 ${t.section}`, kind: 'Tenant' }));
     state.stalls.filter((st) => has(st.id, st.tenant, st.section)).forEach((st) =>
       out.push({ key: `s${st.id}`, module: 'stalls', icon: 'storefront', label: `Stall ${st.id}`, detail: `${st.section} \u00b7 ${st.tenant}`, kind: 'Stall' }));
-    state.applicants.filter((a) => has(a.name, a.id, a.phone, a.stallType)).forEach((a) =>
-      out.push({ key: `a${a.id}`, module: 'applicants', icon: 'assignment_ind', label: a.name, detail: `${a.id} \u00b7 ${a.stallType}`, kind: 'Applicant' }));
+    state.applicants.filter((a) => has(a.name, a.id, a.phone, a.stallId ?? '')).forEach((a) =>
+      out.push({ key: `a${a.id}`, module: 'applicants', icon: 'assignment_ind', label: a.name, detail: `${a.id}${a.stallId ? ` \u00b7 ${a.stallId}` : ''}`, kind: 'Applicant' }));
     state.utilities.filter((b) => has(b.id, b.stallId, b.tenantName)).forEach((b) =>
       out.push({ key: `b${b.id}`, module: 'utilities', icon: 'receipt_long', label: `${b.type} \u2014 Stall ${b.stallId}`, detail: `${b.id} \u00b7 ${billPeriodText(b)} \u00b7 ${money(b.amount)}`, kind: 'Bill' }));
     state.violations.filter((v) => has(v.id, v.tenant, v.issue)).forEach((v) =>
       out.push({ key: `v${v.id}`, module: 'violations', icon: 'gavel', label: v.issue, detail: `${v.id} \u00b7 ${v.tenant}`, kind: 'Violation' }));
+    state.officers.filter((o) => has(o.id, o.name, o.position, o.office)).forEach((o) =>
+      out.push({ key: `o${o.id}`, module: 'officers', icon: 'account_tree', label: o.name || `${o.position} (vacant)`, detail: `${o.id} · ${o.position}${o.office ? ` · ${o.office}` : ''}`, kind: 'Officer' }));
     return out.slice(0, 24);
   }, [q, state]);
 
@@ -1574,7 +2603,7 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
           <div className="stat-value">{state.stalls.length}</div>
-          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available{maintenanceCount > 0 ? `, ${maintenanceCount} Maintenance` : ''}</div>
+          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available{countStatus(state.stalls, 'Temporarily Closed') > 0 ? `, ${countStatus(state.stalls, 'Temporarily Closed')} Temp. Closed` : ''}{countStatus(state.stalls, 'Closed') > 0 ? `, ${countStatus(state.stalls, 'Closed')} Closed` : ''}{countStatus(state.stalls, 'Abandoned') > 0 ? `, ${countStatus(state.stalls, 'Abandoned')} Abandoned` : ''}{maintenanceCount > 0 ? `, ${maintenanceCount} Maintenance` : ''}</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Occupancy</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
@@ -1618,12 +2647,17 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
             <div className="earnings-meter">
               <div className={`earnings-meter-fill${roll.overdueCount > 0 ? ' danger' : ''}`} style={{ width: `${collectionPct}%` }} />
             </div>
-            <span className="earnings-basis">{percent(collectionPct)} collected · {roll.paidCount} of {state.tenants.length} tenants paid</span>
+            <span className="earnings-basis">
+              {percent(collectionPct)} collected · {roll.paidCount} of {state.tenants.length} tenants paid
+              {roll.discounted > 0 && ` · ${money(roll.discounted)} given as early-payment discounts`}
+            </span>
           </div>
           <div className="earnings-grid">
             <EarningsFigure label="Monthly Rent Roll" value={money(roll.due)} basis="Contracted rent from every tenancy on record" />
             <EarningsFigure label="Rent Outstanding" value={money(roll.outstanding)} tone={roll.outstanding > 0 ? 'danger' : 'success'} basis={`${roll.unpaidCount} unpaid · ${roll.overdueCount} past due`} />
-            <EarningsFigure label="Rent Collected to Date" value={money(rentToDate)} tone="success" basis="Every month recorded as settled" />
+            {roll.discounted > 0
+              ? <EarningsFigure label={`Early-Payment Discounts (${EARLY_RENT_DISCOUNT_PCT}%)`} value={money(roll.discounted)} basis={`Taken off for settling on or before the due date — why collected sits below the roll`} />
+              : <EarningsFigure label="Rent Collected to Date" value={money(rentToDate)} tone="success" basis="Every month recorded as settled" />}
             <EarningsFigure label="Utilities Collected" value={money(utilitiesCollected)} basis={`${money(outstandingUtilities)} still outstanding`} />
           </div>
           <div className="earnings-total">
@@ -1672,7 +2706,14 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
    Stall Management Page
    ============================================================ */
 
-function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onEdit, onDelete }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onEdit: (s: Stall) => void; onDelete: (s: Stall) => void }) {
+function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanceCount, search, onAdd, onView, onDelete, onPrintList, onVerify }: { stalls: Stall[]; occupiedCount: number; availableCount: number; maintenanceCount: number; search: string; onAdd: () => void; onView: (s: Stall) => void; onDelete: (s: Stall) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; onVerify: (s?: Stall) => void; }) {
+  /* Prints every row the filters are showing, not the page of them on screen. */
+  const printList = () => onPrintList(
+    sectionFilter || 'All Sections',
+    `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Stall ID', 'Section', 'Tenant', 'Status', 'Permit'],
+    filtered.map((s) => [s.id, s.section, s.tenant, s.status, s.permit === 'Not Recorded' ? '—' : s.permit]),
+  );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -1699,6 +2740,8 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div><h2 className="page-title">Stall Management</h2><p className="page-subtitle">Monitor occupancy, status, and tenant details.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
+          <button className="btn-outline" onClick={() => onVerify()}><span className="material-symbols-outlined">fact_check</span>Stall / Space Verification</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Stall</button>
         </div>
       </div>
@@ -1706,7 +2749,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
           <div className="stat-value">{stalls.length}</div>
-          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available</div>
+          <div className="stat-caption">{occupiedCount} Occupied, {availableCount} Available{countStatus(stalls, 'Closed') > 0 ? `, ${countStatus(stalls, 'Closed')} Closed` : ''}{countStatus(stalls, 'Abandoned') > 0 ? `, ${countStatus(stalls, 'Abandoned')} Abandoned` : ''}</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Occupied</span><span className="material-symbols-outlined stat-icon primary">check_circle</span></div>
@@ -1723,18 +2766,23 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
           <div className="stat-value danger">{maintenanceCount}</div>
           <div className="stat-caption">{maintenanceCount === 0 ? 'None out of service' : `${maintenanceCount} out of service`}</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Temporarily Closed</span><span className="material-symbols-outlined stat-icon">pause_circle</span></div>
+          <div className="stat-value">{countStatus(stalls, 'Temporarily Closed')}</div>
+          <div className="stat-caption">Held by a tenant, not trading</div>
+        </div>
       </div>
       <div className="panel">
         <div className="filter-row">
           <select className="filter-select" value={sectionFilter} onChange={(e) => { setSectionFilter(e.target.value); setPage(1); }}><option value="">All Sections</option>{SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Occupied">Occupied</option><option value="Available">Available</option><option value="Maintenance">Maintenance</option></select>
+          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option>{STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} stalls</span>
         </div>
         <div className="table-wrap">
-          <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Last Inspection</th><th>Action</th></tr></thead>
+          <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Permit</th><th>Last Inspection</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit stall" aria-label="Edit stall" onClick={() => onEdit(s)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
-              {paged.items.length === 0 && <tr><td colSpan={6}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
+              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td><PermitBadge permit={s.permit} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn" title="Issue verification slip" aria-label="Issue verification slip" onClick={() => onVerify(s)}><span className="material-symbols-outlined">fact_check</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
+              {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -1748,7 +2796,13 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
    Applicant Management Page
    ============================================================ */
 
-function ApplicantManagementPage({ applicants, pendingApplicants, incompleteApplicants, approvedApplicants, search, onAdd, onView, onEdit, onDelete }: { applicants: Applicant[]; pendingApplicants: number; incompleteApplicants: number; approvedApplicants: number; search: string; onAdd: () => void; onView: (a: Applicant) => void; onEdit: (a: Applicant) => void; onDelete: (a: Applicant) => void }) {
+function ApplicantManagementPage({ applicants, pendingApplicants, incompleteApplicants, approvedApplicants, search, onAdd, onView, onEdit, onDelete, onPrintList }: { applicants: Applicant[]; pendingApplicants: number; incompleteApplicants: number; approvedApplicants: number; search: string; onAdd: () => void; onView: (a: Applicant) => void; onEdit: (a: Applicant) => void; onDelete: (a: Applicant) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  const printList = () => onPrintList(
+    'Applicants',
+    `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Applicant ID', 'Name', 'Stall', 'Status', 'Requirements'],
+    filtered.map((a) => [a.id, a.name, a.stallId || '—', a.status, `${a.requirements.length} of ${REQUIREMENTS.length}`]),
+  );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
 
@@ -1756,7 +2810,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
 
   const filtered = useMemo(() => applicants.filter((a) => {
     if (statusFilter && a.status !== statusFilter) return false;
-    if (search) { const q = search.toLowerCase(); if (!a.name.toLowerCase().includes(q) && !a.phone.includes(q) && !a.stallType.toLowerCase().includes(q)) return false; }
+    if (search) { const q = search.toLowerCase(); if (!a.name.toLowerCase().includes(q) && !a.phone.includes(q) && !(a.stallId ?? '').toLowerCase().includes(q)) return false; }
     return true;
   }), [applicants, statusFilter, search]);
 
@@ -1768,6 +2822,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
         <div><h2 className="page-title">Applicant Management</h2><p className="page-subtitle">Review stall applications and verify requirement submissions.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => setStatusFilter('')}><span className="material-symbols-outlined">tune</span>Clear Filter</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Applicant</button>
         </div>
       </div>
@@ -1785,7 +2840,12 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Incomplete Docs</span></div>
           <div className="stat-value">{incompleteApplicants}</div>
-          <div className="stat-caption">{incompleteApplicants === 0 ? 'All requirements filed' : 'Awaiting requirements'}</div>
+          <div className="stat-caption">{incompleteApplicants === 0 ? 'None at this stage' : 'Awaiting requirements'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">No Business Permit</span></div>
+          <div className="stat-value danger">{applicants.filter((a) => a.status === 'No BP').length}</div>
+          <div className="stat-caption">Trading without a permit on file</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Approved (This Mo.)</span></div>
@@ -1795,19 +2855,18 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
       </div>
       <div className="panel">
         <div className="filter-row">
-          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Pending Review">Pending Review</option><option value="Incomplete">Incomplete</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select>
+          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Pending Review">Pending Review</option><option value="Incomplete">Incomplete</option><option value="No BP">No BP</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total}</span>
         </div>
         <div className="table-wrap">
-          <table className="data-table"><thead><tr><th>Applicant Name</th><th>Date Applied</th><th>Stall Type</th><th>Requirements</th><th>Status</th><th>Actions</th></tr></thead>
+          <table className="data-table"><thead><tr><th>Applicant Name</th><th>Stall</th><th>Date Applied</th><th>Requirements</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {paged.items.map((a, i) => {
                 const done = submittedCount(a);
                 return (
                   <tr key={a.id}>
-                    <td><div className="applicant-cell"><div className={`avatar-initials ${getAvatarColor(i)}`}>{getInitials(a.name)}</div><div className="applicant-info"><div className="name">{a.name}</div><div className="phone">{formatPhone(a.phone)}</div></div></div></td>
+                    <td><div className="applicant-cell"><div className={`avatar-initials ${getAvatarColor(i)}`}>{getInitials(a.name)}</div><div className="applicant-info"><div className="name">{a.name}</div><div className="phone">{formatPhone(a.phone)}</div></div></div></td><td className="no-wrap">{a.stallId || '—'}</td>
                     <td>{a.dateApplied}</td>
-                    <td>{a.stallType}</td>
                     <td>
                       <div className="req-marks" title={REQUIREMENTS.map((r) => `${a.requirements.includes(r) ? '✓' : '✗'} ${r}`).join('\n')}>
                         {REQUIREMENTS.map((r) => (
@@ -1847,7 +2906,21 @@ function EarningsFigure({ label, value, basis, tone }: { label: string; value: s
    Tenant Records Page
    ============================================================ */
 
-function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, onSetRentPaid }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onEdit: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void }) {
+function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  const printList = () => onPrintList(
+    sectionFilter || 'All Sections',
+    `Tenant register · rent for ${formatPeriodShort(period)}${search ? ` · matching “${search}”` : ''}`,
+    ['Tenant ID', 'Name', 'Stall ID', 'Section', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`, 'Collected', 'Discount', 'Status'],
+    filtered.map((t) => {
+      const payment = rentPaymentFor(t, period);
+      return [
+        t.id, t.name, t.stallId, t.section, money(t.rent), rentStatusOf(t, period),
+        payment ? money(payment.amount) : '—',
+        payment && payment.discount > 0 ? `−${money(payment.discount)}` : '—',
+        t.status,
+      ];
+    }),
+  );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [rentFilter, setRentFilter] = useState('');
@@ -1885,6 +2958,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
         <div><h2 className="page-title">Tenant Records</h2><p className="page-subtitle">View and manage all tenant information and lease details.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); setRentFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Tenant</button>
         </div>
       </div>
@@ -1935,24 +3009,35 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
                 const paid = rentStatus === 'Paid';
                 const payment = rentPaymentFor(t, period);
                 const late = rentDaysLate(t, period);
+                const quote = rentQuoteToday(t, period);
                 const rentTitle = paid
-                  ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'} — tick to undo`
-                  : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''} — tick once collected`;
+                  ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'}${payment && payment.discount > 0 ? ` — ${money(payment.amount)} after a ${money(payment.discount)} early-payment discount` : ''} — tick to undo`
+                  : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''}${quote.early ? ` · pays ${money(quote.payable)} today with the ${EARLY_RENT_DISCOUNT_PCT}% early discount` : ''} — tick once collected`;
                 return (
-                  <tr key={t.id} className={rentStatus === 'Overdue' ? 'row-overdue' : ''}>
+                  <tr key={t.id}>
                     <td><strong>{t.id}</strong></td>
-                    <td><div className="applicant-info"><div className="name">{t.name}</div><div className="phone">{formatPhone(t.phone) || '—'}</div></div></td>
-                    <td>{t.stallId}</td>
-                    <td>{t.section}</td>
+                    <td className="no-wrap">{t.name}</td>
+                    <td className="no-wrap">{t.stallId}</td>
+                    <td className="no-wrap">{t.section}</td>
                     <td>{money(t.rent)}</td>
                     <td>
                       <label className="rent-toggle" title={rentTitle}>
                         <input type="checkbox" checked={paid} onChange={(e) => onSetRentPaid(t.id, period, e.target.checked)} aria-label={`Rent paid for ${formatPeriod(period)} by ${t.name}`} />
                         <RentStatusBadge status={rentStatus} />
                       </label>
+                      {paid && payment && payment.discount > 0 && (
+                        <span className="rent-discount-tag" title={`${money(t.rent)} less ${EARLY_RENT_DISCOUNT_PCT}% for paying on or before the due date`}>
+                          −{money(payment.discount)} early
+                        </span>
+                      )}
+                      {!paid && quote.early && quote.discount > 0 && (
+                        <span className="rent-discount-tag muted" title={`Settled on or before ${formatIsoDate(rentDueIso(t, period))}, this month costs ${money(quote.payable)}`}>
+                          {money(quote.payable)} if paid today
+                        </span>
+                      )}
                     </td>
                     <td><TenantStatusBadge status={t.status} /></td>
-                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn edit" title="Edit tenant" aria-label="Edit tenant" onClick={() => onEdit(t)}><span className="material-symbols-outlined">edit</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
+                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
                   </tr>
                 );
               })}
@@ -1970,14 +3055,22 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onEdit, onDelete, o
    Utility Billing Page — electricity & water calculator + records
    ============================================================ */
 
-function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport }: {
+function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport, onPrintList }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; search: string;
   onAdd: (b: UtilityBill) => void; onView: (b: UtilityBill) => void;
   onToggleStatus: (id: string) => void; onDelete: (b: UtilityBill) => void;
-  onPrint: (b: UtilityBill) => void; onPrintBatch: (bills: UtilityBill[]) => void;
+  onPrint: (b: UtilityBill) => void;
+  onPrintBatch: (bills: UtilityBill[]) => void;
   onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
   onExport: () => void;
+  onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void;
 }) {
+  const printList = () => onPrintList(
+    'Utility Billing',
+    `${typeFilter || 'Electricity and water'} · ${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Bill ID', 'Type', 'Stall', 'Tenant', 'Amount', 'Due', 'Status'],
+    filtered.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', money(b.amount), formatIsoDate(b.dueDate), isOverdue(b) ? 'Overdue' : b.status]),
+  );
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -1996,6 +3089,28 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
   }), [bills, typeFilter, statusFilter, search]);
 
   const paged = paginate(filtered, page);
+
+  /* Bills ticked for a batch print, held by id so the set survives paging and
+     refiltering. Ids that fall out of the records entirely are dropped when
+     the batch is built, so a deleted bill can never reach the printer. */
+  const [selected, setSelected] = useState<string[]>([]);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const selectedBills = useMemo(
+    () => selected.map((id) => bills.find((b) => b.id === id)).filter((b): b is UtilityBill => !!b),
+    [selected, bills],
+  );
+
+  const toggleOne = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  /* The header box acts on the rows in view, which is what the officer can
+     actually see — not the whole filtered set behind the pagination. */
+  const pageIds = paged.items.map((b) => b.id);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedSet.has(id));
+  const togglePage = () =>
+    setSelected((prev) => (allOnPageSelected
+      ? prev.filter((id) => !pageIds.includes(id))
+      : [...prev, ...pageIds.filter((id) => !prev.includes(id))]));
 
   const totals = useMemo(() => {
     const period = currentPeriod();
@@ -2019,11 +3134,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         <div><h2 className="page-title">Utility Billing</h2><p className="page-subtitle">Compute electricity and water charges and post them to a stall or tenant record.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => { setTypeFilter(''); setStatusFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
-          {/* Prints whatever the filters currently show, four bills to a sheet —
-              a section's or a month's receipts in one run. */}
-          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No bills match the current filters' : undefined} onClick={() => onPrintBatch(filtered)}>
-            <span className="material-symbols-outlined">print</span>Print {filtered.length} Receipt{filtered.length === 1 ? '' : 's'}
-          </button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
         </div>
       </div>
@@ -2037,12 +3148,12 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Electricity</span><span className="material-symbols-outlined stat-icon warning">bolt</span></div>
           <div className="stat-value">{moneyShort(totals.electricity)}</div>
-          <div className="stat-caption">{totals.kwh.toLocaleString()} kWh billed</div>
+          <div className="stat-caption">{totals.kwh.toLocaleString()} {UTILITY_PRESETS.Electricity.unit} billed</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Water</span><span className="material-symbols-outlined stat-icon primary">water_drop</span></div>
           <div className="stat-value">{moneyShort(totals.water)}</div>
-          <div className="stat-caption">{totals.cubic.toLocaleString()} m³ billed</div>
+          <div className="stat-caption">{totals.cubic.toLocaleString()} {UTILITY_PRESETS.Water.unit} billed</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Outstanding</span><span className="material-symbols-outlined stat-icon danger">payments</span></div>
@@ -2060,12 +3171,50 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
           <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Unpaid">Unpaid</option><option value="Paid">Paid</option><option value="Overdue">Overdue</option></select>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} bills</span>
         </div>
+
+        {/* Only appears once something is ticked, so the table is unchanged
+            for the ordinary one-bill-at-a-time way of working. */}
+        {selectedBills.length > 0 && (
+          <div className="batch-bar">
+            <span className="batch-count">
+              <span className="material-symbols-outlined">checklist</span>
+              {selectedBills.length} bill{selectedBills.length === 1 ? '' : 's'} selected
+              <span className="batch-sheets">· {Math.ceil(selectedBills.length / RECEIPTS_PER_SHEET)} A4 sheet{Math.ceil(selectedBills.length / RECEIPTS_PER_SHEET) === 1 ? '' : 's'}, {RECEIPTS_PER_SHEET} receipts to a sheet</span>
+            </span>
+            <div className="batch-actions">
+              <button type="button" className="btn-outline" onClick={() => setSelected([])}>Clear Selection</button>
+              <button type="button" className="btn-primary" onClick={() => onPrintBatch(selectedBills)}>
+                <span className="material-symbols-outlined">print</span>Print {selectedBills.length} Receipt{selectedBills.length === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Bill ID</th><th>Utility</th><th>Stall No.</th><th>Meter No.</th><th>Tenant</th><th>Period</th><th>Consumption</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+            <thead><tr>
+              <th className="check-col">
+                <input
+                  type="checkbox"
+                  aria-label={allOnPageSelected ? 'Clear selection on this page' : 'Select every bill on this page'}
+                  checked={allOnPageSelected}
+                  disabled={pageIds.length === 0}
+                  onChange={togglePage}
+                />
+              </th>
+              <th>Bill ID</th><th>Utility</th><th>Stall No.</th><th>Meter No.</th><th>Tenant</th><th>Period</th><th>Consumption</th><th>Amount</th><th>Status</th><th>Action</th>
+            </tr></thead>
             <tbody>
               {paged.items.map((b) => (
-                <tr key={b.id}>
+                <tr key={b.id} className={selectedSet.has(b.id) ? 'row-selected' : undefined}>
+                  <td className="check-col">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select bill ${b.id} for printing`}
+                      checked={selectedSet.has(b.id)}
+                      onChange={() => toggleOne(b.id)}
+                    />
+                  </td>
                   <td><strong>{b.id}</strong></td>
                   <td><span className={`utility-tag ${b.type.toLowerCase()}`}><span className="material-symbols-outlined">{UTILITY_PRESETS[b.type].icon}</span>{b.type}</span></td>
                   <td><strong>{b.stallId}</strong></td>
@@ -2085,7 +3234,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
                   </td>
                 </tr>
               ))}
-              {paged.items.length === 0 && <tr><td colSpan={10}><div className="empty-state"><span className="material-symbols-outlined">receipt_long</span>No utility bills match the current filters.</div></td></tr>}
+              {paged.items.length === 0 && <tr><td colSpan={11}><div className="empty-state"><span className="material-symbols-outlined">receipt_long</span>No utility bills match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -2118,7 +3267,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const [previous, setPrevious] = useState('');
   const [current, setCurrent] = useState('');
   const [rate, setRate] = useState(String(UTILITY_PRESETS.Electricity.rate));
-  const [fixedCharge, setFixedCharge] = useState(String(UTILITY_PRESETS.Electricity.fixedCharge));
   /* The bill falls due after the period it covers. Moving the period end drags
      the due date with it, until the officer sets one of their own. */
   const [dueDate, setDueDate] = useState(() => isoPlusDays(monthEndIso(currentPeriod()), 15));
@@ -2158,7 +3306,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const applyType = (next: UtilityType) => {
     setType(next);
     setRate(String(UTILITY_PRESETS[next].rate));
-    setFixedCharge(String(UTILITY_PRESETS[next].fixedCharge));
     fillFromRecords(stallId, tenants.find((t) => t.id === tenantId), next);
     setError('');
   };
@@ -2193,9 +3340,13 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const prevNum = toAmount(previous);
   const currNum = toAmount(current);
   const rateNum = toAmount(rate);
-  const fixedNum = toAmount(fixedCharge);
-  const { consumption, usageCharge, amount } = computeBill(prevNum, currNum, rateNum, fixedNum);
+  const { consumption, amount } = computeBill(prevNum, currNum, rateNum);
   const readingsInverted = current !== '' && currNum < prevNum;
+  /* A live heads-up, not an enforced figure — the bill is not on record yet,
+     so nothing here is what actually prints; it just warns the officer before
+     they save or print that the due date they picked has already passed. */
+  const wouldBeOverdue = !!dueDate && dueDate < todayIso();
+  const previewSurcharge = wouldBeOverdue ? Math.round(amount * (SURCHARGE_RATES[type] / 100) * 100) / 100 : 0;
 
   const resetForm = () => {
     setCurrent(''); setNotes(''); setError('');
@@ -2208,7 +3359,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     if (isNegative(previous) || isNegative(current)) return 'Meter readings cannot be negative.';
     if (readingsInverted) return 'Current reading cannot be lower than the previous reading.';
     if (rateNum <= 0) return 'Rate per unit must be greater than zero.';
-    if (isNegative(fixedCharge)) return 'Fixed / service charge cannot be negative.';
     if (!periodStart || !periodEnd) return 'Set the days this billing period covers.';
     if (periodEnd < periodStart) return 'The billing period cannot end before it starts.';
     if (dueDate && dueDate < periodEnd) return 'The due date falls before the billing period ends.';
@@ -2234,7 +3384,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
       currentReading: currNum,
       consumption,
       rate: rateNum,
-      fixedCharge: fixedNum,
       amount,
       status: 'Unpaid',
       dateIssued: todayIso(),
@@ -2361,15 +3510,10 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Rate per {preset.unit} (₱)</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={rate} onChange={(e) => { setRate(e.target.value); setError(''); }} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Fixed / Service Charge (₱)</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={fixedCharge} onChange={(e) => setFixedCharge(e.target.value)} />
-            </div>
+          <div className="form-group">
+            <label className="form-label">Rate per {preset.unit} (₱)</label>
+            <input className="form-input" type="number" min="0" step="0.01" value={rate} onChange={(e) => { setRate(e.target.value); setError(''); }} />
+            <span className="form-hint">The market's fee schedule sets this at {money(UTILITY_PRESETS[type].rate)} per {preset.unit} for {type.toLowerCase()} — editable per bill if a stall is metered on a different rate.</span>
           </div>
 
           <div className="form-group">
@@ -2391,9 +3535,17 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           <div className="calc-row"><span>Previous reading</span><strong>{prevNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row"><span>Current reading</span><strong>{currNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row highlight"><span>Consumption</span><strong>{consumption.toLocaleString()} {preset.unit}</strong></div>
-          <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(usageCharge)}</strong></div>
-          <div className="calc-row"><span>Fixed / service charge</span><strong>{money(fixedNum)}</strong></div>
-          <div className="calc-total"><span>Total Amount Due</span><strong>{money(amount)}</strong></div>
+          <div className="calc-row"><span>Rate per {preset.unit}</span><strong>{money(rateNum)}</strong></div>
+          <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(amount)}</strong></div>
+          {wouldBeOverdue ? (
+            <>
+              <div className="calc-row warning"><span>Late Surcharge ({SURCHARGE_RATES[type]}%) — due date already passed</span><strong>+{money(previewSurcharge)}</strong></div>
+              <div className="calc-total"><span>Total if Printed Today</span><strong>{money(amount + previewSurcharge)}</strong></div>
+              <p className="calc-surcharge-note">This due date has already passed, so a receipt printed today will carry the surcharge automatically. The amount saved to records is {money(amount)}; the surcharge is never added to that figure, only to whatever is printed after the due date.</p>
+            </>
+          ) : (
+            <div className="calc-total"><span>Total Amount Due</span><strong>{money(amount)}</strong></div>
+          )}
           <div className="calc-row"><span>Due date</span><strong>{formatIsoDate(dueDate)}</strong></div>
           {error && <div className="calc-error"><span className="material-symbols-outlined">error</span>{error}</div>}
           <div className="calc-actions">
@@ -2422,11 +3574,18 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
    Violations Page — the register of citations issued to tenants
    ============================================================ */
 
-function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, onExport }: {
+function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, onExport, onPrintList }: {
   violations: Violation[]; search: string;
   onAdd: () => void; onView: (v: Violation) => void; onEdit: (v: Violation) => void;
   onDelete: (v: Violation) => void; onExport: () => void;
+  onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void;
 }) {
+  const printList = () => onPrintList(
+    'Violations',
+    `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
+    ['Violation ID', 'Tenant', 'Issue', 'Points', 'Status', 'Recorded'],
+    ordered.map((v) => [v.id, v.tenant, v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—']),
+  );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
 
@@ -2470,6 +3629,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
         <div className="page-actions">
           <button className="btn-outline" onClick={() => setStatusFilter('')}><span className="material-symbols-outlined">tune</span>Clear Filter</button>
           <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
+          <button className="btn-outline" disabled={ordered.length === 0} title={ordered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>Record Violation</button>
         </div>
       </div>
@@ -2810,7 +3970,7 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
   const monthlyRent = useMemo(() => state.tenants.reduce((s, t) => s + t.rent, 0), [state.tenants]);
 
   const applicantRows = useMemo(() => {
-    const statuses: ApplicantStatus[] = ['Pending Review', 'Incomplete', 'Approved', 'Rejected'];
+    const statuses: ApplicantStatus[] = ['Pending Review', 'Incomplete', 'No BP', 'Approved', 'Rejected'];
     return statuses.map((status) => ({ status, count: state.applicants.filter((a) => a.status === status).length }));
   }, [state.applicants]);
   const pendingApplicants = applicantRows[0].count;
@@ -2885,6 +4045,9 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
     { label: 'Occupied', count: occupiedCount, tone: 'occupied' },
     { label: 'Available', count: availableCount, tone: 'available' },
     { label: 'Maintenance', count: maintenanceCount, tone: 'maintenance' },
+    { label: 'Temporarily Closed', count: countStatus(state.stalls, 'Temporarily Closed'), tone: 'closed' },
+    { label: 'Closed', count: countStatus(state.stalls, 'Closed'), tone: 'shut' },
+    { label: 'Abandoned', count: countStatus(state.stalls, 'Abandoned'), tone: 'abandoned' },
   ];
 
   const reference = `PMRMS-AR-${isoDate(generatedAt).replace(/-/g, '')}`;
@@ -3089,7 +4252,13 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
    Logbook Page
    ============================================================ */
 
-function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEntry[]; search: string; onAdd: () => void; onDelete: (l: LogEntry) => void; onExport: () => void }) {
+function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList }: { logs: LogEntry[]; search: string; onAdd: () => void; onDelete: (l: LogEntry) => void; onExport: () => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  const printList = () => onPrintList(
+    'Logbook',
+    `${typeFilter || 'All entry types'}${dayFilter ? ` · ${formatIsoDate(dayFilter)}` : ''}${search ? ` · matching “${search}”` : ''}`,
+    ['Date', 'Time', 'Type', 'Details'],
+    ordered.map((l) => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]),
+  );
   const [typeFilter, setTypeFilter] = useState('');
   const [dayFilter, setDayFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -3119,7 +4288,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport }: { logs: LogEnt
     <>
       <div className="page-header">
         <div><h2 className="page-title">Logbook</h2><p className="page-subtitle">Operational history and daily activity logs.</p></div>
-        <div className="page-actions"><button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Log</button><button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Entry</button></div>
+        <div className="page-actions"><button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Log</button><button className="btn-outline" disabled={ordered.length === 0} title={ordered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button><button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Entry</button></div>
       </div>
       <div className="panel">
         <div className="panel-header">
@@ -3203,7 +4372,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
   const backup = useBackupFile((data, file) => setPending({ data, fileName: file.name }));
 
   const countOf = (data: AppState) =>
-    data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length;
+    data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length + data.officers.length;
 
   /* Read straight from the database rather than counted off the screen, so the
      figures shown are the ones actually on disk. Re-read after every save. */
@@ -3234,7 +4403,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
           <div className="settings-section-body">
             <div className="settings-item"><span className="settings-item-label">Application</span><span className="settings-item-value">Tanauan Public Market v1.0</span></div>
             <div className="settings-item"><span className="settings-item-label">Storage</span><span className="settings-item-value">{backendName()}</span></div>
-            <div className="settings-item"><span className="settings-item-label">Total Records</span><span className="settings-item-value">{state.stalls.length + state.tenants.length + state.applicants.length + state.logs.length + state.violations.length + state.utilities.length}</span></div>
+            <div className="settings-item"><span className="settings-item-label">Total Records</span><span className="settings-item-value">{state.stalls.length + state.tenants.length + state.applicants.length + state.logs.length + state.violations.length + state.utilities.length + state.officers.length}</span></div>
             <div className="settings-item"><span className="settings-item-label">Last Saved</span><span className="settings-item-value">{lastSaved ? new Date(lastSaved).toLocaleString() : 'Not yet saved'}</span></div>
           </div>
         </div>
@@ -3303,7 +4472,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
           icon="upload_file"
           iconStyle="warning"
           title="Import and replace all records?"
-          description={`"${pending.fileName}" holds ${countOf(pending.data)} records — ${pending.data.tenants.length} tenants, ${pending.data.stalls.length} stalls, ${pending.data.applicants.length} applicants, ${pending.data.utilities.length} utility bills, ${pending.data.violations.length} violations, and ${pending.data.logs.length} logbook entries. Importing replaces the ${countOf(state)} records on this workstation. This cannot be undone.`}
+          description={`"${pending.fileName}" holds ${countOf(pending.data)} records — ${pending.data.tenants.length} tenants, ${pending.data.stalls.length} stalls, ${pending.data.applicants.length} applicants, ${pending.data.utilities.length} utility bills, ${pending.data.violations.length} violations, ${pending.data.logs.length} logbook entries, and ${pending.data.officers.length} seats on the office board. Importing replaces the ${countOf(state)} records on this workstation. This cannot be undone.`}
           confirmLabel="Import and Replace"
           onConfirm={() => { onImport(pending.data); setPending(null); }}
           onCancel={() => setPending(null)}
@@ -3381,7 +4550,7 @@ function SupportPage({ state, onRestore, onBackup }: { state: AppState; onRestor
               <div>
                 <h4>Download Full Backup</h4>
                 <p>Export all system data (stalls, tenants, applicants, logs, settings) as a single JSON file. Use this to transfer data to another computer running this system.</p>
-                <p className="backup-meta">Current records: {state.stalls.length} stalls · {state.tenants.length} tenants · {state.applicants.length} applicants · {state.utilities.length} utility bills · {state.violations.length} violations · {state.logs.length} logs</p>
+                <p className="backup-meta">Current records: {state.stalls.length} stalls · {state.tenants.length} tenants · {state.applicants.length} applicants · {state.utilities.length} utility bills · {state.violations.length} violations · {state.logs.length} logs · {state.officers.length} office seats</p>
               </div>
             </div>
             <button className="btn-primary" onClick={onBackup}><span className="material-symbols-outlined">download</span>Download Full Backup</button>
@@ -3507,8 +4676,8 @@ function keepText(draft: string, current: string) {
 /* `stacked` is for a dialog opened from inside another one: it sits on a higher
    layer and swallows Escape before the form underneath sees it, so closing the
    sub-dialog never dismisses the record being edited. */
-function Modal({ title, subtitle, onClose, wide, narrow, stacked, children }: {
-  title: string; subtitle?: string; onClose: () => void; wide?: boolean; narrow?: boolean; stacked?: boolean; children: ReactNode;
+function Modal({ title, subtitle, onClose, wide, narrow, stacked, sheet, children }: {
+  title: string; subtitle?: string; onClose: () => void; wide?: boolean; narrow?: boolean; stacked?: boolean; sheet?: boolean; children: ReactNode;
 }) {
   useEffect(() => {
     if (!stacked) return;
@@ -3526,7 +4695,7 @@ function Modal({ title, subtitle, onClose, wide, narrow, stacked, children }: {
 
   return (
     <div className={`modal-overlay${stacked ? ' stacked' : ''}`} onClick={onClose}>
-      <div className={`modal-card${wide ? ' wide' : ''}${narrow ? ' narrow' : ''}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-card${wide ? ' wide' : ''}${sheet ? ' sheet' : ''}${narrow ? ' narrow' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-heading">
             <h3>{title}</h3>
@@ -3569,11 +4738,12 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
   const [section, setSection] = useState(SECTIONS[0]);
   const [tenant, setTenant] = useState('');
   const [status, setStatus] = useState<StallStatus>('Available');
+  const [permit, setPermit] = useState<PermitStatus>('Not Recorded');
   const [error, setError] = useState('');
 
   const handleSubmit = () => {
-    if (status === 'Occupied' && !tenant.trim()) {
-      setError('Enter the tenant occupying this stall, or set the status to Available.');
+    if (HELD_STATUSES.includes(status) && !tenant.trim()) {
+      setError('Enter the tenant holding this stall, or set the status to Available.');
       return;
     }
     const typedId = id.trim();
@@ -3582,7 +4752,7 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
       return;
     }
     const stallId = typedId || nextId('STL', existingIds);
-    onSubmit({ id: stallId, section, tenant: status === 'Available' ? 'Vacant' : (tenant.trim() || 'Vacant'), status, lastInspection: status === 'Available' ? '-' : todayStr() });
+    onSubmit({ id: stallId, section, tenant: status === 'Available' ? 'Vacant' : (tenant.trim() || 'Vacant'), status, permit, lastInspection: status === 'Available' ? '-' : todayStr(), note: '' });
   };
 
   return (
@@ -3593,7 +4763,11 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
       </div>
       <div className="form-row">
         <div className="form-group"><label className="form-label">Tenant{status === 'Occupied' ? ' *' : ''}</label><input className="form-input" placeholder={status === 'Occupied' ? 'Required for an occupied stall' : 'Leave blank if vacant'} value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} /></div>
-        <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => { setStatus(e.target.value as StallStatus); setError(''); }}><option value="Available">Available</option><option value="Occupied">Occupied</option><option value="Maintenance">Maintenance</option></select></div>
+        <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => { setStatus(e.target.value as StallStatus); setError(''); }}>{STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label className="form-label">Business Permit</label><select className="form-select" value={permit} onChange={(e) => setPermit(e.target.value as PermitStatus)}>{PERMIT_STATUSES.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+        <div className="form-group" />
       </div>
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
       <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}><button className="btn-outline" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={handleSubmit}>Add Stall</button></div>
@@ -3639,12 +4813,28 @@ function RequirementsChecklist({ selected, onChange }: { selected: string[]; onC
   );
 }
 
-function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]; onSubmit: (a: Applicant) => void; onCancel: () => void }) {
+function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, onCancel }: { existingIds: string[]; stalls: Stall[]; tenants: Tenant[]; applicants: Applicant[]; onSubmit: (a: Applicant) => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [stallType, setStallType] = useState(STALL_TYPES[0]);
+  const [section, setSection] = useState(SECTIONS[0]);
+  const [stallId, setStallId] = useState('');
   const [requirements, setRequirements] = useState<string[]>([]);
   const [error, setError] = useState('');
+
+  /* Offerable means the office marked it Available and no tenant record holds
+     it. An existing application naming the stall does not withhold it — the
+     applicant list is a queue of requests, not a set of reservations. */
+  const takenByTenant = useMemo(() => new Set(tenants.map((t) => t.stallId)), [tenants]);
+  const openStalls = useMemo(
+    () => stalls.filter((st) => st.section === section && st.status === 'Available' && !takenByTenant.has(st.id)),
+    [stalls, section, takenByTenant],
+  );
+  /* Who already asked for each stall, so the clerk is told rather than blocked. */
+  const requestedBy = useMemo(() => {
+    const map = new Map<string, string>();
+    applicants.forEach((a) => { if (a.stallId && !map.has(a.stallId)) map.set(a.stallId, a.name); });
+    return map;
+  }, [applicants]);
 
   const handleSubmit = () => {
     if (!name.trim()) { setError('Full name is required.'); return; }
@@ -3654,7 +4844,7 @@ function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: st
       id: nextId('APP', existingIds),
       name: name.trim(),
       phone: phone.trim() || '—',
-      stallType,
+      stallId: stallId || undefined,
       status: deriveStatus('Incomplete', requirements),
       dateApplied: todayStr(),
       requirements,
@@ -3672,7 +4862,21 @@ function AddApplicantForm({ existingIds, onSubmit, onCancel }: { existingIds: st
         </div>
       </div>
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Stall Type</label><select className="form-select" value={stallType} onChange={(e) => setStallType(e.target.value)}>{STALL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+        <div className="form-group">
+          <label className="form-label">Section</label>
+          <select className="form-select" value={section} onChange={(e) => { setSection(e.target.value); setStallId(''); setError(''); }}>
+            {SECTIONS.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
+          </select>
+          <span className="form-hint">Choosing a section lists the stalls still free in it.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Preferred Stall</label>
+          <select className="form-select" value={stallId} disabled={openStalls.length === 0} onChange={(e) => { setStallId(e.target.value); setError(''); }}>
+            <option value="">{openStalls.length === 0 ? '— None free in this section' : '— Decide later'}</option>
+            {openStalls.map((st) => <option key={st.id} value={st.id}>{st.id}{requestedBy.has(st.id) ? ` · also asked for by ${requestedBy.get(st.id)}` : ''}</option>)}
+          </select>
+          <span className="form-hint">{openStalls.length} stall{openStalls.length === 1 ? '' : 's'} free in {section}.</span>
+        </div>
       </div>
       <RequirementsChecklist selected={requirements} onChange={setRequirements} />
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
@@ -3688,10 +4892,16 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
     [stalls, takenStalls],
   );
 
-  const [stallId, setStallId] = useState(vacantStalls[0]?.id ?? '');
+  /* Open on the stall the applicant asked for, as long as it is still free. */
+  const requested = useMemo(
+    () => (applicant.stallId ? vacantStalls.find((v) => v.id === applicant.stallId) : undefined),
+    [applicant.stallId, vacantStalls],
+  );
+  const opening = requested ?? vacantStalls[0];
+  const [stallId, setStallId] = useState(opening?.id ?? '');
   const [name, setName] = useState(applicant.name);
   const [phone, setPhone] = useState(() => digitsOnly(applicant.phone));
-  const [section, setSection] = useState(() => vacantStalls[0]?.section ?? SECTIONS[0]);
+  const [section, setSection] = useState(() => opening?.section ?? SECTIONS[0]);
   const [rent, setRent] = useState(3500);
   const [status, setStatus] = useState('Active');
   const [error, setError] = useState('');
@@ -3768,8 +4978,6 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
             <div className="form-group"><label className="form-label">Monthly Rent (₱)</label><input className="form-input" type="number" min="0" step="500" value={rent} onChange={(e) => setRent(toAmount(e.target.value))} /></div>
             <div className="form-group"><label className="form-label">Lease Status</label><select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select></div>
           </div>
-
-          <div className="form-group"><label className="form-label">Applied For</label><input className="form-input" value={applicant.stallType} disabled /></div>
 
           {duplicate && <span className="form-hint error">A tenant named "{duplicate.name}" ({duplicate.id}) already exists — check this is not a duplicate.</span>}
         </>
@@ -3901,7 +5109,7 @@ function AddLogForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]
    Detail Views
    ============================================================ */
 
-function StallDetailView({ stall, occupant, bills, onEdit, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onEdit: () => void; onClose: () => void }) {
+function StallDetailView({ stall, occupant, bills, onEdit, onClose, onVerify }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; onEdit: () => void; onClose: () => void; onVerify: () => void }) {
   const billed = bills.reduce((sum, b) => sum + b.amount, 0);
   const unpaid = bills.filter((b) => b.status === 'Unpaid').reduce((sum, b) => sum + b.amount, 0);
 
@@ -3917,6 +5125,8 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose }: { stall: S
           <RecordRow label="Market Section" value={stall.section} />
           <RecordRow label="Occupancy Status" node={<StatusBadge status={stall.status} />} />
           <RecordRow label="Last Inspection" value={stall.lastInspection === '-' ? '' : stall.lastInspection} />
+          <RecordRow label="Business Permit" node={<PermitBadge permit={stall.permit} />} />
+          <RecordRow label="Sheet Note" value={stall.note} />
         </div>
       </RecordSection>
 
@@ -3950,6 +5160,7 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose }: { stall: S
     <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued for stall ${stall.id} yet.`} />
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-outline" onClick={onVerify}><span className="material-symbols-outlined">fact_check</span>Stall / Space Verification</button>
       <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Details</button>
     </div>
   </>);
@@ -3960,30 +5171,38 @@ function StallEditForm({ stall, occupant, bills, onSave, onClose }: { stall: Sta
   const [section, setSection] = useState('');
   const [tenant, setTenant] = useState('');
   const [status, setStatus] = useState<'' | StallStatus>('');
+  const [permit, setPermit] = useState<'' | PermitStatus>('');
   const [lastInspection, setLastInspection] = useState('');
 
   const locked = !!occupant;
   const recordedTenant = stall.tenant === 'Vacant' ? '' : stall.tenant;
-  const dirty = !!(section || tenant.trim() || status || lastInspection.trim());
-  const effectiveStatus: StallStatus = locked ? 'Occupied' : (status || stall.status);
+  const dirty = !!(section || tenant.trim() || status || permit || lastInspection.trim());
+  /* A tenant record holds the stall, but it does not mean the stall is trading —
+     a temporarily closed or abandoned one keeps that state through an edit. */
+  const heldFallback: StallStatus = HELD_STATUSES.includes(stall.status) ? stall.status : 'Occupied';
+  const effectiveStatus: StallStatus = locked ? (status || heldFallback) : (status || stall.status);
+  /* Choosing Available on a held stall ends the tenancy — flagged in the form
+     before it is saved, because the tenant record does not come back. */
+  const releasing = locked && effectiveStatus === 'Available';
 
   const merged = (): Stall => {
-    const nextTenant = locked
-      ? occupant.name
-      : effectiveStatus === 'Available' ? 'Vacant' : (keepText(tenant, recordedTenant) || 'Vacant');
+    const nextTenant = effectiveStatus === 'Available'
+      ? 'Vacant'
+      : locked ? occupant.name : (keepText(tenant, recordedTenant) || 'Vacant');
     return {
       ...stall,
       section: section || stall.section,
       tenant: nextTenant,
       status: effectiveStatus,
+      permit: permit || stall.permit,
       lastInspection: keepText(lastInspection, stall.lastInspection) || '-',
     };
   };
 
   const commit = () => {
     const next = merged();
-    if (!locked && next.status === 'Occupied' && next.tenant === 'Vacant') {
-      return 'Enter the tenant occupying this stall, or set the status back to Available.';
+    if (!locked && HELD_STATUSES.includes(next.status) && next.tenant === 'Vacant') {
+      return 'Enter the tenant holding this stall, or set the status back to Available.';
     }
     onSave(next, {}, stall);
     return '';
@@ -4013,11 +5232,23 @@ function StallEditForm({ stall, occupant, bills, onSave, onClose }: { stall: Sta
         </div>
         <div className="form-group">
           <label className="form-label">Status</label>
-          <select className="form-select" value={locked ? 'Occupied' : status} disabled={locked} onChange={(e) => edit(setStatus)(e.target.value as StallStatus)}>
-            {!locked && <option value="">— Keep {stall.status}</option>}
-            <option value="Available">Available</option><option value="Occupied">Occupied</option><option value="Maintenance">Maintenance</option>
+          <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value as StallStatus)}>
+            <option value="">— Keep {stall.status}</option>
+            {STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {locked && <span className="form-hint">Occupied while a tenant record is assigned to it.</span>}
+          {locked && !releasing && <span className="form-hint">Held by tenant record {occupant.id}. Setting this to Available hands the stall back and removes that record.</span>}
+          {releasing && (
+            <span className="form-hint error">
+              Saving will remove tenant {occupant.id} ({occupant.name}) from tenant records and leave {stall.id} vacant. Their utility bills are kept as billing history. This cannot be undone.
+            </span>
+          )}
+        </div>
+        <div className="form-group">
+          <label className="form-label">Business Permit</label>
+          <select className="form-select" value={permit} onChange={(e) => edit(setPermit)(e.target.value as PermitStatus)}>
+            <option value="">— Keep {stall.permit}</option>
+            {PERMIT_STATUSES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
         </div>
       </div>
       <div className="form-group">
@@ -4066,7 +5297,6 @@ function ApplicantDetailView({ applicant, onReview, onClose }: { applicant: Appl
         <div className="record-grid">
           <RecordRow label="Full Name" value={applicant.name} />
           <RecordRow label="Contact Number" value={formatPhone(applicant.phone)} />
-          <RecordRow label="Stall Type Applied For" value={applicant.stallType} />
           <RecordRow label="Date Applied" value={applicant.dateApplied} />
         </div>
       </RecordSection>
@@ -4100,7 +5330,6 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
   // Blank draft — anything left blank keeps what the application already has.
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [stallType, setStallType] = useState('');
   const [status, setStatus] = useState<'' | ApplicantStatus>('');
 
   /* The checklist is ticked in the draft like every other field, so a document
@@ -4109,7 +5338,7 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
   const complete = REQUIREMENTS.every((r) => requirements.includes(r));
   const missing = REQUIREMENTS.length - requirements.length;
   const reqsChanged = REQUIREMENTS.some((r) => requirements.includes(r) !== current.requirements.includes(r));
-  const dirty = !!(name.trim() || phone.trim() || stallType || status || reqsChanged);
+  const dirty = !!(name.trim() || phone.trim() || status || reqsChanged);
 
   const merged = (overrideStatus?: ApplicantStatus): Applicant => {
     const base = status || current.status;
@@ -4117,7 +5346,6 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
       ...current,
       name: keepText(name, current.name),
       phone: keepText(phone, current.phone) || '—',
-      stallType: stallType || current.stallType,
       requirements,
       /* A tick that completes or breaks the checklist moves the standing with
          it, unless the officer chose a status explicitly. */
@@ -4156,18 +5384,12 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
       </div>
       <div className="form-row">
         <div className="form-group">
-          <label className="form-label">Stall Type</label>
-          <select className="form-select" value={stallType} onChange={(e) => edit(setStallType)(e.target.value)}>
-            <option value="">— Keep {current.stallType}</option>
-            {STALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div className="form-group">
           <label className="form-label">Status</label>
           <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value as ApplicantStatus)}>
             <option value="">— Keep {current.status}</option>
             <option value="Pending Review">Pending Review</option>
             <option value="Incomplete">Incomplete</option>
+            <option value="No BP">No BP</option>
             <option value="Approved">Approved</option>
             <option value="Rejected">Rejected</option>
           </select>
@@ -4295,7 +5517,17 @@ function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { t
             label={paid ? 'Date Paid' : 'Due Date'}
             value={paid ? (payment?.paidOn ? formatIsoDate(payment.paidOn) : '') : formatIsoDate(rentDueIso(tenant, period))}
           />
+          {paid && payment && payment.discount > 0 && (<>
+            <RecordRow label={`Early-Payment Discount (${EARLY_RENT_DISCOUNT_PCT}%)`} value={`−${money(payment.discount)}`} />
+            <RecordRow label="Amount Collected" value={money(payment.amount)} />
+          </>)}
         </div>
+        {paid && payment && payment.discount > 0 && (
+          <RecordNote>Settled on {formatIsoDate(payment.paidOn)}, on or before the due date, so {EARLY_RENT_DISCOUNT_PCT}% of the {money(tenant.rent)} monthly rent was taken off. {money(payment.amount)} was collected.</RecordNote>
+        )}
+        {!paid && rentQuoteToday(tenant, period).early && (
+          <RecordNote>Settled today, this month qualifies for the {EARLY_RENT_DISCOUNT_PCT}% early-payment discount: {money(rentQuoteToday(tenant, period).payable)} instead of {money(tenant.rent)}. The discount is lost after {formatIsoDate(rentDueIso(tenant, period))}.</RecordNote>
+        )}
         {rentStatus === 'Overdue' && (
           <RecordNote>Rent for {formatPeriod(period)} fell due on {formatIsoDate(rentDueIso(tenant, period))} and is {late} day{late === 1 ? '' : 's'} past due.</RecordNote>
         )}
@@ -4816,13 +6048,60 @@ function PaginationBar({ info, page, totalPages, onPage, compact }: { info: stri
   );
 }
 
+/* The printed register. Deliberately plain — a column of running numbers, the
+   same headings as the screen, and a footer that says how many records were on
+   the sheet so a printout can be checked against the system later. */
+function RegisterSheet({ job }: { job: RegisterJob }) {
+  return (
+    <div className="register-sheet">
+      <div className="register-head">
+        <img className="register-seal" src="./logo.jpg" alt="" />
+        <div className="register-headings">
+          <div className="register-title">2026 Status of Market Occupancy</div>
+          <div className="register-org">Tanauan, Leyte · Market Office</div>
+        </div>
+        <div className="register-meta">
+          <div className="register-scope">{job.title}</div>
+          <div>{job.subtitle}</div>
+          <div>Printed {job.printedAt}</div>
+        </div>
+      </div>
+      <table className="register-table">
+        <thead>
+          <tr><th className="num">No.</th>{job.columns.map((c) => <th key={c}>{c}</th>)}</tr>
+        </thead>
+        <tbody>
+          {job.rows.map((row, i) => (
+            <tr key={i}><td className="num">{i + 1}</td>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="register-foot">
+        <span>{job.rows.length} record{job.rows.length === 1 ? '' : 's'}</span>
+        <span>Checked by ______________________</span>
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     'Occupied': 'badge badge-occupied', 'Available': 'badge badge-available', 'Maintenance': 'badge badge-maintenance',
+    'Temporarily Closed': 'badge badge-closed', 'Closed': 'badge badge-shut', 'Abandoned': 'badge badge-abandoned',
     'Pending Review': 'badge badge-pending', 'Incomplete': 'badge badge-incomplete', 'Approved': 'badge badge-approved', 'Rejected': 'badge badge-rejected',
+    'No BP': 'badge badge-nobp',
     'Active': 'badge badge-active', 'Expiring Soon': 'badge badge-expiring', 'Open': 'badge badge-open', 'Resolved': 'badge badge-resolved',
   };
   return <span className={map[status] || 'badge'}>{status}</span>;
+}
+
+/* The business-permit column of the occupancy sheet. A blank cell there is
+   'Not Recorded' — which is not the same as knowing the stall has no permit. */
+function PermitBadge({ permit }: { permit: PermitStatus }) {
+  const map: Record<PermitStatus, string> = {
+    'With BP': 'badge badge-active', 'No BP': 'badge badge-open', 'Not Recorded': 'badge',
+  };
+  return <span className={map[permit]}>{permit === 'Not Recorded' ? '—' : permit}</span>;
 }
 
 function BillStatusBadge({ bill }: { bill: UtilityBill }) {
@@ -4921,10 +6200,16 @@ function BillDetailView({ bill, onToggleStatus, onPrint, onClose }: { bill: Util
 
       <RecordSection title="Charges" icon="payments">
         <div className="record-grid">
-          <RecordRow label="Usage Charge" value={money(bill.consumption * bill.rate)} />
-          <RecordRow label="Fixed / Service Charge" value={money(bill.fixedCharge)} />
+          <RecordRow label="Rate" value={`${money(bill.rate)} / ${preset.unit}`} />
+          <RecordRow label="Usage Charge" value={money(bill.amount)} />
         </div>
-        <RecordTotal label="Total Amount Due" value={money(bill.amount)} />
+        {isOverdue(bill) && (
+          <>
+            <RecordRow label={`Late Surcharge (${SURCHARGE_RATES[bill.type]}%)`} value={`+${money(surchargeAmount(bill))}`} />
+            <RecordNote>Past due since {formatIsoDate(bill.dueDate)} — a receipt printed now carries the surcharge automatically. This does not change the amount on record; it applies only to what actually prints.</RecordNote>
+          </>
+        )}
+        <RecordTotal label={isOverdue(bill) ? 'Total if Printed Today' : 'Total Amount Due'} value={money(isOverdue(bill) ? amountWithSurcharge(bill) : bill.amount)} />
       </RecordSection>
 
       {bill.notes && <RecordSection title="Notes" icon="sticky_note_2"><RecordNote>{bill.notes}</RecordNote></RecordSection>}
@@ -5000,12 +6285,16 @@ function RentLedger({ tenant }: { tenant: Tenant }) {
         <p className="bill-history-empty">No month has been marked paid for {tenant.name} yet.</p>
       ) : (
         <table className="mini-table">
-          <thead><tr><th>Month</th><th>Date Paid</th><th>Amount</th><th>Status</th></tr></thead>
+          <thead><tr><th>Month</th><th>Date Paid</th><th>Discount</th><th>Collected</th><th>Status</th></tr></thead>
           <tbody>
             {payments.slice(0, 12).map((p) => (
               <tr key={p.period}>
                 <td>{formatPeriod(p.period)}</td>
                 <td>{p.paidOn ? formatIsoDate(p.paidOn) : '—'}</td>
+                <td>{p.discount > 0
+                  ? <span className="rent-discount-tag" title={`${EARLY_RENT_DISCOUNT_PCT}% off for paying on or before the due date`}>−{money(p.discount)}</span>
+                  : <span className="muted">—</span>}
+                </td>
                 <td><strong>{money(p.amount)}</strong></td>
                 <td><RentStatusBadge status="Paid" /></td>
               </tr>
@@ -5014,6 +6303,463 @@ function RentLedger({ tenant }: { tenant: Tenant }) {
         </table>
       )}
     </div>
+  );
+}
+
+
+/* ============================================================
+   Officers — the market office board
+   ============================================================ */
+
+/* How an officer reads anywhere they are named as somebody else's superior
+   or in an export. A vacant seat is named by its post, because the post is
+   what exists even when nobody holds it. */
+function officerLabel(officer?: Officer) {
+  if (!officer) return '—';
+  return officer.name ? `${officer.name} — ${officer.position}` : `${officer.position} (vacant)`;
+}
+
+/* Every seat that reports to `parentId`, in the order the board holds them.
+   '' asks for the seats at the head of the board. */
+function reportsOf(officers: Officer[], parentId: string) {
+  return officers.filter((o) => o.reportsTo === parentId);
+}
+
+/* Everyone under an officer, however far down. Used to stop a seat being
+   moved beneath one of its own reports, which would close a loop in the
+   board. `linkOfficers` would break such a loop on the next load, but by then
+   the office has already lost the arrangement it meant to save. */
+function descendantsOf(officers: Officer[], id: string): Set<string> {
+  const out = new Set<string>();
+  const walk = (parentId: string) => {
+    for (const child of reportsOf(officers, parentId)) {
+      if (out.has(child.id)) continue;
+      out.add(child.id);
+      walk(child.id);
+    }
+  };
+  walk(id);
+  return out;
+}
+
+/* How deep a seat sits, so the "Reports To" picker can indent the board
+   instead of offering a flat list of every post in the office. */
+function officerDepth(officers: Officer[], officer: Officer) {
+  let depth = 0;
+  let cursor = officer;
+  const seen = new Set<string>([officer.id]);
+  while (cursor.reportsTo) {
+    const parent = officers.find((o) => o.id === cursor.reportsTo);
+    if (!parent || seen.has(parent.id)) break;
+    seen.add(parent.id);
+    cursor = parent;
+    depth += 1;
+  }
+  return depth;
+}
+
+/* The board flattened top-down, so a printed list reads in the same order the
+   chart does rather than in whatever order the seats happened to be added. */
+function officersInBoardOrder(officers: Officer[]): Officer[] {
+  const out: Officer[] = [];
+  const placed = new Set<string>();
+  const walk = (parentId: string) => {
+    for (const officer of reportsOf(officers, parentId)) {
+      if (placed.has(officer.id)) continue;
+      placed.add(officer.id);
+      out.push(officer);
+      walk(officer.id);
+    }
+  };
+  walk('');
+  // Anything the walk could not reach still belongs on the list.
+  for (const officer of officers) if (!placed.has(officer.id)) out.push(officer);
+  return out;
+}
+
+function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPrintList, onExport }: {
+  officers: Officer[]; search: string;
+  onAdd: () => void; onView: (o: Officer) => void; onEdit: (o: Officer) => void; onDelete: (o: Officer) => void;
+  onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void;
+  onExport: () => void;
+}) {
+  const [view, setView] = useState<'board' | 'directory'>('board');
+  const [officeFilter, setOfficeFilter] = useState('');
+  const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [search, officeFilter]);
+  /* A search is a search of the whole office, so it opens the directory — the
+     chart cannot show a match without also showing the seats above it. */
+  useEffect(() => { if (search) setView('directory'); }, [search]);
+
+  const filled = officers.filter((o) => o.name && o.status !== 'Vacant');
+  const vacant = officers.filter((o) => !o.name || o.status === 'Vacant');
+  const onLeave = officers.filter((o) => o.status === 'On Leave');
+  const offices = useMemo(() => Array.from(new Set(officers.map((o) => o.office).filter(Boolean))).sort(), [officers]);
+
+  const ordered = useMemo(() => officersInBoardOrder(officers), [officers]);
+
+  const filtered = useMemo(() => ordered.filter((o) => {
+    if (officeFilter && o.office !== officeFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!o.name.toLowerCase().includes(q) && !o.position.toLowerCase().includes(q) && !o.office.toLowerCase().includes(q) && !o.id.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }), [ordered, officeFilter, search]);
+
+  const paged = paginate(filtered, page);
+
+  const printList = () => onPrintList(
+    officeFilter || 'Market Office Board',
+    `Organizational board${search ? ` · matching “${search}”` : ''} · ${filled.length} of ${officers.length} seat${officers.length === 1 ? '' : 's'} filled`,
+    ['Officer ID', 'Position', 'Name', 'Office', 'Reports To', 'Status', 'Contact'],
+    filtered.map((o) => [o.id, o.position, o.name || 'Vacant', o.office || '—', officerLabel(officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—']),
+  );
+
+  return (
+    <>
+      <div className="page-header">
+        <div><h2 className="page-title">Market Office</h2><p className="page-subtitle">Who holds which post, who reports to whom, and which seats are still to be filled.</p></div>
+        <div className="page-actions">
+          <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
+          <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No seats match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print Board</button>
+          <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>Add Officer</button>
+        </div>
+      </div>
+
+      <div className="stats-row">
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Seats on the Board</span><span className="material-symbols-outlined stat-icon primary">account_tree</span></div>
+          <div className="stat-value">{officers.length}</div>
+          <div className="stat-caption">{filled.length} filled, {vacant.length} vacant</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Officers in Post</span></div>
+          <div className="stat-value">{filled.length}</div>
+          <div className="stat-caption">{percent(ratio(filled.length, officers.length))} of the board</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">On Leave</span></div>
+          <div className="stat-value">{onLeave.length}</div>
+          <div className="stat-caption">{onLeave.length === 0 ? 'Everyone in post is at work' : onLeave.map((o) => o.position).join(', ')}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Vacant Seats</span></div>
+          <div className={`stat-value${vacant.length > 0 ? ' danger' : ''}`}>{vacant.length}</div>
+          <div className="stat-caption">{vacant.length === 0 ? 'Every post is held' : 'Awaiting appointment'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-header"><span className="stat-label">Offices Represented</span><span className="material-symbols-outlined stat-icon primary">corporate_fare</span></div>
+          <div className="stat-value">{offices.length}</div>
+          <div className="stat-caption">{offices.length === 0 ? 'No office recorded on any seat' : offices.slice(0, 2).join(', ')}{offices.length > 2 ? ` +${offices.length - 2} more` : ''}</div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="filter-row">
+          <div className="view-toggle" role="tablist" aria-label="How to show the board">
+            <button type="button" role="tab" aria-selected={view === 'board'} className={`view-toggle-btn${view === 'board' ? ' active' : ''}`} onClick={() => setView('board')}>
+              <span className="material-symbols-outlined">account_tree</span>Organizational Board
+            </button>
+            <button type="button" role="tab" aria-selected={view === 'directory'} className={`view-toggle-btn${view === 'directory' ? ' active' : ''}`} onClick={() => setView('directory')}>
+              <span className="material-symbols-outlined">grid_view</span>Directory
+            </button>
+          </div>
+          {view === 'directory' && (
+            <>
+              <select className="filter-select" value={officeFilter} onChange={(e) => setOfficeFilter(e.target.value)}>
+                <option value="">All Offices</option>
+                {offices.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+              <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total}</span>
+            </>
+          )}
+        </div>
+
+        {view === 'board' ? (
+          <OrgBoard officers={officers} onView={onView} onEdit={onEdit} />
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead><tr><th>Officer</th><th>Office</th><th>Reports To</th><th>Contact</th><th>Appointed</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {paged.items.map((o, i) => (
+                    <tr key={o.id}>
+                      <td>
+                        <div className="applicant-cell">
+                          <div className={`avatar-initials ${o.name ? getAvatarColor(i) : 'vacant'}`}>{o.name ? getInitials(o.name) : '—'}</div>
+                          <div className="applicant-info">
+                            <div className="name">{o.name || <span className="seat-vacant">Vacant seat</span>}</div>
+                            <div className="phone">{o.position}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{o.office || '—'}</td>
+                      <td>{o.reportsTo ? officerLabel(officers.find((x) => x.id === o.reportsTo)) : <span className="seat-vacant">Head of the board</span>}</td>
+                      <td className="no-wrap">{formatPhone(o.phone) || '—'}</td>
+                      <td className="no-wrap">{o.appointed ? formatIsoDate(o.appointed) : '—'}</td>
+                      <td><OfficerStatusBadge officer={o} /></td>
+                      <td>
+                        <div className="row-actions">
+                          <button type="button" className="row-icon-btn" title="View officer" aria-label="View officer" onClick={() => onView(o)}><span className="material-symbols-outlined">visibility</span></button>
+                          <button type="button" className="row-icon-btn edit" title="Edit officer" aria-label="Edit officer" onClick={() => onEdit(o)}><span className="material-symbols-outlined">edit</span></button>
+                          <button type="button" className="row-icon-btn danger" title="Remove from board" aria-label="Remove from board" onClick={() => onDelete(o)}><span className="material-symbols-outlined">delete</span></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">person_search</span>No seats match the current filters.</div></td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function OfficerStatusBadge({ officer }: { officer: Officer }) {
+  if (!officer.name || officer.status === 'Vacant') return <span className="badge badge-abandoned">Vacant</span>;
+  if (officer.status === 'On Leave') return <span className="badge badge-expiring">On Leave</span>;
+  return <span className="badge badge-active">Active</span>;
+}
+
+/* The chart itself. Drawn from `reportsTo` rather than from any fixed idea of
+   what a market office looks like, so an office running three collectors
+   under one supervisor gets three boxes under one box. */
+function OrgBoard({ officers, onView, onEdit }: { officers: Officer[]; onView: (o: Officer) => void; onEdit: (o: Officer) => void }) {
+  const heads = reportsOf(officers, '');
+
+  if (officers.length === 0) {
+    return <div className="empty-state"><span className="material-symbols-outlined">account_tree</span>No seats on the board yet. Add the first one to start the chart.</div>;
+  }
+
+  return (
+    <div className="org-board">
+      <div className="org-board-scroll">
+        <ul className="org-level org-level-root">
+          {heads.map((officer) => (
+            <OrgNode key={officer.id} officer={officer} officers={officers} onView={onView} onEdit={onEdit} seen={new Set()} />
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/* One box and everything under it. `seen` is carried down the recursion so a
+   board that somehow still holds a loop draws each seat once and stops,
+   rather than recursing until the tab dies. */
+function OrgNode({ officer, officers, onView, onEdit, seen }: { officer: Officer; officers: Officer[]; onView: (o: Officer) => void; onEdit: (o: Officer) => void; seen: Set<string> }) {
+  if (seen.has(officer.id)) return null;
+  const below = new Set(seen);
+  below.add(officer.id);
+  const reports = reportsOf(officers, officer.id).filter((o) => !below.has(o.id));
+  const vacant = !officer.name || officer.status === 'Vacant';
+
+  return (
+    <li className="org-node">
+      <div className={`org-card${vacant ? ' vacant' : ''}`}>
+        <button type="button" className="org-card-main" onClick={() => onView(officer)} title={`View ${officer.position}`}>
+          <span className={`avatar-initials ${vacant ? 'vacant' : getAvatarColor(officer.position.length)}`}>{vacant ? '—' : getInitials(officer.name)}</span>
+          <span className="org-card-text">
+            <span className="org-card-name">{officer.name || 'Vacant seat'}</span>
+            <span className="org-card-position">{officer.position}</span>
+            {officer.office && <span className="org-card-office">{officer.office}</span>}
+          </span>
+        </button>
+        <div className="org-card-foot">
+          {officer.status === 'On Leave' && <span className="org-card-tag leave">On leave</span>}
+          <button type="button" className="row-icon-btn edit org-card-edit" title={`Edit ${officer.position}`} aria-label={`Edit ${officer.position}`} onClick={() => onEdit(officer)}>
+            <span className="material-symbols-outlined">edit</span>
+          </button>
+        </div>
+      </div>
+      {reports.length > 0 && (
+        <ul className="org-level">
+          {reports.map((child) => (
+            <OrgNode key={child.id} officer={child} officers={officers} onView={onView} onEdit={onEdit} seen={below} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function OfficerDetailView({ officer, officers, onEdit, onClose }: { officer: Officer; officers: Officer[]; onEdit: () => void; onClose: () => void }) {
+  const superior = officers.find((o) => o.id === officer.reportsTo);
+  const reports = reportsOf(officers, officer.id);
+
+  return (<>
+    <RecordSheet
+      title={officer.name || 'Vacant seat'}
+      subtitle={`${officer.position}${officer.office ? ` · ${officer.office}` : ''} · ${officer.id}`}
+      badge={<OfficerStatusBadge officer={officer} />}
+    >
+      <RecordSection title="The Seat" icon="badge">
+        <div className="record-grid">
+          <RecordRow label="Position" value={officer.position} />
+          <RecordRow label="Office" value={officer.office} />
+          <RecordRow label="Held By" value={officer.name} />
+          <RecordRow label="Appointed" value={officer.appointed ? formatIsoDate(officer.appointed) : ''} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Contact" icon="phone">
+        <div className="record-grid">
+          <RecordRow label="Mobile Number" value={formatPhone(officer.phone)} />
+          <RecordRow label="Email" value={officer.email} />
+        </div>
+      </RecordSection>
+
+      <RecordSection title="Place on the Board" icon="account_tree">
+        <div className="record-grid">
+          <RecordRow label="Reports To" value={superior ? officerLabel(superior) : ''} />
+          <RecordRow label="Seats Reporting In" value={reports.length > 0 ? String(reports.length) : ''} />
+        </div>
+        {reports.length > 0 && (
+          <ul className="record-list">
+            {reports.map((r) => <li key={r.id}>{officerLabel(r)}</li>)}
+          </ul>
+        )}
+      </RecordSection>
+
+    </RecordSheet>
+
+    <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+      <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-primary" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Officer</button>
+    </div>
+  </>);
+}
+
+/* Add and edit are one form. Unlike the tenant and applicant editors this one
+   opens on the values already filed rather than blank: a seat has only a
+   handful of fields, and an officer correcting a spelling should not have to
+   retype the rest of the post. */
+function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Officer[]; officer?: Officer; onSubmit: (o: Officer) => void; onCancel: () => void }) {
+  const editing = Boolean(officer);
+  const [name, setName] = useState(officer?.name ?? '');
+  const [position, setPosition] = useState(officer?.position ?? '');
+  const [office, setOffice] = useState(officer?.office ?? OFFICE_UNITS[1]);
+  const [reportsTo, setReportsTo] = useState(officer?.reportsTo ?? '');
+  const [phone, setPhone] = useState(officer?.phone ?? '');
+  const [email, setEmail] = useState(officer?.email ?? '');
+  const [status, setStatus] = useState<OfficerStatus>(officer?.status ?? 'Active');
+  const [appointed, setAppointed] = useState(officer?.appointed ?? '');
+  const [error, setError] = useState('');
+
+  /* Vacancy is a property of the seat, not a state the holder is in: naming
+     somebody fills the seat, clearing the name empties it again. A seat that
+     was vacant opens on Active the moment a name is typed into it. */
+  const held = Boolean(name.trim());
+  const heldStatus: OfficerStatus = status === 'Vacant' ? 'Active' : status;
+
+  /* A seat cannot be moved under itself or under one of its own reports —
+     that closes a loop and the board stops being a tree. */
+  const forbidden = useMemo(() => {
+    if (!officer) return new Set<string>();
+    const set = descendantsOf(officers, officer.id);
+    set.add(officer.id);
+    return set;
+  }, [officers, officer]);
+
+  const superiors = officersInBoardOrder(officers).filter((o) => !forbidden.has(o.id));
+
+  const submit = () => {
+    const trimmedPosition = position.trim();
+    if (!trimmedPosition) { setError('Enter the position — a seat on the board is a post, even before anybody holds it.'); return; }
+    const phoneError = phoneProblem(phone);
+    if (phoneError) { setError(phoneError); return; }
+    const trimmedEmail = email.trim();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) { setError('Enter a valid email address, or leave it blank.'); return; }
+    const trimmedName = name.trim();
+
+    onSubmit({
+      id: officer?.id ?? nextId('OFC', officers.map((o) => o.id)),
+      name: trimmedName,
+      position: trimmedPosition,
+      office: office.trim(),
+      reportsTo,
+      phone: phone.trim(),
+      email: trimmedEmail,
+      /* A seat with nobody in it is vacant whatever the picker says. */
+      status: trimmedName ? heldStatus : 'Vacant',
+      appointed,
+    });
+  };
+
+  return (
+    <>
+      <div className="form-grid">
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Position *</label>
+            <input className="form-input" autoFocus value={position} placeholder="e.g. Market Supervisor" onChange={(e) => { setPosition(e.target.value); setError(''); }} />
+            <span className="form-hint">The post itself. It stays on the board when the person holding it changes.</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Office</label>
+            <input className="form-input" list="office-units" value={office} placeholder="e.g. Market Office" onChange={(e) => setOffice(e.target.value)} />
+            <datalist id="office-units">{OFFICE_UNITS.map((u) => <option key={u} value={u} />)}</datalist>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Held By</label>
+            <input className="form-input" value={name} placeholder="e.g. Juan Dela Cruz" onChange={(e) => { setName(e.target.value); setError(''); }} />
+            <span className="form-hint">Leave blank if the post is vacant.</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Status</label>
+            <select className="form-select" value={held ? heldStatus : 'Vacant'} disabled={!held} onChange={(e) => setStatus(e.target.value as OfficerStatus)}>
+              {held
+                ? OFFICER_STATUSES.filter((st) => st !== 'Vacant').map((st) => <option key={st} value={st}>{st}</option>)
+                : <option value="Vacant">Vacant</option>}
+            </select>
+            <span className="form-hint">{held ? 'On Leave keeps the seat on the board while its holder is away.' : 'A seat with nobody in it is vacant.'}</span>
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Reports To</label>
+            <select className="form-select" value={reportsTo} onChange={(e) => setReportsTo(e.target.value)}>
+              <option value="">— Head of the board —</option>
+              {superiors.map((o) => <option key={o.id} value={o.id}>{' '.repeat(officerDepth(officers, o) * 3)}{officerLabel(o)}</option>)}
+            </select>
+            <span className="form-hint">{editing && forbidden.size > 1 ? 'This seat and the seats under it are not offered — a seat cannot report to itself.' : 'Where this seat sits on the chart.'}</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Date Appointed</label>
+            <input className="form-input" type="date" value={appointed} max={todayIso()} onChange={(e) => setAppointed(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Mobile Number</label>
+            <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Email</label>
+            <input className="form-input" type="email" value={email} placeholder="e.g. marketoffice@tanauan.gov.ph" onChange={(e) => { setEmail(e.target.value); setError(''); }} />
+          </div>
+        </div>
+
+        {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+      </div>
+
+      <div className="modal-footer">
+        <button className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">save</span>{editing ? 'Save Changes' : 'Add Officer'}</button>
+      </div>
+    </>
   );
 }
 
@@ -5029,6 +6775,44 @@ function chunkIntoSheets(receipts: PrintReceipt[]): PrintReceipt[][] {
     sheets.push(receipts.slice(i, i + RECEIPTS_PER_SHEET));
   }
   return sheets.length > 0 ? sheets : [[]];
+}
+
+/* ---------- Numbering a sheet's bills ----------
+
+   A receipt handed to a tenant is the office's word that the charge exists, so
+   printing one puts the bill on record rather than leaving a numbered slip of
+   paper with nothing behind it.
+
+   Which bills that means, in the order they first appear on the sheet. The
+   same bill printed in four copies is one entry, so it is numbered once and
+   every copy carries that one number; four different bills are four entries.
+   Bills already on record are left alone — reprinting never re-files them. */
+function unsavedBills(bills: UtilityBill[]): UtilityBill[] {
+  const seen = new Set<UtilityBill>();
+  const pending: UtilityBill[] = [];
+  for (const bill of bills) {
+    if (bill.id || seen.has(bill)) continue;
+    seen.add(bill);
+    pending.push(bill);
+  }
+  return pending;
+}
+
+/* Pairs each unsaved bill with the copy of it that carries its new number.
+   The preview and the print run this over the same bills, so the number the
+   officer is shown is the number that ends up on the record. */
+function numberBills(bills: UtilityBill[], ids: string[]): Map<UtilityBill, UtilityBill> {
+  const numbered = new Map<UtilityBill, UtilityBill>();
+  unsavedBills(bills).forEach((bill, i) => {
+    if (ids[i]) numbered.set(bill, { ...bill, id: ids[i] });
+  });
+  return numbered;
+}
+
+/* A bill the office already has for that stall, utility and month. Saving asks
+   before adding a second one; printing cannot ask, so the preview says so. */
+function billsClashing(pending: UtilityBill[], onRecord: UtilityBill[]): UtilityBill[] {
+  return pending.filter((p) => onRecord.some((b) => b.stallId === p.stallId && b.type === p.type && b.period === p.period));
 }
 
 /* What goes on paper, and what the preview shows — the same component both
@@ -5051,7 +6835,7 @@ function ReceiptSheets({ receipts, printedBy, printedAt }: { receipts: PrintRece
 /* A receipt has to say who issued it, and the app has no signed-in identity to
    take that from, so the name is asked for and remembered for the next print.
    Nothing reaches the printer until the officer has seen the sheet. */
-function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRequest; onConfirm: (receipts: PrintReceipt[], printedBy: string) => void; onCancel: () => void }) {
+function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { request: PrintRequest; billsOnRecord: UtilityBill[]; onConfirm: (receipts: PrintReceipt[], printedBy: string) => void; onCancel: () => void }) {
   const [name, setName] = useState(() => { try { return localStorage.getItem(printedByKey) ?? ''; } catch { return ''; } });
   const [copies, setCopies] = useState(2);
   const [error, setError] = useState('');
@@ -5062,13 +6846,99 @@ function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRe
     : request.bills.map((bill) => ({ bill, label: '' }));
 
   const sheets = Math.ceil(Math.max(receipts.length, 1) / RECEIPTS_PER_SHEET);
-  const unsaved = receipts.filter((r) => !r.bill.id).length;
+
+  /* Printing files any draft on the sheet, so the preview shows the number it
+     will be filed under rather than "not yet on record". Only peeked here —
+     the number is claimed when the officer actually prints, so backing out of
+     this dialog leaves the bill numbers where they were. */
+  const pending = unsavedBills(receipts.map((r) => r.bill));
+  const numbered = numberBills(receipts.map((r) => r.bill), peekIds('UTL', billsOnRecord.map((b) => b.id), pending.length));
+  const previewReceipts = receipts.map((r) => ({ ...r, bill: numbered.get(r.bill) ?? r.bill }));
+  const willFile = [...numbered.values()];
+  const clashing = billsClashing(pending, billsOnRecord);
+  const overdueCount = receipts.filter((r) => isOverdue(r.bill)).length;
+
+  /* Zoom is a plain scale on the same sheet the printer gets, so magnifying it
+     cannot change what prints. Fullscreen is an in-page mode rather than the
+     Fullscreen API: the dialog is already inside an Electron window, and a
+     real fullscreen request would hide the window chrome the officer needs. */
+  const [zoom, setZoom] = useState(FIT_ZOOM);
+  const [full, setFull] = useState(false);
+
+  const stepZoom = (delta: number) => setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
+
+  /* Esc backs out of fullscreen before it closes the dialog, so the first press
+     never loses a half-filled form. Capture phase beats Modal's own handler. */
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      setFull(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [full]);
 
   const submit = () => {
     if (!name.trim()) { setError('Enter the name of the person printing these receipts.'); return; }
     if (receipts.length === 0) { setError('There is nothing to print.'); return; }
     onConfirm(receipts, name.trim());
   };
+
+  const preview = (
+    <div className={`print-preview${full ? ' fullscreen' : ''}`} aria-label="Preview of the sheets that will print">
+      <div className="print-preview-toolbar">
+        <span className="print-preview-count">{sheets} A4 sheet{sheets === 1 ? '' : 's'} · {receipts.length} receipt{receipts.length === 1 ? '' : 's'}</span>
+        <div className="print-preview-zoom">
+          <button type="button" className="row-icon-btn" title="Zoom out" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-0.15)}><span className="material-symbols-outlined">zoom_out</span></button>
+          <span className="print-preview-level">{Math.round(zoom * 100)}%</span>
+          <button type="button" className="row-icon-btn" title="Zoom in" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(0.15)}><span className="material-symbols-outlined">zoom_in</span></button>
+          <button type="button" className="btn-outline-sm" onClick={() => setZoom(FIT_ZOOM)}>Fit</button>
+          <button type="button" className="btn-outline-sm" onClick={() => setZoom(1)}>Actual size</button>
+          <button type="button" className="row-icon-btn" title={full ? 'Exit fullscreen' : 'Fullscreen'} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'} onClick={() => setFull((v) => !v)}>
+            <span className="material-symbols-outlined">{full ? 'fullscreen_exit' : 'fullscreen'}</span>
+          </button>
+        </div>
+      </div>
+      <div className="print-preview-viewport">
+        {/* `zoom`, not `transform: scale` — zoom reflows, so the scroll area
+            sizes itself to the magnified sheet. A transform would leave the
+            container at its unscaled size and the sheet would be clipped at
+            anything above 100%. Chromium-only, which is all this app runs on. */}
+        <div className="print-preview-scale zoomable" style={{ zoom }}>
+          <ReceiptSheets
+            receipts={previewReceipts}
+            printedBy={name.trim() || '—'}
+            printedAt={manilaStamp()}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (full) {
+    return (
+      <div className="print-fullscreen" role="dialog" aria-modal="true" aria-label="Print preview, fullscreen">
+        <div className="print-fullscreen-bar">
+          <div className="print-fullscreen-title">
+            <span className="material-symbols-outlined">print</span>
+            <div>
+              <strong>Print Preview</strong>
+              <span>{receipts.length} receipt{receipts.length === 1 ? '' : 's'} · {sheets} A4 sheet{sheets === 1 ? '' : 's'}</span>
+            </div>
+          </div>
+          <div className="print-fullscreen-actions">
+            <button className="btn-outline" onClick={() => setFull(false)}><span className="material-symbols-outlined">fullscreen_exit</span>Exit Fullscreen</button>
+            <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">print</span>Print {sheets} Sheet{sheets === 1 ? '' : 's'}</button>
+          </div>
+        </div>
+        {error && <div className="form-error" style={{ margin: '0 20px' }}><span className="material-symbols-outlined">error</span>{error}</div>}
+        {preview}
+      </div>
+    );
+  }
 
   return (
     <Modal
@@ -5099,23 +6969,37 @@ function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRe
         )}
       </div>
 
-      {unsaved > 0 && (
+      {willFile.length > 0 && (
         <div className="dialog-note">
           <span className="material-symbols-outlined">info</span>
-          <span>{unsaved === receipts.length ? 'This bill is not on record yet' : `${unsaved} of these bills are not on record yet`}, so {unsaved === 1 ? 'it prints' : 'they print'} without a bill number. Save to records first if the tenant needs one.</span>
+          <span>
+            {willFile.length === 1
+              ? `This bill is not on record yet — printing files it as ${willFile[0].id}.`
+              : `${willFile.length} of these bills are not on record yet — printing files them as ${willFile[0].id}–${willFile[willFile.length - 1].id}.`}
+            {' '}The {willFile.length === 1 ? 'number is' : 'numbers are'} claimed only when this prints.
+          </span>
+        </div>
+      )}
+      {clashing.length > 0 && (
+        <div className="dialog-note warning">
+          <span className="material-symbols-outlined">warning</span>
+          <span>
+            {clashing.length === 1
+              ? `Stall ${clashing[0].stallId} already has ${/^[aeiou]/i.test(clashing[0].type) ? 'an' : 'a'} ${clashing[0].type.toLowerCase()} bill on record for ${formatPeriod(clashing[0].period)}`
+              : `${clashing.length} of these stalls already have a bill on record for the same utility and month`}
+            , so printing files a second one. Check the reading before you print if this is meant to be a correction.
+          </span>
+        </div>
+      )}
+      {overdueCount > 0 && (
+        <div className="dialog-note warning">
+          <span className="material-symbols-outlined">running_with_errors</span>
+          <span>{overdueCount === receipts.length ? (receipts.length === 1 ? 'This bill is' : 'These bills are') : `${overdueCount} of these receipts are`} past the due date, so the late surcharge is added automatically on the printed copy. The amount held on record is unchanged.</span>
         </div>
       )}
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
 
-      <div className="print-preview" aria-label="Preview of the sheets that will print">
-        <div className="print-preview-scale">
-          <ReceiptSheets
-            receipts={receipts}
-            printedBy={name.trim() || '—'}
-            printedAt={manilaStamp()}
-          />
-        </div>
-      </div>
+      {preview}
 
       <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
         <button className="btn-outline" onClick={onCancel}>Cancel</button>
@@ -5130,6 +7014,12 @@ function PrintPreviewDialog({ request, onConfirm, onCancel }: { request: PrintRe
    figures, so a quarter cut out on its own still says who owes what. */
 function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill; label: string; printedBy: string; printedAt: string }) {
   const preset = UTILITY_PRESETS[bill.type];
+  /* The surcharge is decided right here, at the moment this receipt is laid
+     out — not carried on the bill. Printing the same overdue bill again next
+     week recomputes it against next week's date, same as `isOverdue` always
+     has for the OVERDUE badge everywhere else. */
+  const overdue = isOverdue(bill);
+  const surcharge = surchargeAmount(bill);
   return (
     <div className="receipt">
       <header className="receipt-masthead">
@@ -5162,12 +7052,23 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
         <div className="receipt-line"><span>Previous Reading</span><strong>{bill.previousReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Current Reading</span><strong>{bill.currentReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Consumption</span><strong>{bill.consumption.toLocaleString()} {preset.unit}</strong></div>
-        <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.consumption * bill.rate)}</strong></div>
-        <div className="receipt-line"><span>Fixed / Service Charge</span><strong>{money(bill.fixedCharge)}</strong></div>
+        <div className="receipt-line"><span>Rate per {preset.unit}</span><strong>{money(bill.rate)}</strong></div>
+        <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.amount)}</strong></div>
+        {overdue && (
+          <div className="receipt-line surcharge">
+            <span>Late Surcharge ({SURCHARGE_RATES[bill.type]}%)</span>
+            <strong>+{money(surcharge)}</strong>
+          </div>
+        )}
       </section>
 
-      <div className="receipt-total"><span>Total Due</span><strong>{money(bill.amount)}</strong></div>
-      <div className="receipt-status">Status at printing: <strong>{(isOverdue(bill) ? 'Overdue' : bill.status).toUpperCase()}</strong></div>
+      <div className="receipt-total"><span>Total Due</span><strong>{money(overdue ? amountWithSurcharge(bill) : bill.amount)}</strong></div>
+      <div className="receipt-status">Status at printing: <strong>{(overdue ? 'Overdue' : bill.status).toUpperCase()}</strong></div>
+      {overdue && (
+        <p className="receipt-surcharge-note">
+          Past due since {formatIsoDate(bill.dueDate)}. A {SURCHARGE_RATES[bill.type]}% surcharge of {money(surcharge)} has been added to the billed amount of {money(bill.amount)}.
+        </p>
+      )}
 
       {bill.notes && <p className="receipt-notes"><span>Notes:</span> {bill.notes}</p>}
 
@@ -5190,6 +7091,255 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
     </div>
   );
 }
+
+/* ============================================================
+   Printing — stall / space verification slips, four to an A4 sheet
+   ============================================================ */
+
+/* Same quartering as the receipts, so the office cuts both sheets the same way
+   and the last sheet is padded out rather than leaving three ragged edges. */
+function chunkSlips(slips: VerificationSlip[]): VerificationSlip[][] {
+  const sheets: VerificationSlip[][] = [];
+  for (let i = 0; i < slips.length; i += SLIPS_PER_SHEET) {
+    sheets.push(slips.slice(i, i + SLIPS_PER_SHEET));
+  }
+  return sheets.length > 0 ? sheets : [[]];
+}
+
+function VerificationSheets({ slips }: { slips: VerificationSlip[] }) {
+  return (<>
+    {chunkSlips(slips).map((sheet, sheetIndex) => (
+      <div className="slip-sheet" key={sheetIndex}>
+        {sheet.map((slip) => <VerificationSlipCard key={slip.controlNo} slip={slip} />)}
+        {Array.from({ length: SLIPS_PER_SHEET - sheet.length }, (_, i) => (
+          <div className="slip slip-blank" key={`blank-${i}`} />
+        ))}
+      </div>
+    ))}
+  </>);
+}
+
+/* A field left empty prints as a ruled line rather than a dash, because a slip
+   is often run off blank and filled in at the counter by hand — that is what
+   the paper pad was. Anything typed in beforehand prints instead of the rule. */
+function SlipField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="slip-field">
+      <span className="slip-field-label">{label}</span>
+      <span className={`slip-field-value${value ? '' : ' blank'}`}>{value}</span>
+    </div>
+  );
+}
+
+/* One quarter of the sheet. The control number, the date it was issued and the
+   date it lapses are the three things a licensing clerk checks first, so they
+   sit together at the top where a slip folded in a wallet still shows them. */
+function VerificationSlipCard({ slip }: { slip: VerificationSlip }) {
+  return (
+    <div className="slip">
+      <header className="slip-masthead">
+        <img className="slip-seal" src="./logo.jpg" alt="" aria-hidden="true" />
+        <div className="slip-identity">
+          <span>Republic of the Philippines</span>
+          <span>Municipality of Tanauan, Leyte</span>
+          <strong>Tanauan Public Market</strong>
+          <span>Market Office</span>
+        </div>
+      </header>
+
+      <div className="slip-control">
+        <span className="slip-control-label">Control No.</span>
+        <span className="slip-control-no">{slip.controlNo}</span>
+      </div>
+
+      <h1 className="slip-title">Stall / Space Verification</h1>
+      <p className="slip-subtitle">(For Business Permit {slip.purpose})</p>
+
+      <div className="slip-dates">
+        <div className="slip-date"><span>Date Issued</span><strong>{formatIsoDate(slip.dateIssued)}</strong></div>
+        <div className="slip-date"><span>Valid Until</span><strong>{formatIsoDate(slip.validUntil)}</strong></div>
+      </div>
+
+      <div className="slip-party">
+        <SlipField label="Issued To" value={slip.issuedTo} />
+        <SlipField label="Section" value={slip.section} />
+        <SlipField label="Stall No." value={slip.stallNo} />
+      </div>
+
+      <ul className="slip-checklist">
+        {VERIFICATION_CHECKLIST.map((item) => (
+          <li key={item}>
+            <span className={`slip-box${slip.checked.includes(item) ? ' ticked' : ''}`} aria-hidden="true" />
+            <span className="slip-item">{item}</span>
+          </li>
+        ))}
+        <li>
+          <span className={`slip-box${slip.others ? ' ticked' : ''}`} aria-hidden="true" />
+          <span className="slip-item">Others <span className={`slip-others${slip.others ? '' : ' blank'}`}>{slip.others}</span></span>
+        </li>
+      </ul>
+
+      <p className="slip-validity">
+        Valid for {VERIFICATION_VALID_DAYS} days only, until <strong>{formatIsoDate(slip.validUntil)}</strong>.
+      </p>
+
+      <footer className="slip-foot">
+        <div className="slip-sign">
+          <span className="slip-sign-name">{slip.issuedBy}</span>
+          <span className="slip-sign-rule" />
+          <span className="slip-sign-role">Market Supervisor</span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+/* Nothing reaches the printer until the officer has seen the sheet, the same
+   rule the receipts follow. The control numbers on the preview are the ones
+   that will print — they are only claimed when Print is pressed. */
+function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, onCancel }: {
+  stall?: Stall; tenantName?: string; existingIds: string[];
+  onConfirm: (slips: Omit<VerificationSlip, 'controlNo'>[]) => void;
+  onCancel: () => void;
+}) {
+  const [purpose, setPurpose] = useState<VerificationPurpose>('Renewal');
+  const [issuedTo, setIssuedTo] = useState(tenantName && tenantName !== 'Vacant' ? tenantName : '');
+  const [section, setSection] = useState(stall?.section ?? '');
+  const [stallNo, setStallNo] = useState(stall?.id ?? '');
+  const [checked, setChecked] = useState<string[]>(VERIFICATION_DEFAULTS.Renewal);
+  const [others, setOthers] = useState('');
+  const [count, setCount] = useState(1);
+  const [issuedBy, setIssuedBy] = useState(() => { try { return localStorage.getItem(verifiedByKey) ?? ''; } catch { return ''; } });
+  const [error, setError] = useState('');
+
+  /* Switching the errand re-ticks the checklist for it. The officer can still
+     change any box afterwards — the defaults are the usual case, not a rule. */
+  const choosePurpose = (next: VerificationPurpose) => {
+    setPurpose(next);
+    setChecked(VERIFICATION_DEFAULTS[next]);
+  };
+
+  const toggle = (item: string) => setChecked((prev) => (
+    prev.includes(item) ? prev.filter((c) => c !== item) : [...prev, item]
+  ));
+
+  const dateIssued = todayIso();
+  const validUntil = isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS);
+
+  const draft = (): Omit<VerificationSlip, 'controlNo'> => ({
+    purpose,
+    issuedTo: issuedTo.trim(),
+    section: section.trim(),
+    stallNo: stallNo.trim(),
+    checked,
+    others: others.trim(),
+    dateIssued,
+    validUntil,
+    issuedBy: issuedBy.trim(),
+  });
+
+  /* Each slip on the sheet is a separate issuable leaf, so each gets its own
+     number — printing four is running off a short pad, not four copies of one. */
+  const numbers = peekIds('SSV', existingIds, count);
+  const preview: VerificationSlip[] = numbers.map((controlNo) => ({
+    ...draft(),
+    issuedBy: issuedBy.trim() || '',
+    controlNo,
+  }));
+
+  const submit = () => {
+    if (!issuedBy.trim()) { setError('Enter the name of the officer issuing these slips.'); return; }
+    onConfirm(Array.from({ length: count }, () => draft()));
+  };
+
+  return (
+    <Modal
+      title="Print Preview — Stall / Space Verification"
+      subtitle={`${count} slip${count === 1 ? '' : 's'} · 1 A4 sheet · four to a sheet · valid ${VERIFICATION_VALID_DAYS} days`}
+      stacked wide onClose={onCancel}
+    >
+      <div className="print-setup">
+        <div className="form-group">
+          <label className="form-label">Purpose *</label>
+          <select className="form-select" value={purpose} onChange={(e) => choosePurpose(e.target.value as VerificationPurpose)}>
+            <option value="Renewal">Renewal — existing lessee</option>
+            <option value="Issuance">Issuance — new lessee</option>
+          </select>
+          <span className="form-hint">Prints on the slip and ticks the boxes that errand usually needs.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Issued By *</label>
+          <input
+            className="form-input" autoFocus value={issuedBy} placeholder="e.g. Luz M. Maderazo"
+            onChange={(e) => { setIssuedBy(e.target.value); setError(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          />
+          <span className="form-hint">Signs the slip as Market Supervisor, and is offered back next time.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Issued To</label>
+          <input className="form-input" value={issuedTo} placeholder="Leave blank to write in by hand" onChange={(e) => setIssuedTo(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Section</label>
+          <select className="form-select" value={section} onChange={(e) => setSection(e.target.value)}>
+            <option value="">Leave blank</option>
+            {SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Stall No.</label>
+          <input className="form-input" value={stallNo} placeholder="e.g. MS-01" onChange={(e) => setStallNo(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Slips on the Sheet</label>
+          <select className="form-select" value={count} onChange={(e) => setCount(Number(e.target.value))}>
+            <option value={1}>1 slip</option>
+            <option value={2}>2 slips</option>
+            <option value={4}>4 — fill the sheet</option>
+          </select>
+          <span className="form-hint">Each slip is issued its own control number. Leave the details blank to run off a numbered pad.</span>
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Requirements Checked</label>
+        <div className="slip-checkgrid">
+          {VERIFICATION_CHECKLIST.map((item) => (
+            <label className="slip-checkbox" key={item}>
+              <input type="checkbox" checked={checked.includes(item)} onChange={() => toggle(item)} />
+              <span>{item}</span>
+            </label>
+          ))}
+        </div>
+        <input className="form-input" value={others} placeholder="Others — e.g. until Dec 31, 2026" onChange={(e) => setOthers(e.target.value)} style={{ marginTop: '10px' }} />
+        <span className="form-hint">Unticked boxes print empty, for ticking by hand at the counter.</span>
+      </div>
+
+      <div className="dialog-note">
+        <span className="material-symbols-outlined">info</span>
+        <span>
+          {count === 1 ? `Control number ${numbers[0]} will be` : `Control numbers ${numbers[0]}–${numbers[numbers.length - 1]} will be`}
+          {' '}issued and recorded, dated {formatIsoDate(dateIssued)} and valid until {formatIsoDate(validUntil)}.
+          {' '}{count === 1 ? 'It is claimed' : 'They are claimed'} only when this prints.
+        </span>
+      </div>
+      {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
+
+      <div className="print-preview" aria-label="Preview of the sheet that will print">
+        <div className="print-preview-scale">
+          <VerificationSheets slips={preview.map((s) => ({ ...s, issuedBy: s.issuedBy || '—' }))} />
+        </div>
+      </div>
+
+      <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+        <button className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">print</span>Print Sheet</button>
+      </div>
+    </Modal>
+  );
+}
+
 
 /* ============================================================
    Start-up

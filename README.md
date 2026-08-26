@@ -114,6 +114,32 @@ file cannot be loaded from inside `app.asar`.
   fall back to `localStorage` — the interface behaves identically
 - Dashboard, stall management, tenant records, applicants, utility billing, violations, analytics, logbook, settings, and support modules
 
+## Monthly rent
+
+Rent is recorded a month at a time from the Tenant Records register — tick the
+box in the **Rent** column for the month shown in the picker.
+
+### Early-payment discount
+
+Settling a month **on or before its due date** earns **20% off** that month's
+rent. Paying on the due date itself still counts.
+
+Unlike the utility surcharge, the discount **is** recorded on the payment,
+because it changes what was actually collected. Each payment stores the amount
+taken and the discount given separately, so:
+
+- A past month always shows why it came to less than the monthly rent.
+- Changing the rate later never rewrites what an earlier month was given.
+- A payment recorded before the discount existed keeps a discount of zero
+  rather than being back-dated into one.
+
+The register shows the discounted figure on offer (*"₱800.00 if paid today"*)
+while it is still available, and the discount actually given once the month is
+settled. Because collected then sits below the rent roll, the dashboard reports
+the total discount given as its own figure — and **Rent Outstanding is summed
+from the tenants who have not paid**, never `roll − collected`, which would
+otherwise report a fully-collected month as still partly unpaid.
+
 ## Applicants
 
 Requirements are a **checklist**, not file uploads — the office ticks off each
@@ -137,15 +163,40 @@ application history, and the resulting tenant keeps an `applicantId` back-link.
 
 The Utility Billing module computes electricity and water charges per stall:
 
-- Pick **Electricity** or **Water** — the rate, fixed charge, and unit (kWh / m³) switch to that utility's preset and stay editable per bill.
+- Pick **Electricity** or **Water** — the rate and unit (kWh / cu.m) switch to that utility's preset and stay editable per bill. There is no fixed or service charge: a bill is consumption × rate and nothing else.
 - Choose the **stall number** or the **tenant**; selecting either one fills in the other, so a bill is always attached to a stall and, when one exists, to that tenant's record.
 - Set the **period covered** with a From and a To date — a bill is read to the day, so a stall that opened mid-month or a meter read early is billed for exactly the days it covers. **Cover all of &lt;month&gt;** fills in the whole month in one click. The day count and the month the bill is filed under are shown under the To date.
 - The **due date** follows the period: it defaults to 15 days after the period ends and moves with the end date until you set one yourself. A due date that falls before the period ends is refused.
 - Bills are still grouped and de-duplicated by the **month the period ends in**, so "a second electricity bill for this stall this month" is still caught.
 - The **previous reading** is carried over automatically from the last bill for that stall and utility.
-- Total is `(current − previous) × rate + fixed charge`, shown live before saving.
+- Total is `(current − previous) × rate`, shown live before saving. The rate per kWh and per cu.m are both shown on screen and on the printed receipt.
 - Saving posts the bill to Billing Records, the stall and tenant detail views, the Analytics utility panel, the Logbook (as a Collection entry), and all exports/backups.
 - Bills can be marked paid/unpaid or deleted, and are flagged **Overdue** once the due date passes while unpaid.
+
+### Late surcharge
+
+A bill printed **after its due date has passed** picks up a late surcharge automatically:
+
+| Utility | Surcharge |
+| --- | --- |
+| Electricity | 3.35% of the billed amount |
+| Water | 10% of the billed amount |
+
+The surcharge is applied **at the moment of printing**, not stored on the bill. This is deliberate:
+
+- The figure held on record stays the amount actually billed for the consumption. Every total, aggregate, export, and outstanding-balance figure in the system uses that amount, so the books never drift.
+- A bill settled before it ever goes out late never carries one; reprinting a still-overdue bill next month recomputes it against that day's date.
+- It is driven by the same `isOverdue` test as the OVERDUE badge on the Billing Records table, so a receipt can never disagree with what the office sees on screen.
+
+The calculator, the bill detail sheet, and the print preview all warn before printing when a surcharge will be added, and the receipt itself prints the rate, the peso amount, and the date the bill fell due.
+
+### Printing receipts
+
+Nothing reaches the printer without a preview. **Print Receipt** on a bill opens a preview showing the exact A4 sheet that will print, four receipts to a sheet, cut apart afterwards.
+
+- **One bill** can print in 1, 2 or 4 labelled copies (Tenant's, Market Office, Treasurer's, File).
+- **Up to four different bills** can go on one sheet: tick the boxes in the Billing Records table and use **Print *n* Receipts**. Selection survives paging and refiltering, and the header box selects everything on the page in view. Anything past four rolls onto further sheets.
+- The preview has **zoom** (Fit / Actual size / step in and out, 35%–200%) and a **fullscreen** mode for checking small print. `Esc` leaves fullscreen first and only closes the dialog on a second press, so a half-filled form is never lost.
 
 ## Violations
 

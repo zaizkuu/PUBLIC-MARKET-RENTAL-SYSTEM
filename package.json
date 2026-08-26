@@ -28,6 +28,7 @@
     "cross-env": "^7.0.3",
     "electron": "^38.8.6",
     "electron-builder": "^26.15.3",
+    "puppeteer": "^25.9.0",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
   },
