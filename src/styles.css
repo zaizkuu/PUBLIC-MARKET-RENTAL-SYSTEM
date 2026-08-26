@@ -5333,14 +5333,14 @@ ul, ol {
 .slip {
   display: flex;
   flex-direction: column;
-  margin: 3mm;
-  padding: 3.5mm 4mm;
+  margin: 2mm;
+  padding: 5mm 5.5mm;
   box-sizing: border-box;
   overflow: hidden;
   border: 1.2px solid #000;
   font-family: 'Inter', system-ui, sans-serif;
-  font-size: 7.6px;
-  line-height: 1.34;
+  font-size: 9.8px;
+  line-height: 1.36;
   color: #000;
   background: #fff;
 }
@@ -5359,8 +5359,8 @@ ul, ol {
 }
 
 .slip-seal {
-  width: 26px;
-  height: 26px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
   flex: 0 0 auto;
 }
@@ -5372,12 +5372,12 @@ ul, ol {
 }
 
 .slip-identity span {
-  font-size: 6.2px;
+  font-size: 8px;
   letter-spacing: 0.02em;
 }
 
 .slip-identity strong {
-  font-size: 9px;
+  font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -5394,13 +5394,13 @@ ul, ol {
 }
 
 .slip-control-label {
-  font-size: 6.4px;
+  font-size: 8px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .slip-control-no {
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.04em;
   padding: 0 3px;
@@ -5408,8 +5408,8 @@ ul, ol {
 }
 
 .slip-title {
-  margin: 2px 0 0;
-  font-size: 11px;
+  margin: 4px 0 0;
+  font-size: 15.5px;
   font-weight: 800;
   text-align: center;
   letter-spacing: 0.04em;
@@ -5417,8 +5417,8 @@ ul, ol {
 }
 
 .slip-subtitle {
-  margin: 0 0 4px;
-  font-size: 7px;
+  margin: 0 0 6px;
+  font-size: 9px;
   font-style: italic;
   text-align: center;
 }
@@ -5427,7 +5427,7 @@ ul, ol {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  padding: 3px 0;
+  padding: 5px 0;
   border-top: 1px solid #000;
   border-bottom: 1px solid #000;
 }
@@ -5439,21 +5439,21 @@ ul, ol {
 }
 
 .slip-date span {
-  font-size: 6.2px;
+  font-size: 7.8px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .slip-date strong {
-  font-size: 8px;
+  font-size: 10.5px;
   font-weight: 700;
 }
 
 .slip-party {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin: 5px 0;
+  gap: 6px;
+  margin: 7px 0;
 }
 
 /* Label and rule on one line, the way the pad has them, so a blank slip can be
@@ -5461,8 +5461,8 @@ ul, ol {
 .slip-field {
   display: flex;
   align-items: baseline;
-  gap: 4px;
-  font-size: 7.4px;
+  gap: 5px;
+  font-size: 9.6px;
 }
 
 .slip-field-label {
@@ -5470,7 +5470,7 @@ ul, ol {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  font-size: 6.6px;
+  font-size: 8.4px;
 }
 
 .slip-field-value {
@@ -5485,7 +5485,7 @@ ul, ol {
 
 /* An empty field still needs the rule to be tall enough to write on. */
 .slip-field-value.blank {
-  min-height: 9px;
+  min-height: 13px;
 }
 
 .slip-checklist {
@@ -5494,22 +5494,23 @@ ul, ol {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1.5px;
+  gap: 3px;
   flex: 1 1 auto;
+  justify-content: space-between;
 }
 
 .slip-checklist li {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
-  font-size: 7.2px;
-  line-height: 1.3;
+  gap: 6px;
+  font-size: 9.6px;
+  line-height: 1.25;
 }
 
 .slip-box {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
+  width: 10px;
+  height: 10px;
   margin-top: 0.5px;
   border: 1px solid #000;
   box-sizing: border-box;
@@ -5521,12 +5522,12 @@ ul, ol {
 .slip-box.ticked::after {
   content: '';
   position: absolute;
-  left: 1.4px;
+  left: 2.2px;
   top: -0.6px;
-  width: 2.6px;
-  height: 5.4px;
+  width: 3.6px;
+  height: 7.4px;
   border: solid #000;
-  border-width: 0 1.2px 1.2px 0;
+  border-width: 0 1.6px 1.6px 0;
   transform: rotate(42deg);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -5539,30 +5540,30 @@ ul, ol {
 
 .slip-others {
   display: inline-block;
-  min-width: 44px;
+  min-width: 62px;
   border-bottom: 0.8px solid #000;
   font-weight: 700;
 }
 
 .slip-others.blank {
-  min-width: 62px;
+  min-width: 88px;
 }
 
 /* Restating the lapse date in words is deliberate: the pair of dates above is
    read as a form field, this reads as a condition, and the licensing clerk is
    looking for one of the two. */
 .slip-validity {
-  margin: 4px 0 0;
-  padding: 2.5px 3px;
+  margin: 7px 0 0;
+  padding: 4px 4px;
   border: 0.8px solid #000;
-  font-size: 6.8px;
+  font-size: 8.6px;
   text-align: center;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
 .slip-foot {
-  margin-top: 5px;
+  margin-top: 7px;
   display: flex;
   justify-content: flex-end;
 }
@@ -5575,9 +5576,9 @@ ul, ol {
 }
 
 .slip-sign-name {
-  font-size: 7.6px;
+  font-size: 9.8px;
   font-weight: 700;
-  min-height: 9px;
+  min-height: 14px;
   text-align: center;
 }
 

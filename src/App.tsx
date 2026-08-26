@@ -7211,6 +7211,15 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
   const [count, setCount] = useState(1);
   const [issuedBy, setIssuedBy] = useState(() => { try { return localStorage.getItem(verifiedByKey) ?? ''; } catch { return ''; } });
   const [error, setError] = useState('');
+  const [zoom, setZoom] = useState(FIT_ZOOM);
+  const [full, setFull] = useState(false);
+
+  const stepZoom = (delta: number) => setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
+
+  /* Shown in the note under the preview. The slip itself re-reads the date as
+     it is built, so what prints is the day it printed. */
+  const dateIssued = todayIso();
+  const validUntil = isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS);
 
   /* Switching the errand re-ticks the checklist for it. The officer can still
      change any box afterwards — the defaults are the usual case, not a rule. */
@@ -7223,20 +7232,23 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
     prev.includes(item) ? prev.filter((c) => c !== item) : [...prev, item]
   ));
 
-  const dateIssued = todayIso();
-  const validUntil = isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS);
-
-  const draft = (): Omit<VerificationSlip, 'controlNo'> => ({
-    purpose,
-    issuedTo: issuedTo.trim(),
-    section: section.trim(),
-    stallNo: stallNo.trim(),
-    checked,
-    others: others.trim(),
-    dateIssued,
-    validUntil,
-    issuedBy: issuedBy.trim(),
-  });
+  /* Read at the moment they are needed, not when the dialog opened: a preview
+     left sitting open past midnight would otherwise print yesterday's date, and
+     the validity is counted from the day the slip is actually handed over. */
+  const draft = (): Omit<VerificationSlip, 'controlNo'> => {
+    const dateIssued = todayIso();
+    return {
+      purpose,
+      issuedTo: issuedTo.trim(),
+      section: section.trim(),
+      stallNo: stallNo.trim(),
+      checked,
+      others: others.trim(),
+      dateIssued,
+      validUntil: isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS),
+      issuedBy: issuedBy.trim(),
+    };
+  };
 
   /* Each slip on the sheet is a separate issuable leaf, so each gets its own
      number — printing four is running off a short pad, not four copies of one. */
@@ -7326,9 +7338,24 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
       </div>
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
 
-      <div className="print-preview" aria-label="Preview of the sheet that will print">
-        <div className="print-preview-scale">
-          <VerificationSheets slips={preview.map((s) => ({ ...s, issuedBy: s.issuedBy || '—' }))} />
+      <div className={`print-preview${full ? ' fullscreen' : ''}`} aria-label="Preview of the sheet that will print">
+        <div className="print-preview-toolbar">
+          <span className="print-preview-count">1 A4 sheet · {count} slip{count === 1 ? '' : 's'}</span>
+          <div className="print-preview-zoom">
+            <button type="button" className="row-icon-btn" title="Zoom out" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-0.15)}><span className="material-symbols-outlined">zoom_out</span></button>
+            <span className="print-preview-level">{Math.round(zoom * 100)}%</span>
+            <button type="button" className="row-icon-btn" title="Zoom in" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(0.15)}><span className="material-symbols-outlined">zoom_in</span></button>
+            <button type="button" className="btn-outline-sm" onClick={() => setZoom(FIT_ZOOM)}>Fit</button>
+            <button type="button" className="btn-outline-sm" onClick={() => setZoom(1)}>Actual size</button>
+            <button type="button" className="row-icon-btn" title={full ? 'Exit fullscreen' : 'Fullscreen'} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'} onClick={() => setFull((v) => !v)}>
+              <span className="material-symbols-outlined">{full ? 'fullscreen_exit' : 'fullscreen'}</span>
+            </button>
+          </div>
+        </div>
+        <div className="print-preview-viewport">
+          <div className="print-preview-scale zoomable" style={{ zoom }}>
+            <VerificationSheets slips={preview.map((s) => ({ ...s, issuedBy: s.issuedBy || '—' }))} />
+          </div>
         </div>
       </div>
 
