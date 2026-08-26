@@ -923,17 +923,28 @@ const initialState = {
   /* The market office's own board, seeded as the seats rather than the people
      — the office types in who holds each one. A seat stays on the board while
      it is vacant, because the post exists whether or not anybody holds it. */
+  /* The market office as it actually stands, from the office's own roster:
+     the supervisor, two officers in charge of market operation, a clerk,
+     three collectors and nine sweepers. The roster names no reporting line
+     below the supervisor, so everyone is seated under her rather than
+     inventing a hierarchy the office has not set. */
   officers: [
-    { id: 'OFC-001', name: '', position: 'Municipal Mayor', office: 'Office of the Municipal Mayor', reportsTo: '', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-002', name: '', position: 'Market Board Chairperson', office: 'Market Board', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-003', name: '', position: 'Market Supervisor', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-004', name: '', position: 'Assistant Market Supervisor', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-005', name: '', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-006', name: '', position: 'Market Inspector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-007', name: '', position: 'Records Officer', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-008', name: '', position: 'Sanitary Inspector', office: 'Municipal Health Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-009', name: '', position: 'Licensing Officer', office: 'Business Permit & Licensing Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-010', name: '', position: 'Market Treasurer / Cashier', office: 'Municipal Treasurer’s Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-001', name: 'Engr. Luz M. Maderazo', position: 'Market Supervisor III', office: 'Market Office', reportsTo: '', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-002', name: 'Manuel G. Mercado', position: 'In Charge — Market Operation', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-003', name: 'Felmar Pica', position: 'In Charge — Market Operation', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-004', name: 'Louwhie Jane Bengero', position: 'Clerk I', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-005', name: 'Lorna Tangpuz', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-006', name: 'Ericson Aguipo', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-007', name: 'Stephen Lopez', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-008', name: 'Virginia Montilla', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-009', name: 'Ponciano Lugasan', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-010', name: 'Lolito Cuna', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-011', name: 'Niel Salarda', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-012', name: 'Joseph Mendiola', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-013', name: 'Ronhelito Mendiola', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-014', name: 'Carmelo Villero', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-015', name: 'Junel Guiron', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-016', name: 'Bonifacio Lopez', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
   ] satisfies Officer[],
 
   utilities: [] as UtilityBill[],
