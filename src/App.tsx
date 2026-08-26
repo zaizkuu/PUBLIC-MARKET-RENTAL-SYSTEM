@@ -5978,7 +5978,7 @@ function StallkeeperDialogForm({ subject, onValidate, onConfirm, onCancel }: {
           <input
             className="form-input"
             autoFocus
-            placeholder={subject ? keepHint(subject.name) : 'e.g. Juan dela Cruz'}
+            placeholder={subject ? keepHint(subject.name) : 'e.g. Luz M. Maderazo'}
             value={name}
             onChange={(e) => edit(setName)(e.target.value)}
           />

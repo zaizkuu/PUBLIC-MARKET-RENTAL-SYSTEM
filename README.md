@@ -221,7 +221,7 @@ exports, and backups.
 **Edit forms open blank.** The inputs are empty and every dropdown starts on
 *— Keep &lt;current value&gt;*, so the form only ever carries what is being changed
 right now. **A blank field keeps the value on record** — the placeholder shows
-what that value is (`On record: Maria Santos — leave blank to keep`). Reopening
+what that value is (`On record: DUZON, DULCE CORAZON — leave blank to keep`). Reopening
 the form after a save therefore shows blank inputs again, ready for the next
 change, while the record itself keeps everything previously entered.
 
