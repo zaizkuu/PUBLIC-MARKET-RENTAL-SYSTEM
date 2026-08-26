@@ -3817,7 +3817,7 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Tenant / Party Cited *</label>
-          <input className="form-input" list="violation-tenant-options" placeholder="e.g. Deep Blue Catch" value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
+          <input className="form-input" list="violation-tenant-options" placeholder="e.g. GERILLA, JOHN DRANDREB" value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
           <datalist id="violation-tenant-options">{tenants.map((t) => <option key={t.id} value={t.name}>{t.stallId}</option>)}</datalist>
           <span className="form-hint">Pick a tenant on record, or type any other party.</span>
         </div>
@@ -5124,7 +5124,7 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   return (
     <div className="form-grid">
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="e.g. Maria Santos" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
+        <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="e.g. DUZON, DULCE CORAZON" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
         <div className="form-group">
           <label className="form-label">Mobile Number</label>
           <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
@@ -6800,7 +6800,7 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Held By</label>
-            <input className="form-input" value={name} placeholder="e.g. Juan Dela Cruz" onChange={(e) => { setName(e.target.value); setError(''); }} />
+            <input className="form-input" value={name} placeholder="e.g. Luz M. Maderazo" onChange={(e) => { setName(e.target.value); setError(''); }} />
             <span className="form-hint">Leave blank if the post is vacant.</span>
           </div>
           <div className="form-group">
@@ -7038,7 +7038,7 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
         <div className="form-group">
           <label className="form-label">Printed By *</label>
           <input
-            className="form-input" autoFocus value={name} placeholder="e.g. Juan Dela Cruz"
+            className="form-input" autoFocus value={name} placeholder="e.g. Luz M. Maderazo"
             onChange={(e) => { setName(e.target.value); setError(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           />
