@@ -5333,14 +5333,14 @@ ul, ol {
 .slip {
   display: flex;
   flex-direction: column;
-  margin: 3mm;
-  padding: 3.5mm 4mm;
+  margin: 2mm;
+  padding: 4mm 4.5mm;
   box-sizing: border-box;
   overflow: hidden;
   border: 1.2px solid #000;
   font-family: 'Inter', system-ui, sans-serif;
-  font-size: 7.6px;
-  line-height: 1.34;
+  font-size: 11.5px;
+  line-height: 1.4;
   color: #000;
   background: #fff;
 }
@@ -5353,14 +5353,14 @@ ul, ol {
 .slip-masthead {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding-bottom: 3px;
+  gap: 7px;
+  padding-bottom: 5px;
   border-bottom: 1px solid #000;
 }
 
 .slip-seal {
-  width: 26px;
-  height: 26px;
+  width: 38px;
+  height: 38px;
   object-fit: contain;
   flex: 0 0 auto;
 }
@@ -5372,12 +5372,12 @@ ul, ol {
 }
 
 .slip-identity span {
-  font-size: 6.2px;
+  font-size: 9px;
   letter-spacing: 0.02em;
 }
 
 .slip-identity strong {
-  font-size: 9px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -5389,18 +5389,18 @@ ul, ol {
   display: flex;
   align-items: baseline;
   justify-content: flex-end;
-  gap: 4px;
-  margin-top: 3px;
+  gap: 5px;
+  margin-top: 5px;
 }
 
 .slip-control-label {
-  font-size: 6.4px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .slip-control-no {
-  font-size: 11px;
+  font-size: 17px;
   font-weight: 800;
   letter-spacing: 0.04em;
   padding: 0 3px;
@@ -5408,8 +5408,8 @@ ul, ol {
 }
 
 .slip-title {
-  margin: 2px 0 0;
-  font-size: 11px;
+  margin: 4px 0 0;
+  font-size: 16.5px;
   font-weight: 800;
   text-align: center;
   letter-spacing: 0.04em;
@@ -5417,8 +5417,8 @@ ul, ol {
 }
 
 .slip-subtitle {
-  margin: 0 0 4px;
-  font-size: 7px;
+  margin: 0 0 6px;
+  font-size: 10.5px;
   font-style: italic;
   text-align: center;
 }
@@ -5426,8 +5426,8 @@ ul, ol {
 .slip-dates {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 3px 0;
+  gap: 6px;
+  padding: 5px 0;
   border-top: 1px solid #000;
   border-bottom: 1px solid #000;
 }
@@ -5439,30 +5439,30 @@ ul, ol {
 }
 
 .slip-date span {
-  font-size: 6.2px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .slip-date strong {
-  font-size: 8px;
+  font-size: 12.5px;
   font-weight: 700;
 }
 
 .slip-party {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin: 5px 0;
+  gap: 6px;
+  margin: 7px 0;
 }
 
 /* Label and rule on one line, the way the pad has them, so a blank slip can be
    written on and a filled one reads as the same document. */
 .slip-field {
   display: flex;
-  align-items: baseline;
-  gap: 4px;
-  font-size: 7.4px;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
 }
 
 .slip-field-label {
@@ -5470,7 +5470,7 @@ ul, ol {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  font-size: 6.6px;
+  font-size: 9.5px;
 }
 
 .slip-field-value {
@@ -5478,14 +5478,16 @@ ul, ol {
   min-width: 0;
   border-bottom: 0.8px solid #000;
   font-weight: 700;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* An empty field still needs the rule to be tall enough to write on. */
 .slip-field-value.blank {
-  min-height: 9px;
+  min-height: 15px;
 }
 
 .slip-checklist {
@@ -5494,23 +5496,24 @@ ul, ol {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1.5px;
+  gap: 0;
   flex: 1 1 auto;
 }
 
 .slip-checklist li {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  font-size: 7.2px;
-  line-height: 1.3;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  line-height: 1.25;
+  /* Share the spare height evenly rather than leaving it at the bottom. */
+  flex: 1 0 auto;
 }
 
 .slip-box {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  margin-top: 0.5px;
+  width: 12.5px;
+  height: 12.5px;
   border: 1px solid #000;
   box-sizing: border-box;
   position: relative;
@@ -5521,12 +5524,12 @@ ul, ol {
 .slip-box.ticked::after {
   content: '';
   position: absolute;
-  left: 1.4px;
-  top: -0.6px;
-  width: 2.6px;
-  height: 5.4px;
+  left: 4px;
+  top: 0.6px;
+  width: 4px;
+  height: 8px;
   border: solid #000;
-  border-width: 0 1.2px 1.2px 0;
+  border-width: 0 1.9px 1.9px 0;
   transform: rotate(42deg);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -5539,30 +5542,30 @@ ul, ol {
 
 .slip-others {
   display: inline-block;
-  min-width: 44px;
+  min-width: 70px;
   border-bottom: 0.8px solid #000;
   font-weight: 700;
 }
 
 .slip-others.blank {
-  min-width: 62px;
+  min-width: 92px;
 }
 
 /* Restating the lapse date in words is deliberate: the pair of dates above is
    read as a form field, this reads as a condition, and the licensing clerk is
    looking for one of the two. */
 .slip-validity {
-  margin: 4px 0 0;
-  padding: 2.5px 3px;
+  margin: 6px 0 0;
+  padding: 4px 5px;
   border: 0.8px solid #000;
-  font-size: 6.8px;
+  font-size: 10px;
   text-align: center;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
 .slip-foot {
-  margin-top: 5px;
+  margin-top: 8px;
   display: flex;
   justify-content: flex-end;
 }
@@ -5575,9 +5578,9 @@ ul, ol {
 }
 
 .slip-sign-name {
-  font-size: 7.6px;
+  font-size: 11.5px;
   font-weight: 700;
-  min-height: 9px;
+  min-height: 16px;
   text-align: center;
 }
 
@@ -5589,7 +5592,7 @@ ul, ol {
 }
 
 .slip-sign-role {
-  font-size: 6.4px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
