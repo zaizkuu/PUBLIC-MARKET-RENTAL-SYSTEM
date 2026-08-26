@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Public Market Rental Monitoring System \u2014 Tanauan Public Market, Market Office",
+  "description": "Public Market Rental Monitoring System — Tanauan Public Market, Market Office",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -42,11 +42,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "build/icon.png",
-      "!node_modules/@node-llama-cpp/win-x64-cuda/**",
-      "!node_modules/@node-llama-cpp/win-x64-cuda-ext/**",
-      "!node_modules/@node-llama-cpp/win-x64-vulkan/**",
-      "!node_modules/@node-llama-cpp/win-arm64/**"
+      "build/icon.png"
     ],
     "win": {
       "icon": "build/icon.png",
@@ -79,22 +75,8 @@
       "uninstallDisplayName": "Tanauan Public Market System"
     },
     "asarUnpack": [
-      "**/node_modules/better-sqlite3/**",
-      "**/*.node",
-      "resources/models/**"
-    ],
-    "extraResources": [
-      {
-        "from": "build/models",
-        "to": "models",
-        "filter": [
-          "**/*.gguf"
-        ]
-      }
+      "**/node_modules/better-sqlite3/**"
     ],
     "npmRebuild": false
-  },
-  "optionalDependencies": {
-    "node-llama-cpp": "^3.20.0"
   }
 }

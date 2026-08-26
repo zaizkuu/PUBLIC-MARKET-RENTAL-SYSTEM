@@ -1,12 +1,9 @@
 // The only bridge between the renderer (the React app) and the desktop shell.
 //
-// Two surfaces are exposed and nothing else: the SQLite database, which only
-// the main process may touch, and the local assistant model. The renderer stays
-// sandboxed — no Node, no filesystem, no shell — so a bug in the interface
+// One surface is exposed and nothing else: the SQLite database, which only the
+// main process may touch. The renderer stays sandboxed — no Node, no filesystem, no shell — so a bug in the interface
 // cannot reach the rest of the machine. `contextIsolation` stays on and
 // `nodeIntegration` stays off; the calls listed here are the whole surface.
-//
-// Both run entirely on this computer. Nothing here reaches the network.
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -37,16 +34,4 @@ contextBridge.exposeInMainWorld('pmrmsDB', {
 
   /** Opens the folder holding the database in File Explorer. */
   revealFolder: () => ipcRenderer.invoke('db:reveal-folder'),
-});
-
-contextBridge.exposeInMainWorld('marketAssistant', {
-  // Is a local language model loaded and usable?
-  ready: () => ipcRenderer.invoke('assistant:ready'),
-  // Which of the assistant's known questions is this? Returns a key or null.
-  classify: (question, intents) => ipcRenderer.invoke('assistant:classify', question, intents),
-  // Reword an already-computed answer. The page verifies every figure it
-  // returns before showing it.
-  phrase: (question, headline, lines) => ipcRenderer.invoke('assistant:phrase', question, headline, lines),
-  // The model file in use, for the badge on screen.
-  modelName: () => ipcRenderer.invoke('assistant:model-name'),
 });

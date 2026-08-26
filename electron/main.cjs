@@ -8,7 +8,6 @@
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('node:path');
 const db = require('./db.cjs');
-const llm = require('./llm.cjs');
 
 /** Where the records are kept. Backing this file up backs up the whole system. */
 const databaseFile = () => path.join(app.getPath('userData'), 'market-records.db');
@@ -39,8 +38,7 @@ function createWindow() {
     autoHideMenuBar: !isDev,
     webPreferences: {
       // The renderer is trusted local content but has no need for Node access:
-      // it reaches the database, and the assistant's model, through the preload
-      // bridge instead.
+      // it reaches the database through the preload bridge instead.
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
@@ -222,14 +220,6 @@ function buildMenu() {
           click: () => shell.openPath(app.getPath('userData')),
         },
         {
-          label: 'Assistant Model Folder',
-          click: () => {
-            const dir = require('node:path').join(app.getPath('userData'), 'models');
-            try { require('node:fs').mkdirSync(dir, { recursive: true }); } catch { /* shown below either way */ }
-            shell.openPath(dir);
-          },
-        },
-        {
           label: 'About',
           click: () => {
             dialog.showMessageBox(mainWindow, {
@@ -258,21 +248,10 @@ app.on('second-instance', () => {
   }
 });
 
-/* The assistant's model runs here in the main process, off the render thread,
-   so a slow answer never freezes the window. Every handler is local-only. */
-function registerAssistant() {
-  ipcMain.handle('assistant:ready', () => llm.ready(app));
-  ipcMain.handle('assistant:model-name', () => llm.modelName());
-  ipcMain.handle('assistant:classify', (_e, question, intents) => llm.classify(app, String(question || ''), Array.isArray(intents) ? intents : []));
-  ipcMain.handle('assistant:phrase', (_e, question, headline, lines) =>
-    llm.phrase(app, String(question || ''), String(headline || ''), Array.isArray(lines) ? lines.map(String) : []));
-}
-
 app.whenReady().then(() => {
   if (!openDatabase()) { app.exit(1); return; }
   registerDatabaseHandlers();
   buildMenu();
-  registerAssistant();
   createWindow();
 
   app.on('activate', () => {
