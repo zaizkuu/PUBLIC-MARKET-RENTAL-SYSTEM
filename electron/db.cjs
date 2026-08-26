@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -155,26 +155,87 @@ CREATE INDEX IF NOT EXISTS idx_bills_stall_period   ON utility_bills(stallId, pe
 CREATE INDEX IF NOT EXISTS idx_bills_status         ON utility_bills(status);
 CREATE INDEX IF NOT EXISTS idx_violations_status    ON violations(status);
 CREATE INDEX IF NOT EXISTS idx_logs_date            ON logs(date);
+
+/* The market office's own board. */
+CREATE TABLE IF NOT EXISTS officers (
+  id        TEXT PRIMARY KEY,
+  name      TEXT NOT NULL DEFAULT '',
+  position  TEXT NOT NULL DEFAULT '',
+  office    TEXT NOT NULL DEFAULT '',
+  reportsTo TEXT NOT NULL DEFAULT '',
+  phone     TEXT NOT NULL DEFAULT '',
+  email     TEXT NOT NULL DEFAULT '',
+  status    TEXT NOT NULL DEFAULT 'Vacant',
+  appointed TEXT NOT NULL DEFAULT '',
+  seat      INTEGER NOT NULL DEFAULT 0
+);
+
+/* Issued verification slips. Keyed by control number, which is the whole point
+   of the document: a slip presented at the licensing office must be traceable
+   to the one this office tore off the pad. */
+CREATE TABLE IF NOT EXISTS verifications (
+  controlNo  TEXT PRIMARY KEY,
+  purpose    TEXT NOT NULL DEFAULT '',
+  issuedTo   TEXT NOT NULL DEFAULT '',
+  section    TEXT NOT NULL DEFAULT '',
+  stallNo    TEXT NOT NULL DEFAULT '',
+  others     TEXT NOT NULL DEFAULT '',
+  dateIssued TEXT NOT NULL DEFAULT '',
+  validUntil TEXT NOT NULL DEFAULT '',
+  issuedBy   TEXT NOT NULL DEFAULT '',
+  position   INTEGER NOT NULL DEFAULT 0
+);
+
+/* Which checklist lines were ticked on a slip, by their printed wording. */
+CREATE TABLE IF NOT EXISTS verification_items (
+  rowid_key TEXT PRIMARY KEY,
+  controlNo TEXT NOT NULL REFERENCES verifications(controlNo) ON DELETE CASCADE,
+  item      TEXT NOT NULL DEFAULT '',
+  position  INTEGER NOT NULL DEFAULT 0
+);
+
+/* A month of rent settled by a tenant, with the early-payment discount that
+   was actually taken off. The discount is recorded, not recomputed: changing
+   the rate later must not rewrite what a past month was paid. */
+CREATE TABLE IF NOT EXISTS rent_payments (
+  rowid_key TEXT PRIMARY KEY,
+  tenantId  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  period    TEXT NOT NULL DEFAULT '',
+  paidOn    TEXT NOT NULL DEFAULT '',
+  amount    REAL NOT NULL DEFAULT 0,
+  discount  REAL NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_rent_payments_tenant ON rent_payments(tenantId);
+CREATE INDEX IF NOT EXISTS idx_verif_items_control  ON verification_items(controlNo);
 `;
 
 /* The record types the renderer sends, and the columns each one stores. The
    read, write and delete statements are all generated from this, so adding a
    field is a one-line change here plus a column in the schema above. */
 const TABLES = {
-  stalls: ['id', 'section', 'tenant', 'status', 'lastInspection'],
-  tenants: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId'],
+  stalls: ['id', 'section', 'tenant', 'status', 'lastInspection', 'permit', 'note'],
+  tenants: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId',
+    'rentDueDay', 'meterElectricity', 'meterWater'],
   applicants: ['id', 'name', 'phone', 'stallType', 'status', 'dateApplied'],
   utilities: ['id', 'type', 'stallId', 'tenantId', 'tenantName', 'section', 'period', 'periodStart', 'periodEnd',
-    'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
+    'meterNumber', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
     'dateIssued', 'dueDate', 'notes'],
   violations: ['id', 'tenant', 'issue', 'status', 'points', 'dateRecorded', 'dateResolved', 'notes'],
   logs: ['id', 'date', 'time', 'type', 'details'],
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
+  officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed'],
 };
 
 /* The state key above maps to a differently named table in two cases. */
 const TABLE_NAME = { utilities: 'utility_bills' };
 const tableOf = (key) => TABLE_NAME[key] || key;
+
+/* Row order is normally kept in `position`. The officers table cannot use that
+   name — there, `position` is the post the officer holds — so its order lives
+   in `seat`. */
+const ORDER_COLUMN = { officers: 'seat' };
+const orderOf = (key) => ORDER_COLUMN[key] || 'position';
 
 /* ============================================================
    Connection
@@ -203,8 +264,28 @@ function open(file) {
   return db;
 }
 
+/* Columns added after a database may already have been created. CREATE TABLE
+   IF NOT EXISTS brings in whole new tables on its own; a new column on an old
+   table has to be added here or the record silently loses the field. */
+const ADDED_COLUMNS = [
+  ['stalls', 'permit', "TEXT NOT NULL DEFAULT 'Not Recorded'"],
+  ['stalls', 'note', "TEXT NOT NULL DEFAULT ''"],
+  ['tenants', 'rentDueDay', 'INTEGER NOT NULL DEFAULT 5'],
+  ['tenants', 'meterElectricity', "TEXT NOT NULL DEFAULT ''"],
+  ['tenants', 'meterWater', "TEXT NOT NULL DEFAULT ''"],
+  ['utility_bills', 'meterNumber', "TEXT NOT NULL DEFAULT ''"],
+];
+
+function addMissingColumns() {
+  for (const [table, column, decl] of ADDED_COLUMNS) {
+    const have = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!have) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  }
+}
+
 function migrate() {
   db.exec(SCHEMA);
+  addMissingColumns();
   const current = Number(readMeta('schema_version') || 0);
   if (current !== SCHEMA_VERSION) writeMeta('schema_version', String(SCHEMA_VERSION));
 }
@@ -245,17 +326,35 @@ function readAll() {
   const state = {};
 
   for (const [key, columns] of Object.entries(TABLES)) {
-    state[key] = db.prepare(`SELECT ${columns.join(', ')} FROM ${tableOf(key)} ORDER BY position, id`).all();
+    state[key] = db.prepare(`SELECT ${columns.join(', ')} FROM ${tableOf(key)} ORDER BY ${orderOf(key)}, id`).all();
   }
 
   // Numbers come back out of SQLite as numbers; a NULL applicantId is dropped
   // so the record matches the shape the renderer builds for a new tenant.
   const keepers = db.prepare('SELECT * FROM stallkeepers ORDER BY tenantId, position').all();
+  const payments = db.prepare('SELECT * FROM rent_payments ORDER BY tenantId, period').all();
   state.tenants = state.tenants.map((tenant) => {
     const own = keepers
       .filter((k) => k.tenantId === tenant.id)
       .map((k) => ({ id: k.id, name: k.name, phone: k.phone, relation: k.relation, barangay: k.barangay }));
-    const row = { ...tenant, rent: Number(tenant.rent) || 0, keepers: own };
+    const row = {
+      ...tenant,
+      rent: Number(tenant.rent) || 0,
+      rentDueDay: Number(tenant.rentDueDay) || 5,
+      keepers: own,
+      meters: { Electricity: tenant.meterElectricity || '', Water: tenant.meterWater || '' },
+      rentPayments: {},
+    };
+    delete row.meterElectricity;
+    delete row.meterWater;
+    for (const pay of payments.filter((r) => r.tenantId === tenant.id)) {
+      row.rentPayments[pay.period] = {
+        period: pay.period,
+        paidOn: pay.paidOn,
+        amount: Number(pay.amount) || 0,
+        discount: Number(pay.discount) || 0,
+      };
+    }
     if (row.applicantId === null || row.applicantId === undefined) delete row.applicantId;
     return row;
   });
@@ -267,6 +366,15 @@ function readAll() {
   }));
 
   state.violations = state.violations.map((v) => ({ ...v, points: Number(v.points) || 0 }));
+
+  const slipItems = db.prepare('SELECT * FROM verification_items ORDER BY controlNo, position').all();
+  state.verifications = db.prepare(
+    `SELECT controlNo, purpose, issuedTo, section, stallNo, others, dateIssued, validUntil, issuedBy
+       FROM verifications ORDER BY position, controlNo`,
+  ).all().map((slip) => ({
+    ...slip,
+    checked: slipItems.filter((i) => i.controlNo === slip.controlNo).map((i) => i.item),
+  }));
 
   const numeric = ['previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount'];
   state.utilities = state.utilities.map((bill) => {
@@ -307,12 +415,13 @@ function statementsFor(key) {
   if (statementCache.has(key)) return statementCache.get(key);
   const columns = TABLES[key];
   const table = tableOf(key);
-  const assignments = columns.filter((c) => c !== 'id').concat('position');
+  const order = orderOf(key);
+  const assignments = columns.filter((c) => c !== 'id').concat(order);
 
   const built = {
     upsert: db.prepare(
-      `INSERT INTO ${table} (${columns.join(', ')}, position)
-       VALUES (${columns.map((c) => `@${c}`).join(', ')}, @position)
+      `INSERT INTO ${table} (${columns.join(', ')}, ${order})
+       VALUES (${columns.map((c) => `@${c}`).join(', ')}, @${order})
        ON CONFLICT(id) DO UPDATE SET ${assignments.map((c) => `${c} = excluded.${c}`).join(', ')}`,
     ),
     remove: db.prepare(`DELETE FROM ${table} WHERE id = ?`),
@@ -325,8 +434,12 @@ function statementsFor(key) {
 /* Values arrive from the renderer as whatever the form produced. Columns are
    typed, so each one is coerced to something SQLite will accept rather than
    letting an undefined blow up the transaction. */
-function bindable(record, columns, position) {
-  const row = { position };
+function bindable(record, columns, position, orderColumn = 'position') {
+  const row = { [orderColumn]: position };
+  // The renderer keeps a tenant's meters nested; the table holds one column each.
+  if (record && record.meters && typeof record.meters === 'object') {
+    record = { ...record, meterElectricity: record.meters.Electricity || '', meterWater: record.meters.Water || '' };
+  }
   for (const column of columns) {
     const value = record[column];
     if (value === null || value === undefined) {
@@ -366,7 +479,7 @@ function save(payload) {
       records.forEach((record, index) => {
         if (!record || typeof record !== 'object' || !record.id) return;
         keep.add(String(record.id));
-        upsert.run(bindable(record, columns, index));
+        upsert.run(bindable(record, columns, index, orderOf(key)));
       });
 
       for (const row of ids.all()) {
@@ -375,7 +488,9 @@ function save(payload) {
     }
 
     if (Array.isArray(state.tenants)) writeKeepers(state.tenants);
+    if (Array.isArray(state.tenants)) writeRentPayments(state.tenants);
     if (Array.isArray(state.applicants)) writeRequirements(state.applicants);
+    if (Array.isArray(state.verifications)) writeVerifications(state.verifications);
 
     for (const [prefix, value] of Object.entries(counters)) {
       const next = Number(value);
@@ -420,6 +535,74 @@ function writeKeepers(tenants) {
         position: index,
       });
     });
+  }
+}
+
+/* A tenant's settled months. Rewritten wholesale per tenant, like the keepers:
+   the set is small and a month can be un-marked as well as marked. */
+function writeRentPayments(tenants) {
+  const clear = db.prepare('DELETE FROM rent_payments WHERE tenantId = ?');
+  const insert = db.prepare(
+    `INSERT INTO rent_payments (rowid_key, tenantId, period, paidOn, amount, discount)
+     VALUES (@rowid_key, @tenantId, @period, @paidOn, @amount, @discount)`,
+  );
+  for (const tenant of tenants) {
+    if (!tenant || !tenant.id) continue;
+    clear.run(String(tenant.id));
+    const payments = tenant.rentPayments && typeof tenant.rentPayments === 'object' ? tenant.rentPayments : {};
+    for (const [period, pay] of Object.entries(payments)) {
+      if (!pay || typeof pay !== 'object') continue;
+      insert.run({
+        rowid_key: `${tenant.id}#${period}`,
+        tenantId: String(tenant.id),
+        period: String(pay.period || period),
+        paidOn: String(pay.paidOn || ''),
+        amount: Number(pay.amount) || 0,
+        discount: Number(pay.discount) || 0,
+      });
+    }
+  }
+}
+
+/* Issued slips. A control number is never reissued, so rows are added and
+   updated but only removed when the renderer no longer lists them. */
+function writeVerifications(slips) {
+  const upsert = db.prepare(
+    `INSERT INTO verifications (controlNo, purpose, issuedTo, section, stallNo, others, dateIssued, validUntil, issuedBy, position)
+     VALUES (@controlNo, @purpose, @issuedTo, @section, @stallNo, @others, @dateIssued, @validUntil, @issuedBy, @position)
+     ON CONFLICT(controlNo) DO UPDATE SET
+       purpose = excluded.purpose, issuedTo = excluded.issuedTo, section = excluded.section,
+       stallNo = excluded.stallNo, others = excluded.others, dateIssued = excluded.dateIssued,
+       validUntil = excluded.validUntil, issuedBy = excluded.issuedBy, position = excluded.position`,
+  );
+  const clearItems = db.prepare('DELETE FROM verification_items WHERE controlNo = ?');
+  const addItem = db.prepare(
+    `INSERT INTO verification_items (rowid_key, controlNo, item, position)
+     VALUES (@rowid_key, @controlNo, @item, @position)`,
+  );
+  const keep = new Set();
+  slips.forEach((slip, index) => {
+    if (!slip || !slip.controlNo) return;
+    keep.add(String(slip.controlNo));
+    upsert.run({
+      controlNo: String(slip.controlNo),
+      purpose: String(slip.purpose || ''),
+      issuedTo: String(slip.issuedTo || ''),
+      section: String(slip.section || ''),
+      stallNo: String(slip.stallNo || ''),
+      others: String(slip.others || ''),
+      dateIssued: String(slip.dateIssued || ''),
+      validUntil: String(slip.validUntil || ''),
+      issuedBy: String(slip.issuedBy || ''),
+      position: index,
+    });
+    clearItems.run(String(slip.controlNo));
+    (Array.isArray(slip.checked) ? slip.checked : []).forEach((item, n) => {
+      addItem.run({ rowid_key: `${slip.controlNo}#${n}`, controlNo: String(slip.controlNo), item: String(item), position: n });
+    });
+  });
+  for (const row of db.prepare('SELECT controlNo FROM verifications').all()) {
+    if (!keep.has(String(row.controlNo))) db.prepare('DELETE FROM verifications WHERE controlNo = ?').run(row.controlNo);
   }
 }
 
