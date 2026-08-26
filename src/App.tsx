@@ -6935,11 +6935,22 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
   const [name, setName] = useState(() => { try { return localStorage.getItem(printedByKey) ?? ''; } catch { return ''; } });
   const [copies, setCopies] = useState(2);
   const [error, setError] = useState('');
+  /* Other tenants' bills the officer has added to this sheet. A sheet takes
+     four, so a collector walking a row can print the row rather than one
+     tenant at a time. */
+  const [added, setAdded] = useState<UtilityBill[]>([]);
 
-  /* One bill goes out in labelled copies; a batch goes out one receipt each. */
-  const receipts: PrintReceipt[] = request.single
+  /* One bill goes out in labelled copies, unless others have been added — then
+     the sheet is a run of different tenants and copy labels make no sense. */
+  const receipts: PrintReceipt[] = request.single && added.length === 0
     ? Array.from({ length: copies }, (_, i) => ({ bill: request.bills[0], label: RECEIPT_COPY_LABELS[i] ?? '' }))
-    : request.bills.map((bill) => ({ bill, label: '' }));
+    : [...request.bills, ...added].map((bill) => ({ bill, label: '' }));
+
+  /* What may still be added: anything on record that is not already on the
+     sheet, newest first, while there is room on it. */
+  const onSheet = new Set([...request.bills, ...added].map((b) => b.id).filter(Boolean));
+  const room = RECEIPTS_PER_SHEET - receipts.length;
+  const addable = billsOnRecord.filter((b) => b.id && !onSheet.has(b.id));
 
   const sheets = Math.ceil(Math.max(receipts.length, 1) / RECEIPTS_PER_SHEET);
 
@@ -7055,14 +7066,49 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
         {request.single && (
           <div className="form-group">
             <label className="form-label">Copies on the Sheet</label>
-            <select className="form-select" value={copies} onChange={(e) => setCopies(Number(e.target.value))}>
+            <select className="form-select" value={copies} disabled={added.length > 0} onChange={(e) => setCopies(Number(e.target.value))}>
               <option value={1}>1 — {RECEIPT_COPY_LABELS[0]}</option>
               <option value={2}>2 — tenant and market office</option>
               <option value={4}>4 — fill the sheet</option>
             </select>
-            <span className="form-hint">Every copy prints on the one sheet, to be cut apart.</span>
+            <span className="form-hint">{added.length > 0 ? 'Not used while other tenants share the sheet.' : 'Every copy prints on the one sheet, to be cut apart.'}</span>
           </div>
         )}
+      </div>
+
+      {/* A sheet holds four receipts. Rather than print one tenant at a time,
+          the officer can fill the rest of the sheet with other bills. */}
+      <div className="form-group">
+        <label className="form-label">Other Tenants on This Sheet</label>
+        {added.length > 0 && (
+          <ul className="sheet-added">
+            {added.map((b) => (
+              <li key={b.id}>
+                <span>{b.stallId} — {b.tenantName || 'Unassigned'} · {b.type} · {money(b.amount)}</span>
+                <button type="button" className="row-icon-btn danger" title="Take off the sheet" aria-label="Take off the sheet" onClick={() => setAdded((prev) => prev.filter((x) => x.id !== b.id))}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <select
+          className="form-select"
+          value=""
+          disabled={room <= 0 || addable.length === 0}
+          onChange={(e) => {
+            const bill = addable.find((b) => b.id === e.target.value);
+            if (bill) setAdded((prev) => [...prev, bill]);
+          }}
+        >
+          <option value="">
+            {room <= 0 ? 'The sheet is full' : addable.length === 0 ? 'No other bills on record' : `Add a bill… (room for ${room} more)`}
+          </option>
+          {room > 0 && addable.map((b) => (
+            <option key={b.id} value={b.id}>{b.stallId} — {b.tenantName || 'Unassigned'} · {b.type} · {money(b.amount)}</option>
+          ))}
+        </select>
+        <span className="form-hint">Four receipts fit on a sheet, cut apart afterwards. Adding another tenant turns off the copies above.</span>
       </div>
 
       {willFile.length > 0 && (
