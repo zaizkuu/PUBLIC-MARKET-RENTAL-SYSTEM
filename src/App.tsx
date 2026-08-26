@@ -3318,14 +3318,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     setError('');
   };
 
-  const applyTenant = (tid: string) => {
-    setTenantId(tid);
-    const t = tenants.find((x) => x.id === tid);
-    const sid = t && t.stallId && t.stallId !== '—' ? t.stallId : stallId;
-    if (t && t.stallId && t.stallId !== '—') setStallId(t.stallId);
-    fillFromRecords(sid, t, type);
-    setError('');
-  };
 
   /* Where the meter number in the box came from, so nobody has to guess whether
      it was filled in for them or is about to be recorded for the first time. */
@@ -3346,7 +3338,10 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
      so nothing here is what actually prints; it just warns the officer before
      they save or print that the due date they picked has already passed. */
   const wouldBeOverdue = !!dueDate && dueDate < todayIso();
-  const previewSurcharge = wouldBeOverdue ? Math.round(amount * (SURCHARGE_RATES[type] / 100) * 100) / 100 : 0;
+  /* What the surcharge would come to. Worked out whether or not the bill has
+     gone late, so the officer can tell the tenant what waits for them; it is
+     added to the total only once the due date has actually passed. */
+  const previewSurcharge = Math.round(amount * (SURCHARGE_RATES[type] / 100) * 100) / 100;
 
   const resetForm = () => {
     setCurrent(''); setNotes(''); setError('');
@@ -3437,25 +3432,25 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
 
       <div className="calc-grid">
         <div className="calc-form">
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Stall Number *</label>
-              <select className="form-select" value={stallId} onChange={(e) => applyStall(e.target.value)}>
-                <option value="">Select stall…</option>
-                {stallOptions.map((sid) => {
-                  const t = tenantForStall(sid);
-                  return <option key={sid} value={sid}>{sid}{t ? ` — ${t.name}` : ' — vacant'}</option>;
-                })}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Tenant (bill recipient)</label>
-              <select className="form-select" value={tenantId} onChange={(e) => applyTenant(e.target.value)}>
-                <option value="">No tenant on file — charge the stall</option>
-                {tenants.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.stallId})</option>)}
-              </select>
-              <span className="form-hint">Picking either field fills in the other, along with the meter number and last reading on record.</span>
-            </div>
+          {/* The stall is the only thing asked for: it already names its tenant,
+              and carries the meter and the last reading with it. A separate
+              tenant field only invited the two to disagree. */}
+          <div className="form-group">
+            <label className="form-label">Stall Number *</label>
+            <select className="form-select" value={stallId} onChange={(e) => applyStall(e.target.value)}>
+              <option value="">Select stall…</option>
+              {stallOptions.map((sid) => {
+                const t = tenantForStall(sid);
+                return <option key={sid} value={sid}>{sid}{t ? ` — ${t.name}` : ' — vacant'}</option>;
+              })}
+            </select>
+            <span className="form-hint">
+              {selectedTenant
+                ? `Billed to ${selectedTenant.name}. Meter number and last reading filled in from the record.`
+                : stallId
+                  ? 'No tenant on file for this stall — the bill is charged to the stall itself.'
+                  : 'Choosing a stall fills in the tenant, the meter number and the last reading on record.'}
+            </span>
           </div>
 
           <div className="form-group">
@@ -3537,15 +3532,19 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           <div className="calc-row highlight"><span>Consumption</span><strong>{consumption.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row"><span>Rate per {preset.unit}</span><strong>{money(rateNum)}</strong></div>
           <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(amount)}</strong></div>
-          {wouldBeOverdue ? (
-            <>
-              <div className="calc-row warning"><span>Late Surcharge ({SURCHARGE_RATES[type]}%) — due date already passed</span><strong>+{money(previewSurcharge)}</strong></div>
-              <div className="calc-total"><span>Total if Printed Today</span><strong>{money(amount + previewSurcharge)}</strong></div>
-              <p className="calc-surcharge-note">This due date has already passed, so a receipt printed today will carry the surcharge automatically. The amount saved to records is {money(amount)}; the surcharge is never added to that figure, only to whatever is printed after the due date.</p>
-            </>
-          ) : (
-            <div className="calc-total"><span>Total Amount Due</span><strong>{money(amount)}</strong></div>
-          )}
+          {/* The surcharge is always shown, so the tenant can be told what
+              lateness costs before it costs it. It joins the total only after
+              the due date, and never joins the amount saved to records. */}
+          <div className={`calc-row${wouldBeOverdue ? ' warning' : ' muted'}`}>
+            <span>Late Surcharge ({SURCHARGE_RATES[type]}%){wouldBeOverdue ? ' — due date already passed' : ` — only if unpaid after ${formatIsoDate(dueDate)}`}</span>
+            <strong>{wouldBeOverdue ? '+' : ''}{money(previewSurcharge)}</strong>
+          </div>
+          <div className="calc-total"><span>{wouldBeOverdue ? 'Total if Printed Today' : 'Total Amount Due'}</span><strong>{money(wouldBeOverdue ? amount + previewSurcharge : amount)}</strong></div>
+          <p className="calc-surcharge-note">
+            {wouldBeOverdue
+              ? `This due date has already passed, so a receipt printed today carries the surcharge automatically. The amount saved to records stays ${money(amount)} — the surcharge applies only to what prints.`
+              : `Not applied yet. If this bill is still unpaid after ${formatIsoDate(dueDate)}, a receipt printed from then on carries ${money(previewSurcharge)} on top, bringing it to ${money(amount + previewSurcharge)}. The amount on record stays ${money(amount)}.`}
+          </p>
           <div className="calc-row"><span>Due date</span><strong>{formatIsoDate(dueDate)}</strong></div>
           {error && <div className="calc-error"><span className="material-symbols-outlined">error</span>{error}</div>}
           <div className="calc-actions">

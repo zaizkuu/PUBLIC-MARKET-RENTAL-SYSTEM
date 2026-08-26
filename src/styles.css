@@ -3212,6 +3212,16 @@ ul, ol {
   color: #92400e;
 }
 
+/* A surcharge that has not bitten yet: present, and plainly not counted. */
+.calc-row.muted {
+  color: var(--color-text-secondary);
+}
+
+.calc-row.muted strong {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
 .calc-row.warning strong {
   color: var(--color-warning);
 }
