@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
+import {
+  loadStored, persist, clearStored,
+  usingDatabase, backendName, databaseStats, backupDatabase, checkIntegrity,
+  revealDataFolder, formatBytes,
+} from './db';
+import type { DatabaseStats, IdCounters } from './db';
 
 /* ============================================================
    Types
@@ -15,7 +21,6 @@ type ModuleKey =
   | 'analytics'
   | 'logbook'
   | 'officers'
-  | 'assistant'
   | 'settings'
   | 'support';
 
@@ -281,9 +286,9 @@ const VIOLATION_ISSUES = [
   'Fire safety non-compliance',
   'Obstruction of walkway',
 ];
-const storageKey = 'pmrms-state-v9';
-const savedAtKey = 'pmrms-saved-at';
-const idCounterKey = 'pmrms-id-counters';
+/* Records are read and written through ./db — a SQLite database in the desktop
+   application, localStorage in a plain browser. */
+
 /* Who last printed a receipt — offered back as the default the next time, so
    the officer on duty types their name once a shift rather than once a bill. */
 const printedByKey = 'pmrms-printed-by';
@@ -450,6 +455,58 @@ const OFFICE_UNITS = [
   'Sangguniang Bayan',
 ];
 
+/* ---------- Section 43. Market Stall Rates ----------
+
+   The schedule of rates the market charges, transcribed from the ordinance
+   sheet as revised: the printed figures for fish, meat, fruit & vegetable,
+   local delicacies and dried fish were each struck through and raised by hand,
+   and those revised figures are what is charged here. The agora's 99,000 was
+   marked "very high" without a replacement, so it stands as printed. `monthly` is what a stall of that description pays each month; the
+   two market-day lines are charged by the day instead, which is why they carry
+   no monthly figure.
+
+   Only five of these descriptions correspond to stalls the register currently
+   holds (fish, meat, chicken, fruit & vegetable, kakanin). The rest are kept
+   because they are the office's own schedule and the stalls exist on the
+   ground, whether or not a row has been opened for them yet. */
+const STALL_RATE_SCHEDULE: Array<{
+  description: string;
+  stalls: number | null;
+  area: string;
+  perSqM: number | null;
+  monthly: number | null;
+  perMarketDay?: number;
+  note?: string;
+}> = [
+  { description: 'Peripheral stalls', stalls: 83, area: '25 sq. meters', perSqM: 180, monthly: 4000 },
+  { description: 'Corner stall at peripheral', stalls: 6, area: '25 sq. meters', perSqM: 200, monthly: 5000 },
+  { description: 'Fish stalls', stalls: 60, area: '1.2 sq. meters', perSqM: null, monthly: 1000 },
+  { description: 'Meat stalls', stalls: 46, area: '1.8 sq. meters', perSqM: null, monthly: 1500 },
+  { description: 'Chicken stalls', stalls: 22, area: '1.8 sq. meters', perSqM: null, monthly: 1500, note: 'Charged as meat' },
+  { description: 'Fruit & vegetable stalls', stalls: 64, area: '1m x 1.8m', perSqM: null, monthly: 1000 },
+  { description: 'Local delicacies (kakanin)', stalls: 18, area: '1m x 1.8m', perSqM: null, monthly: 1000 },
+  { description: 'Lechon', stalls: 16, area: '.7m x 1.25m', perSqM: null, monthly: 1000 },
+  { description: 'Dried fish and eggs', stalls: 12, area: '1m x 1.8m', perSqM: null, monthly: 1000 },
+  { description: 'Ground & 2nd floor agora', stalls: 2, area: '330 sq. meters', perSqM: 300, monthly: 99000, note: 'Marked “very high” for review' },
+  { description: 'Dry goods', stalls: 46, area: '9 sq. meters', perSqM: 166.67, monthly: 1500 },
+  { description: 'Tents (during market days)', stalls: null, area: '', perSqM: null, monthly: null, perMarketDay: 100 },
+  { description: 'Tables (during market days)', stalls: null, area: '', perSqM: null, monthly: null, perMarketDay: 40 },
+];
+
+/* The monthly rate a stall pays, worked out from its number. Chicken stalls
+   are charged as meat stalls, which is how the schedule lists them. */
+const STALL_PREFIX_RATE: Record<string, number> = {
+  FS: 1000,   // Fish stalls
+  MS: 1500,   // Meat stalls
+  CS: 1500,   // Chicken, charged as meat
+  FV: 1000,   // Fruit & vegetable stalls
+  KK: 1000,   // Local delicacies (kakanin)
+};
+
+function monthlyRentForStall(stallId: string): number {
+  return STALL_PREFIX_RATE[stallId.slice(0, 2).toUpperCase()] ?? 0;
+}
+
 /* ============================================================
    Initial Data
    ============================================================ */
@@ -464,217 +521,217 @@ const OFFICE_UNITS = [
 const initialState = {
   applicants: [] as Applicant[],
   tenants: [
-    { id: 'TEN-001', name: 'LOTEYRO, LEEMAR', phone: '', stallId: 'MS-01', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-002', name: 'LIPAYON, LORENA', phone: '', stallId: 'MS-02', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-003', name: 'EMOYLAN, CAROLINE', phone: '', stallId: 'MS-03', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-004', name: 'BORREL, FERDINAND', phone: '', stallId: 'MS-04', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-005', name: 'GAMEZ, GEMMA BERDAN', phone: '', stallId: 'MS-05', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-006', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-06', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-007', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-07', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-008', name: 'GEVEN, MA. FATIMA VALLER', phone: '', stallId: 'MS-08', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-009', name: 'AUCILA, GILBERT NIRZA', phone: '', stallId: 'MS-09', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-010', name: 'CAMERO, DESIDERIO NUEVAS', phone: '', stallId: 'MS-12', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-011', name: 'BANEZ, CELESTE A', phone: '', stallId: 'MS-17', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-012', name: 'RIZALDO BIGOY', phone: '', stallId: 'MS-20', section: 'Meat & Poultry', rent: 0, status: 'Abandoned', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-013', name: 'LIPAYON, GERRY INDIC', phone: '', stallId: 'MS-21', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-014', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-22', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-015', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-23', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-016', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-24', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-017', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-25', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-018', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-27', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-019', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-28', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-020', name: 'GEVEN, FATIMA VALLER', phone: '', stallId: 'MS-29', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-021', name: 'OGRIMEN, EDUARDO LACE', phone: '', stallId: 'MS-31', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-022', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-32', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-023', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-33', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-024', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-34', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-025', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-35', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-026', name: 'MAGDUA, CHARLES GODWIN ALMERIA', phone: '', stallId: 'MS-36', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-027', name: 'BIGOY, REGIE', phone: '', stallId: 'MS-37', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-028', name: 'TERADO, JINGJING MORALITA', phone: '', stallId: 'MS-38', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-029', name: 'ODTUHAN, AIZA SONGALIA', phone: '', stallId: 'MS-40', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-030', name: 'GERILLA, LEODEGARIO DUMASIG', phone: '', stallId: 'MS-41', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-031', name: 'LIPAYON, ROMEO L', phone: '', stallId: 'MS-44', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-032', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-01', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-033', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-02', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-034', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-03', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-035', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-04', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-036', name: 'MAGDUA, ASHLEY SIBYL AGUILLON', phone: '', stallId: 'CS-05', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-037', name: 'CERVANTES, JOSE PERCIVAL ESPADA', phone: '', stallId: 'CS-06', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-038', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-07', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-039', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-08', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-040', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-09', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-041', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-10', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-042', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-11', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-043', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-12', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-044', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-13', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-045', name: 'LAURINO, MARITES RABINA', phone: '', stallId: 'CS-14', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-046', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-16', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-047', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-17', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-048', name: 'TIZON, ELIZA ALMERIA', phone: '', stallId: 'CS-18', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-049', name: 'LANZA, VILMA ALBAO', phone: '', stallId: 'CS-19', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-050', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-20', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-051', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-21', section: 'Meat & Poultry', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-052', name: 'LONZAGA, MARTHA MACARAY', phone: '', stallId: 'CS-22', section: 'Meat & Poultry', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-053', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-01', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-054', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-02', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-055', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-03', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-056', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-04', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-057', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-05', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-058', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-06', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-059', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-07', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-060', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-08', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-061', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-09', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-062', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-10', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-063', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-11', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-064', name: 'MARABUT, MYRA SORILA', phone: '', stallId: 'FV-12', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-065', name: 'ESTEMBER, CHERIEMAE HEMBRA', phone: '', stallId: 'FV-13', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-066', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-14', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-067', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-15', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-068', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-16', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-069', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-17', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-070', name: 'PELINO, FLORENTINA ANCHITA', phone: '', stallId: 'FV-18', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-071', name: 'MAGDUA, GENEVIEVE BUHAWE', phone: '', stallId: 'FV-19', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-072', name: 'GUARDAYA, MA. LOURCEL GARCIA', phone: '', stallId: 'FV-20', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-073', name: 'VERTUDES, KATE MARABUT', phone: '', stallId: 'FV-21', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-074', name: 'TELEMBAN, ESMERALDA', phone: '', stallId: 'FV-22', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-075', name: 'SALCEDO, SOFIA MARIE', phone: '', stallId: 'FV-23', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-076', name: 'SALCEDO, SHAINE MARIE HEMBRA', phone: '', stallId: 'FV-24', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-077', name: 'GARCIA, ROBERTO III CORNEJO', phone: '', stallId: 'FV-25', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-078', name: 'CAMPOSANO, LISA MOLINA', phone: '', stallId: 'FV-26', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-079', name: 'ZIALCITA, SHERYL', phone: '', stallId: 'FV-27', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-080', name: 'LAGARTO, MARY JEAN', phone: '', stallId: 'FV-28', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-081', name: 'TOLIBAS, ROSELYN LANTAJO', phone: '', stallId: 'FV-29', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-082', name: 'PARANAS, LYN C', phone: '', stallId: 'FV-30', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-083', name: 'GARCIA, VELMA CINCO', phone: '', stallId: 'FV-31', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-084', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-32', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-085', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-33', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-086', name: 'PODOL, RAMIL M', phone: '', stallId: 'FV-34', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-087', name: 'ALBAO, DARWIN', phone: '', stallId: 'FV-35', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-088', name: 'VILLERO, ESTER FARON', phone: '', stallId: 'FV-36', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-089', name: 'MODESTO, JADE', phone: '', stallId: 'FV-37', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-090', name: 'MODESTO, JADE', phone: '', stallId: 'FV-38', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-091', name: 'VILLERO, CRISANTA CASIO', phone: '', stallId: 'FV-39', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-092', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-40', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-093', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-41', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-094', name: 'RELLONA, EVANGELINE ALBA', phone: '', stallId: 'FV-42', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-095', name: 'ANOS, DIANNE CORRAL', phone: '', stallId: 'FV-43', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-096', name: 'BLASE, MARICEL LASE', phone: '', stallId: 'FV-44', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-097', name: 'AMISTOSO, JONATHAN', phone: '', stallId: 'FV-45', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-098', name: 'DUMALAORON, ESTELITA MESIAS', phone: '', stallId: 'FV-46', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-099', name: 'ROYERAS, FRANCISCO CINCO', phone: '', stallId: 'FV-47', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-100', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-48', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-101', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-49', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-102', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-50', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-103', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-51', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-104', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-52', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-105', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-53', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-106', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-54', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-107', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-55', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-108', name: 'CATAN, ROSARIO V.', phone: '', stallId: 'FV-56', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-109', name: 'DANGCO, JAMEL ROSE PEREZ', phone: '', stallId: 'FV-57', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-110', name: 'BOCO, ORFIEL RECOTE', phone: '', stallId: 'FV-58', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-111', name: 'SOLANO, WILSON S', phone: '', stallId: 'FV-59', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-112', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-60', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-113', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-61', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-114', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-62', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-115', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-63', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-116', name: 'OLGUIRA, ANGEILA MAE L.', phone: '', stallId: 'FV-64', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-117', name: 'OLGUIRA, CARMILO RUEL L.', phone: '', stallId: 'FV-65', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-118', name: 'VILLEGAS, KAREN GRACE M', phone: '', stallId: 'FV-66', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-119', name: 'LAMOSTE, REY CAYANES', phone: '', stallId: 'FV-67', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-120', name: 'ALVAREZ, RUBY DEOANNE MACEDA', phone: '', stallId: 'FV-68', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-121', name: 'BETASOLO, GENEVIEVE TOLIBAS', phone: '', stallId: 'FV-69', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-122', name: 'RECOSANA, ROMEL NOLASCO', phone: '', stallId: 'FV-70', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-123', name: 'BOCO, IVY RICOTE', phone: '', stallId: 'FV-71', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-124', name: 'MARTOS, SYLDY', phone: '', stallId: 'FV-72', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-125', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-73', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-126', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-74', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-127', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-75', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-128', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-76', section: 'Vegetables & Fruits', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-129', name: 'LANCANAN, ISABELITA BALMES', phone: '', stallId: 'FV-77', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-130', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-78', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-131', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-79', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-132', name: 'CAIMOY, GENEVIEVE OPERIO', phone: '', stallId: 'FV-80', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-133', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-81', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-134', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-82', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-135', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-83', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-136', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-84', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-137', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-85', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-138', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-86', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-139', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-87', section: 'Vegetables & Fruits', rent: 0, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-140', name: 'DUQUILLA, IRENE TESTON', phone: '', stallId: 'FV-88', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-141', name: 'BASIHAN, JOSEPHINE', phone: '', stallId: 'FV-89', section: 'Vegetables & Fruits', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-142', name: 'DUZON, DULCE CORAZON TAYANES', phone: '', stallId: 'FS-01', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-143', name: 'MORANTE, ELSA TAYANES', phone: '', stallId: 'FS-02', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-144', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-03', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-145', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-04', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-146', name: 'ESPADA, EVELYN BALTAZAR', phone: '', stallId: 'FS-05', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-147', name: 'CRISOLOGO, CRISPIN SINDAY', phone: '', stallId: 'FS-06', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-148', name: 'SABALZA, DARLYNA', phone: '', stallId: 'FS-07', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-149', name: 'PALABIO, FRANCISCO GHRAY JR. ORDAME', phone: '', stallId: 'FS-08', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-150', name: 'MONSAGA, MICHELLE LERIOS', phone: '', stallId: 'FS-09', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-151', name: 'ORDAME, RINE LERIOS', phone: '', stallId: 'FS-10', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-152', name: 'ORDAME, RICARDO LERIOS', phone: '', stallId: 'FS-11', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-153', name: 'LAURENTE, KAREN CALIPAYAN', phone: '', stallId: 'FS-12', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-154', name: 'COSTIMIANO, BENECIO', phone: '', stallId: 'FS-13', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-155', name: 'LABRADO, RESHILE', phone: '', stallId: 'FS-14', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-156', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-15', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-157', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-16', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-158', name: 'ABANO, HAIDE TAYANES', phone: '', stallId: 'FS-17', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-159', name: 'ABANO, DENNIS ALMADEN', phone: '', stallId: 'FS-18', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-160', name: 'PLABA, JOVITA', phone: '', stallId: 'FS-19', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-161', name: 'BARCILLA, LAILA BADE', phone: '', stallId: 'FS-20', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-162', name: 'ABANAG, ALMA', phone: '', stallId: 'FS-21', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-163', name: 'ABANAG, DANILO ABADIANO', phone: '', stallId: 'FS-22', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-164', name: 'ORDAME, CHARINA MELO', phone: '', stallId: 'FS-23', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-165', name: 'AGUILLON, MARIA CLARISS CAJEPE', phone: '', stallId: 'FS-24', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-166', name: 'PLABA, PRINCESS CABE', phone: '', stallId: 'FS-25', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-167', name: 'AGUILLON, SANDRO LABRADO', phone: '', stallId: 'FS-26', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-168', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-28', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-169', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-29', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-170', name: 'GARCIA, REGINE', phone: '', stallId: 'FS-33', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-171', name: 'AVILA, DAISY BAHIA', phone: '', stallId: 'FS-34', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-172', name: 'TAYANES, ARIEL VERUTIAO', phone: '', stallId: 'FS-35', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-173', name: 'TAYANES, JENNIFER CAINDOY', phone: '', stallId: 'FS-36', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-174', name: 'ABANDO, KIRBY ASDILLA', phone: '', stallId: 'FS-37', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-175', name: 'AGUILAR, JOEL FUENTES', phone: '', stallId: 'FS-38', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-176', name: 'AGUILAR, JOVE', phone: '', stallId: 'FS-39', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-177', name: 'IMPORTA, SONNY LUIS', phone: '', stallId: 'FS-40', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-178', name: 'ALBAO, NICANORA LAGO', phone: '', stallId: 'FS-41', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-179', name: 'AGUILAR, GLENN FUENTES', phone: '', stallId: 'FS-42', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-180', name: 'AGUILAR, GLORIA', phone: '', stallId: 'FS-43', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-181', name: 'ABAS, FELISA TIBE', phone: '', stallId: 'FS-44', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-182', name: 'ABANDO, JOEY B.', phone: '', stallId: 'FS-45', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-183', name: 'CANDELA, MARILYN ORDAME', phone: '', stallId: 'FS-46', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-184', name: 'FLORES, MELVIN', phone: '', stallId: 'FS-47', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-185', name: 'MELO, RENALYN', phone: '', stallId: 'FS-48', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-186', name: 'MELO, MELBA', phone: '', stallId: 'FS-49', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-187', name: 'PARDALES, ABELARDO NAPOLES', phone: '', stallId: 'FS-50', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-188', name: 'BAGUISA, MERLY ABANG', phone: '', stallId: 'FS-51', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-189', name: 'BAGUISA, COLITA ABANAG', phone: '', stallId: 'FS-52', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-190', name: 'TOMANDA, DANIEL OGARO', phone: '', stallId: 'FS-53', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-191', name: 'DUZON, MILO LOPEZ', phone: '', stallId: 'FS-54', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-192', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-55', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-193', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-56', section: 'Fish & Seafood', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-194', name: 'SALAÑO, JEFER JOHN ABON', phone: '', stallId: 'FS-57', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-195', name: 'UBALDO, NILDA', phone: '', stallId: 'FS-58', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-196', name: 'VERTUDES, ERIC', phone: '', stallId: 'FS-59', section: 'Fish & Seafood', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-197', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-01', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-198', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-02', section: 'Dry Goods', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-199', name: 'DUZON, DULCE CORAZON/MELODY TAYANES', phone: '', stallId: 'KK-03', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-200', name: 'FLORES, CATHERINE VERONA', phone: '', stallId: 'KK-04', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-201', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-05', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-202', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-06', section: 'Dry Goods', rent: 0, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-203', name: 'MEDRANO, MARTHY PALARON', phone: '', stallId: 'KK-07', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-204', name: 'AGUILLON, MARY JOY DELA CERNA', phone: '', stallId: 'KK-08', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-205', name: 'ELARDO, ROSARIO', phone: '', stallId: 'KK-09', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-206', name: 'ESLABAN, JULIFE PERALTA', phone: '', stallId: 'KK-10', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-207', name: 'REDONA, NARCISA', phone: '', stallId: 'KK-11', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-208', name: 'PERALTA, ERVIN PAULO MAQUILAN', phone: '', stallId: 'KK-12', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-209', name: 'CESAR, RHODORA LAMATA', phone: '', stallId: 'KK-13', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-210', name: 'LERIOS, NORIDAN', phone: '', stallId: 'KK-14', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
-    { id: 'TEN-211', name: 'MODESTO, JADE', phone: '', stallId: 'KK-15', section: 'Dry Goods', rent: 0, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-001', name: 'LOTEYRO, LEEMAR', phone: '', stallId: 'MS-01', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-002', name: 'LIPAYON, LORENA', phone: '', stallId: 'MS-02', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-003', name: 'EMOYLAN, CAROLINE', phone: '', stallId: 'MS-03', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-004', name: 'BORREL, FERDINAND', phone: '', stallId: 'MS-04', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-005', name: 'GAMEZ, GEMMA BERDAN', phone: '', stallId: 'MS-05', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-006', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-06', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-007', name: 'SALVE, NIDA MONTE', phone: '', stallId: 'MS-07', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-008', name: 'GEVEN, MA. FATIMA VALLER', phone: '', stallId: 'MS-08', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-009', name: 'AUCILA, GILBERT NIRZA', phone: '', stallId: 'MS-09', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-010', name: 'CAMERO, DESIDERIO NUEVAS', phone: '', stallId: 'MS-12', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-011', name: 'BANEZ, CELESTE A', phone: '', stallId: 'MS-17', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-012', name: 'RIZALDO BIGOY', phone: '', stallId: 'MS-20', section: 'Meat & Poultry', rent: 1500, status: 'Abandoned', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-013', name: 'LIPAYON, GERRY INDIC', phone: '', stallId: 'MS-21', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-014', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-22', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-015', name: 'EMOYLAN, CAROLINE ALMERIA', phone: '', stallId: 'MS-23', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-016', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-24', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-017', name: 'ORINGO, JAIME COBACHA', phone: '', stallId: 'MS-25', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-018', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-27', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-019', name: 'BIGOY, RONALYN CORRALES', phone: '', stallId: 'MS-28', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-020', name: 'GEVEN, FATIMA VALLER', phone: '', stallId: 'MS-29', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-021', name: 'OGRIMEN, EDUARDO LACE', phone: '', stallId: 'MS-31', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-022', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-32', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-023', name: 'LANZA, LEO CAYUBIT', phone: '', stallId: 'MS-33', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-024', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-34', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-025', name: 'ALMADEN, MARY ANN KEMPIS', phone: '', stallId: 'MS-35', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-026', name: 'MAGDUA, CHARLES GODWIN ALMERIA', phone: '', stallId: 'MS-36', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-027', name: 'BIGOY, REGIE', phone: '', stallId: 'MS-37', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-028', name: 'TERADO, JINGJING MORALITA', phone: '', stallId: 'MS-38', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-029', name: 'ODTUHAN, AIZA SONGALIA', phone: '', stallId: 'MS-40', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-030', name: 'GERILLA, LEODEGARIO DUMASIG', phone: '', stallId: 'MS-41', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-031', name: 'LIPAYON, ROMEO L', phone: '', stallId: 'MS-44', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-032', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-01', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-033', name: 'ARCENA, BABY JANE TOLIBAS', phone: '', stallId: 'CS-02', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-034', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-03', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-035', name: 'LONZAGA, MANUEL, JR. AGUIRRE', phone: '', stallId: 'CS-04', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-036', name: 'MAGDUA, ASHLEY SIBYL AGUILLON', phone: '', stallId: 'CS-05', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-037', name: 'CERVANTES, JOSE PERCIVAL ESPADA', phone: '', stallId: 'CS-06', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-038', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-07', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-039', name: 'VILLERO, JETRO FARON', phone: '', stallId: 'CS-08', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-040', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-09', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-041', name: 'CERVANTES, SOLEDAD LLEGE', phone: '', stallId: 'CS-10', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-042', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-11', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-043', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-12', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-044', name: 'DAPITAN, ELAINE ANGELICA ALMERIA', phone: '', stallId: 'CS-13', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-045', name: 'LAURINO, MARITES RABINA', phone: '', stallId: 'CS-14', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-046', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-16', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-047', name: 'MAGDUA, ALWIN AMARILLA', phone: '', stallId: 'CS-17', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-048', name: 'TIZON, ELIZA ALMERIA', phone: '', stallId: 'CS-18', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-049', name: 'LANZA, VILMA ALBAO', phone: '', stallId: 'CS-19', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-050', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-20', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-051', name: 'RIPALDA, CHRISTINE MAE FARON', phone: '', stallId: 'CS-21', section: 'Meat & Poultry', rent: 1500, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-052', name: 'LONZAGA, MARTHA MACARAY', phone: '', stallId: 'CS-22', section: 'Meat & Poultry', rent: 1500, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-053', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-01', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-054', name: 'CINCO, MA. JOCELYN ROSENDE', phone: '', stallId: 'FV-02', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-055', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-03', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-056', name: 'SACLAY, JULIETA REDOÑA', phone: '', stallId: 'FV-04', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-057', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-05', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-058', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-06', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-059', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-07', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-060', name: 'LADAN, MAE MERLYN ANCHITA', phone: '', stallId: 'FV-08', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-061', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-09', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-062', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-10', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-063', name: 'CINCO, MA. JACQUILINE ROSENDE', phone: '', stallId: 'FV-11', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-064', name: 'MARABUT, MYRA SORILA', phone: '', stallId: 'FV-12', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-065', name: 'ESTEMBER, CHERIEMAE HEMBRA', phone: '', stallId: 'FV-13', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-066', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-14', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-067', name: 'CANAYON, MADELYN SUYOM', phone: '', stallId: 'FV-15', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-068', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-16', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-069', name: 'MARTOS, SYLVIA', phone: '', stallId: 'FV-17', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-070', name: 'PELINO, FLORENTINA ANCHITA', phone: '', stallId: 'FV-18', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-071', name: 'MAGDUA, GENEVIEVE BUHAWE', phone: '', stallId: 'FV-19', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-072', name: 'GUARDAYA, MA. LOURCEL GARCIA', phone: '', stallId: 'FV-20', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-073', name: 'VERTUDES, KATE MARABUT', phone: '', stallId: 'FV-21', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-074', name: 'TELEMBAN, ESMERALDA', phone: '', stallId: 'FV-22', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-075', name: 'SALCEDO, SOFIA MARIE', phone: '', stallId: 'FV-23', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-076', name: 'SALCEDO, SHAINE MARIE HEMBRA', phone: '', stallId: 'FV-24', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-077', name: 'GARCIA, ROBERTO III CORNEJO', phone: '', stallId: 'FV-25', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-078', name: 'CAMPOSANO, LISA MOLINA', phone: '', stallId: 'FV-26', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-079', name: 'ZIALCITA, SHERYL', phone: '', stallId: 'FV-27', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-080', name: 'LAGARTO, MARY JEAN', phone: '', stallId: 'FV-28', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-081', name: 'TOLIBAS, ROSELYN LANTAJO', phone: '', stallId: 'FV-29', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-082', name: 'PARANAS, LYN C', phone: '', stallId: 'FV-30', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-083', name: 'GARCIA, VELMA CINCO', phone: '', stallId: 'FV-31', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-084', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-32', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-085', name: 'UDTOHAN, NEIL ALBAO', phone: '', stallId: 'FV-33', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-086', name: 'PODOL, RAMIL M', phone: '', stallId: 'FV-34', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-087', name: 'ALBAO, DARWIN', phone: '', stallId: 'FV-35', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-088', name: 'VILLERO, ESTER FARON', phone: '', stallId: 'FV-36', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-089', name: 'MODESTO, JADE', phone: '', stallId: 'FV-37', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-090', name: 'MODESTO, JADE', phone: '', stallId: 'FV-38', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-091', name: 'VILLERO, CRISANTA CASIO', phone: '', stallId: 'FV-39', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-092', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-40', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-093', name: 'PONFERRADA, VICTORINO CINCO', phone: '', stallId: 'FV-41', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-094', name: 'RELLONA, EVANGELINE ALBA', phone: '', stallId: 'FV-42', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-095', name: 'ANOS, DIANNE CORRAL', phone: '', stallId: 'FV-43', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-096', name: 'BLASE, MARICEL LASE', phone: '', stallId: 'FV-44', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-097', name: 'AMISTOSO, JONATHAN', phone: '', stallId: 'FV-45', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-098', name: 'DUMALAORON, ESTELITA MESIAS', phone: '', stallId: 'FV-46', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-099', name: 'ROYERAS, FRANCISCO CINCO', phone: '', stallId: 'FV-47', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-100', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-48', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-101', name: 'CAMINO, CHENEE MARABUT', phone: '', stallId: 'FV-49', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-102', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-50', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-103', name: 'MARABUT, MYLENE SORILA', phone: '', stallId: 'FV-51', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-104', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-52', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-105', name: 'MENAYA, ROY G', phone: '', stallId: 'FV-53', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-106', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-54', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-107', name: 'NERJA, NERLY ANDO', phone: '', stallId: 'FV-55', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-108', name: 'CATAN, ROSARIO V.', phone: '', stallId: 'FV-56', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-109', name: 'DANGCO, JAMEL ROSE PEREZ', phone: '', stallId: 'FV-57', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-110', name: 'BOCO, ORFIEL RECOTE', phone: '', stallId: 'FV-58', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-111', name: 'SOLANO, WILSON S', phone: '', stallId: 'FV-59', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-112', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-60', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-113', name: 'CORDERO, MARIA NILDA P.', phone: '', stallId: 'FV-61', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-114', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-62', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-115', name: 'YEPES, OSCAR MENDIOLA', phone: '', stallId: 'FV-63', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-116', name: 'OLGUIRA, ANGEILA MAE L.', phone: '', stallId: 'FV-64', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-117', name: 'OLGUIRA, CARMILO RUEL L.', phone: '', stallId: 'FV-65', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-118', name: 'VILLEGAS, KAREN GRACE M', phone: '', stallId: 'FV-66', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-119', name: 'LAMOSTE, REY CAYANES', phone: '', stallId: 'FV-67', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-120', name: 'ALVAREZ, RUBY DEOANNE MACEDA', phone: '', stallId: 'FV-68', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-121', name: 'BETASOLO, GENEVIEVE TOLIBAS', phone: '', stallId: 'FV-69', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-122', name: 'RECOSANA, ROMEL NOLASCO', phone: '', stallId: 'FV-70', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-123', name: 'BOCO, IVY RICOTE', phone: '', stallId: 'FV-71', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-124', name: 'MARTOS, SYLDY', phone: '', stallId: 'FV-72', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-125', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-73', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-126', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-74', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-127', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-75', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-128', name: 'GASING, NESTOR MAGALLON', phone: '', stallId: 'FV-76', section: 'Vegetables & Fruits', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-129', name: 'LANCANAN, ISABELITA BALMES', phone: '', stallId: 'FV-77', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-130', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-78', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-131', name: 'OPERIO, JENEFER CHUCA', phone: '', stallId: 'FV-79', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-132', name: 'CAIMOY, GENEVIEVE OPERIO', phone: '', stallId: 'FV-80', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-133', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-81', section: 'Vegetables & Fruits', rent: 1000, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-134', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-82', section: 'Vegetables & Fruits', rent: 1000, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-135', name: 'GARCIA, ROBERTO II CORNEJO', phone: '', stallId: 'FV-83', section: 'Vegetables & Fruits', rent: 1000, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-136', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-84', section: 'Vegetables & Fruits', rent: 1000, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-137', name: 'PEPITO, ROSELYN RICARTE', phone: '', stallId: 'FV-85', section: 'Vegetables & Fruits', rent: 1000, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-138', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-86', section: 'Vegetables & Fruits', rent: 1000, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-139', name: 'MENDIOLA, ALDWIN G.', phone: '', stallId: 'FV-87', section: 'Vegetables & Fruits', rent: 1000, status: 'Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-140', name: 'DUQUILLA, IRENE TESTON', phone: '', stallId: 'FV-88', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-141', name: 'BASIHAN, JOSEPHINE', phone: '', stallId: 'FV-89', section: 'Vegetables & Fruits', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-142', name: 'DUZON, DULCE CORAZON TAYANES', phone: '', stallId: 'FS-01', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-143', name: 'MORANTE, ELSA TAYANES', phone: '', stallId: 'FS-02', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-144', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-03', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-145', name: 'CREER, HERSHEY', phone: '', stallId: 'FS-04', section: 'Fish & Seafood', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-146', name: 'ESPADA, EVELYN BALTAZAR', phone: '', stallId: 'FS-05', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-147', name: 'CRISOLOGO, CRISPIN SINDAY', phone: '', stallId: 'FS-06', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-148', name: 'SABALZA, DARLYNA', phone: '', stallId: 'FS-07', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-149', name: 'PALABIO, FRANCISCO GHRAY JR. ORDAME', phone: '', stallId: 'FS-08', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-150', name: 'MONSAGA, MICHELLE LERIOS', phone: '', stallId: 'FS-09', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-151', name: 'ORDAME, RINE LERIOS', phone: '', stallId: 'FS-10', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-152', name: 'ORDAME, RICARDO LERIOS', phone: '', stallId: 'FS-11', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-153', name: 'LAURENTE, KAREN CALIPAYAN', phone: '', stallId: 'FS-12', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-154', name: 'COSTIMIANO, BENECIO', phone: '', stallId: 'FS-13', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-155', name: 'LABRADO, RESHILE', phone: '', stallId: 'FS-14', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-156', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-15', section: 'Fish & Seafood', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-157', name: 'GERILLA, JOHN DRANDREB', phone: '', stallId: 'FS-16', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-158', name: 'ABANO, HAIDE TAYANES', phone: '', stallId: 'FS-17', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-159', name: 'ABANO, DENNIS ALMADEN', phone: '', stallId: 'FS-18', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-160', name: 'PLABA, JOVITA', phone: '', stallId: 'FS-19', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-161', name: 'BARCILLA, LAILA BADE', phone: '', stallId: 'FS-20', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-162', name: 'ABANAG, ALMA', phone: '', stallId: 'FS-21', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-163', name: 'ABANAG, DANILO ABADIANO', phone: '', stallId: 'FS-22', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-164', name: 'ORDAME, CHARINA MELO', phone: '', stallId: 'FS-23', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-165', name: 'AGUILLON, MARIA CLARISS CAJEPE', phone: '', stallId: 'FS-24', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-166', name: 'PLABA, PRINCESS CABE', phone: '', stallId: 'FS-25', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-167', name: 'AGUILLON, SANDRO LABRADO', phone: '', stallId: 'FS-26', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-168', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-28', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-169', name: 'CINCO, JANITH ABANO', phone: '', stallId: 'FS-29', section: 'Fish & Seafood', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-170', name: 'GARCIA, REGINE', phone: '', stallId: 'FS-33', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-171', name: 'AVILA, DAISY BAHIA', phone: '', stallId: 'FS-34', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-172', name: 'TAYANES, ARIEL VERUTIAO', phone: '', stallId: 'FS-35', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-173', name: 'TAYANES, JENNIFER CAINDOY', phone: '', stallId: 'FS-36', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-174', name: 'ABANDO, KIRBY ASDILLA', phone: '', stallId: 'FS-37', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-175', name: 'AGUILAR, JOEL FUENTES', phone: '', stallId: 'FS-38', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-176', name: 'AGUILAR, JOVE', phone: '', stallId: 'FS-39', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-177', name: 'IMPORTA, SONNY LUIS', phone: '', stallId: 'FS-40', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-178', name: 'ALBAO, NICANORA LAGO', phone: '', stallId: 'FS-41', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-179', name: 'AGUILAR, GLENN FUENTES', phone: '', stallId: 'FS-42', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-180', name: 'AGUILAR, GLORIA', phone: '', stallId: 'FS-43', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-181', name: 'ABAS, FELISA TIBE', phone: '', stallId: 'FS-44', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-182', name: 'ABANDO, JOEY B.', phone: '', stallId: 'FS-45', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-183', name: 'CANDELA, MARILYN ORDAME', phone: '', stallId: 'FS-46', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-184', name: 'FLORES, MELVIN', phone: '', stallId: 'FS-47', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-185', name: 'MELO, RENALYN', phone: '', stallId: 'FS-48', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-186', name: 'MELO, MELBA', phone: '', stallId: 'FS-49', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-187', name: 'PARDALES, ABELARDO NAPOLES', phone: '', stallId: 'FS-50', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-188', name: 'BAGUISA, MERLY ABANG', phone: '', stallId: 'FS-51', section: 'Fish & Seafood', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-189', name: 'BAGUISA, COLITA ABANAG', phone: '', stallId: 'FS-52', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-190', name: 'TOMANDA, DANIEL OGARO', phone: '', stallId: 'FS-53', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-191', name: 'DUZON, MILO LOPEZ', phone: '', stallId: 'FS-54', section: 'Fish & Seafood', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-192', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-55', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-193', name: 'DE LA CRUZ, LYZA/CORAZON AVILA', phone: '', stallId: 'FS-56', section: 'Fish & Seafood', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-194', name: 'SALAÑO, JEFER JOHN ABON', phone: '', stallId: 'FS-57', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-195', name: 'UBALDO, NILDA', phone: '', stallId: 'FS-58', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-196', name: 'VERTUDES, ERIC', phone: '', stallId: 'FS-59', section: 'Fish & Seafood', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-197', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-01', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-198', name: 'ARELLANO, JOEL ASTILLERO', phone: '', stallId: 'KK-02', section: 'Dry Goods', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-199', name: 'DUZON, DULCE CORAZON/MELODY TAYANES', phone: '', stallId: 'KK-03', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-200', name: 'FLORES, CATHERINE VERONA', phone: '', stallId: 'KK-04', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-201', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-05', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-202', name: 'FLORES, JACQUILINE NOVIO', phone: '', stallId: 'KK-06', section: 'Dry Goods', rent: 1000, status: 'Temporarily Closed', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-203', name: 'MEDRANO, MARTHY PALARON', phone: '', stallId: 'KK-07', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-204', name: 'AGUILLON, MARY JOY DELA CERNA', phone: '', stallId: 'KK-08', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-205', name: 'ELARDO, ROSARIO', phone: '', stallId: 'KK-09', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-206', name: 'ESLABAN, JULIFE PERALTA', phone: '', stallId: 'KK-10', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-207', name: 'REDONA, NARCISA', phone: '', stallId: 'KK-11', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-208', name: 'PERALTA, ERVIN PAULO MAQUILAN', phone: '', stallId: 'KK-12', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-209', name: 'CESAR, RHODORA LAMATA', phone: '', stallId: 'KK-13', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-210', name: 'LERIOS, NORIDAN', phone: '', stallId: 'KK-14', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
+    { id: 'TEN-211', name: 'MODESTO, JADE', phone: '', stallId: 'KK-15', section: 'Dry Goods', rent: 1000, status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {} },
   ] satisfies Tenant[] as Tenant[],
   stalls: [
     { id: 'MS-01', section: 'Meat & Poultry', tenant: 'LOTEYRO, LEEMAR', status: 'Occupied' as StallStatus, permit: 'No BP' as PermitStatus, lastInspection: 'Jul 20, 2026', note: '' },
@@ -918,17 +975,28 @@ const initialState = {
   /* The market office's own board, seeded as the seats rather than the people
      — the office types in who holds each one. A seat stays on the board while
      it is vacant, because the post exists whether or not anybody holds it. */
+  /* The market office as it actually stands, from the office's own roster:
+     the supervisor, two officers in charge of market operation, a clerk,
+     three collectors and nine sweepers. The roster names no reporting line
+     below the supervisor, so everyone is seated under her rather than
+     inventing a hierarchy the office has not set. */
   officers: [
-    { id: 'OFC-001', name: '', position: 'Municipal Mayor', office: 'Office of the Municipal Mayor', reportsTo: '', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-002', name: '', position: 'Market Board Chairperson', office: 'Market Board', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-003', name: '', position: 'Market Supervisor', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-004', name: '', position: 'Assistant Market Supervisor', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-005', name: '', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-006', name: '', position: 'Market Inspector', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-007', name: '', position: 'Records Officer', office: 'Market Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-008', name: '', position: 'Sanitary Inspector', office: 'Municipal Health Office', reportsTo: 'OFC-003', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-009', name: '', position: 'Licensing Officer', office: 'Business Permit & Licensing Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
-    { id: 'OFC-010', name: '', position: 'Market Treasurer / Cashier', office: 'Municipal Treasurer’s Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Vacant' as OfficerStatus, appointed: '' },
+    { id: 'OFC-001', name: 'Engr. Luz M. Maderazo', position: 'Market Supervisor III', office: 'Market Office', reportsTo: '', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-002', name: 'Manuel G. Mercado', position: 'In Charge — Market Operation', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-003', name: 'Felmar Pica', position: 'In Charge — Market Operation', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-004', name: 'Louwhie Jane Bengero', position: 'Clerk I', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-005', name: 'Lorna Tangpuz', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-006', name: 'Ericson Aguipo', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-007', name: 'Stephen Lopez', position: 'Market Collector', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-008', name: 'Virginia Montilla', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-009', name: 'Ponciano Lugasan', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-010', name: 'Lolito Cuna', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-011', name: 'Niel Salarda', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-012', name: 'Joseph Mendiola', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-013', name: 'Ronhelito Mendiola', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-014', name: 'Carmelo Villero', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-015', name: 'Junel Guiron', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
+    { id: 'OFC-016', name: 'Bonifacio Lopez', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
   ] satisfies Officer[],
 
   utilities: [] as UtilityBill[],
@@ -959,7 +1027,6 @@ const navigation: Array<{ key: ModuleKey; label: string; icon: string }> = [
   { key: 'analytics', label: 'Analytics', icon: 'analytics' },
   { key: 'logbook', label: 'Logbook', icon: 'menu_book' },
   { key: 'officers', label: 'Officers', icon: 'account_tree' },
-  { key: 'assistant', label: 'Assistant', icon: 'forum' },
 ];
 
 const searchPlaceholders: Record<ModuleKey, string> = {
@@ -972,7 +1039,6 @@ const searchPlaceholders: Record<ModuleKey, string> = {
   analytics: 'Search is not used on Analytics',
   logbook: 'Search log details or type...',
   officers: 'Search officer name, position, or office...',
-  assistant: 'Search is not used on the Assistant',
   settings: 'Search is not used on Settings',
   support: 'Search is not used on Support',
 };
@@ -1049,7 +1115,12 @@ function normalizeTenant(raw: Tenant): Tenant {
     barangay: text(raw?.barangay),
     stallId: raw.stallId,
     section: raw.section,
-    rent: raw.rent,
+    /* Records filed before Section 43 was entered carry no rent at all. Rather
+       than leave the register showing nothing owed, a stall with no rent on it
+       takes the schedule's rate for its kind; a rent already set is left alone. */
+    rent: Number.isFinite(Number(raw?.rent)) && Number(raw.rent) > 0
+      ? Number(raw.rent)
+      : monthlyRentForStall(typeof raw?.stallId === 'string' ? raw.stallId : ''),
     status: raw.status,
     applicantId: raw.applicantId,
     keepers: fromList,
@@ -1191,10 +1262,11 @@ function mergeState(input: unknown): AppState {
   };
 }
 
-function readState(): AppState {
-  const raw = localStorage.getItem(storageKey);
+/* Turns whatever storage handed back into a usable set of records. Nothing
+   filed yet — a brand new installation — starts from the sample records. */
+function stateFrom(raw: unknown | null): AppState {
   if (!raw) return initialState;
-  try { return mergeState(JSON.parse(raw)); } catch { return initialState; }
+  try { return mergeState(raw); } catch { return initialState; }
 }
 
 function money(value: number) {
@@ -1373,15 +1445,23 @@ function phoneProblem(typed: string, label = 'Mobile number') {
   return '';
 }
 
-function readIdCounters(): Record<string, number> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(idCounterKey) ?? '{}');
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
-  } catch { return {}; }
+/* The highest number handed out per record prefix (TEN, APP, UTL...). Held here
+   so an ID can still be produced the instant a form needs one, and written to
+   storage with the records it belongs to. A deleted record's number is never
+   reissued, which keeps every reference in the paper files pointing at one
+   record for good. */
+let idCounters: IdCounters = {};
+
+function seedIdCounters(values: IdCounters) {
+  idCounters = { ...values };
+}
+
+function currentIdCounters(): IdCounters {
+  return idCounters;
 }
 
 function resetIdCounters() {
-  try { localStorage.removeItem(idCounterKey); } catch { /* storage unavailable — max(existing) still applies */ }
+  idCounters = {};
 }
 
 /* The numbers that would be handed out next, without handing them out. The
@@ -1391,20 +1471,18 @@ function resetIdCounters() {
 function peekIds(prefix: string, existingIds: string[], count: number) {
   const nums = existingIds.map((id) => parseInt(id.replace(/\D/g, ''), 10)).filter((n) => !isNaN(n));
   const maxExisting = nums.length > 0 ? Math.max(...nums) : 0;
-  const counters = readIdCounters();
-  const previous = typeof counters[prefix] === 'number' ? counters[prefix] : 0;
+  const previous = typeof idCounters[prefix] === 'number' ? idCounters[prefix] : 0;
   const base = Math.max(maxExisting, previous);
   return Array.from({ length: count }, (_, i) => `${prefix}-${String(base + i + 1).padStart(3, '0')}`);
 }
 
 /* Takes a run of numbers and moves the counter past them, so a sheet of four
-   slips claims four numbers in one go and the next sheet starts after them. */
+   slips claims four numbers in one go and the next sheet starts after them.
+   The counter belongs to the records, and is written out with them. */
 function claimIds(prefix: string, existingIds: string[], count: number) {
   const ids = peekIds(prefix, existingIds, count);
   if (ids.length === 0) return ids;
-  const counters = readIdCounters();
-  counters[prefix] = parseInt(ids[ids.length - 1].replace(/\D/g, ''), 10);
-  try { localStorage.setItem(idCounterKey, JSON.stringify(counters)); } catch { /* falls back to max(existing) next time */ }
+  idCounters[prefix] = parseInt(ids[ids.length - 1].replace(/\D/g, ''), 10);
   return ids;
 }
 
@@ -1716,16 +1794,29 @@ function downloadCSV(headers: string[], rows: string[][], filename: string) {
    Main App Component
    ============================================================ */
 
-function App() {
+/* What start-up read out of storage, handed to the app once it is ready. */
+type BootData = {
+  state: AppState;
+  savedAt: string;
+  /* Set when the stored records could not be read. Saving is held back for the
+     rest of the session so a screen full of defaults is never written over
+     records that are still on disk. */
+  problem: string;
+  /* Set when records were carried over from a version that stored them in the
+     browser, so the operator can be told it happened. */
+  imported: boolean;
+};
+
+function App({ boot }: { boot: BootData }) {
   const [active, setActive] = useState<ModuleKey>('dashboard');
-  const [state, setState] = useState<AppState>(() => readState());
+  const [state, setState] = useState<AppState>(boot.state);
   const [searchTerm, setSearchTerm] = useState('');
   const [modal, setModal] = useState<{ type: ModalType; data?: unknown }>({ type: null });
   const [toasts, setToasts] = useState<Array<{ id: number; message: string }>>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const toastSeq = useRef(0);
 
-  const [lastSaved, setLastSaved] = useState<string>(() => localStorage.getItem(savedAtKey) ?? '');
+  const [lastSaved, setLastSaved] = useState<string>(boot.savedAt);
   const storageWarned = useRef(false);
 
   /* Printing runs in two steps: `printRequest` is what the preview dialog is
@@ -1877,20 +1968,40 @@ function App() {
     };
   }, [registerJob]);
 
+  /* Every change to the records is written straight back to storage. The short
+     delay collapses a burst of edits into one write; the guard makes sure a
+     failed read earlier never turns into a destructive write now. */
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(state));
-      const stamp = new Date().toISOString();
-      localStorage.setItem(savedAtKey, stamp);
-      setLastSaved(stamp);
-      storageWarned.current = false;
-    } catch {
-      if (!storageWarned.current) {
-        storageWarned.current = true;
-        showToast('Could not save to browser storage — export a backup from Support.');
-      }
+    if (boot.problem) return;
+    let dropped = false;
+    const timer = setTimeout(() => {
+      persist(state, currentIdCounters())
+        .then((stamp) => {
+          if (dropped) return;
+          setLastSaved(stamp);
+          storageWarned.current = false;
+        })
+        .catch(() => {
+          if (dropped || storageWarned.current) return;
+          storageWarned.current = true;
+          showToast(
+            usingDatabase()
+              ? 'Could not save to the records database — export a backup from Support.'
+              : 'Could not save to browser storage — export a backup from Support.',
+          );
+        });
+    }, 150);
+    return () => { dropped = true; clearTimeout(timer); };
+  }, [state, showToast, boot.problem]);
+
+  /* Said once, at start-up: records were brought over, or cannot be read. */
+  useEffect(() => {
+    if (boot.problem) {
+      showToast('The records database could not be opened — changes will not be saved.');
+    } else if (boot.imported) {
+      showToast('Existing records moved into the database.');
     }
-  }, [state, showToast]);
+  }, [boot.problem, boot.imported, showToast]);
 
   const closeModal = useCallback(() => setModal({ type: null }), []);
 
@@ -2218,6 +2329,19 @@ function App() {
     closeModal();
   };
 
+  /* Clears the stored records before the defaults are put back, so nothing from
+     the old set can survive in a table the defaults do not mention. */
+  const resetData = () => {
+    closeModal();
+    clearStored()
+      .then(() => {
+        resetIdCounters();
+        setState(initialState);
+        showToast('Data reset to defaults');
+      })
+      .catch(() => showToast('Could not reset the records — please try again.'));
+  };
+
   /* ---------- The market office's board ---------- */
 
   const addOfficer = (officer: Officer) => {
@@ -2267,7 +2391,6 @@ function App() {
     closeModal();
   };
 
-  const resetData = () => { localStorage.removeItem(storageKey); resetIdCounters(); setState(initialState); showToast('Data reset to defaults'); closeModal(); };
 
   const handleNewEntry = () => setModal({ type: 'add-log' });
 
@@ -2353,7 +2476,6 @@ function App() {
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
           {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, officerLabel(state.officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-office-board.csv'); showToast('Office board exported'); }} />}
-          {active === 'assistant' && <AssistantPage state={state} onNavigate={setActive} />}
           {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
@@ -3264,14 +3386,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     setError('');
   };
 
-  const applyTenant = (tid: string) => {
-    setTenantId(tid);
-    const t = tenants.find((x) => x.id === tid);
-    const sid = t && t.stallId && t.stallId !== '—' ? t.stallId : stallId;
-    if (t && t.stallId && t.stallId !== '—') setStallId(t.stallId);
-    fillFromRecords(sid, t, type);
-    setError('');
-  };
 
   /* Where the meter number in the box came from, so nobody has to guess whether
      it was filled in for them or is about to be recorded for the first time. */
@@ -3292,7 +3406,10 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
      so nothing here is what actually prints; it just warns the officer before
      they save or print that the due date they picked has already passed. */
   const wouldBeOverdue = !!dueDate && dueDate < todayIso();
-  const previewSurcharge = wouldBeOverdue ? Math.round(amount * (SURCHARGE_RATES[type] / 100) * 100) / 100 : 0;
+  /* What the surcharge would come to. Worked out whether or not the bill has
+     gone late, so the officer can tell the tenant what waits for them; it is
+     added to the total only once the due date has actually passed. */
+  const previewSurcharge = Math.round(amount * (SURCHARGE_RATES[type] / 100) * 100) / 100;
 
   const resetForm = () => {
     setCurrent(''); setNotes(''); setError('');
@@ -3383,25 +3500,25 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
 
       <div className="calc-grid">
         <div className="calc-form">
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Stall Number *</label>
-              <select className="form-select" value={stallId} onChange={(e) => applyStall(e.target.value)}>
-                <option value="">Select stall…</option>
-                {stallOptions.map((sid) => {
-                  const t = tenantForStall(sid);
-                  return <option key={sid} value={sid}>{sid}{t ? ` — ${t.name}` : ' — vacant'}</option>;
-                })}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Tenant (bill recipient)</label>
-              <select className="form-select" value={tenantId} onChange={(e) => applyTenant(e.target.value)}>
-                <option value="">No tenant on file — charge the stall</option>
-                {tenants.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.stallId})</option>)}
-              </select>
-              <span className="form-hint">Picking either field fills in the other, along with the meter number and last reading on record.</span>
-            </div>
+          {/* The stall is the only thing asked for: it already names its tenant,
+              and carries the meter and the last reading with it. A separate
+              tenant field only invited the two to disagree. */}
+          <div className="form-group">
+            <label className="form-label">Stall Number *</label>
+            <select className="form-select" value={stallId} onChange={(e) => applyStall(e.target.value)}>
+              <option value="">Select stall…</option>
+              {stallOptions.map((sid) => {
+                const t = tenantForStall(sid);
+                return <option key={sid} value={sid}>{sid}{t ? ` — ${t.name}` : ' — vacant'}</option>;
+              })}
+            </select>
+            <span className="form-hint">
+              {selectedTenant
+                ? `Billed to ${selectedTenant.name}. Meter number and last reading filled in from the record.`
+                : stallId
+                  ? 'No tenant on file for this stall — the bill is charged to the stall itself.'
+                  : 'Choosing a stall fills in the tenant, the meter number and the last reading on record.'}
+            </span>
           </div>
 
           <div className="form-group">
@@ -3483,15 +3600,19 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           <div className="calc-row highlight"><span>Consumption</span><strong>{consumption.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row"><span>Rate per {preset.unit}</span><strong>{money(rateNum)}</strong></div>
           <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(amount)}</strong></div>
-          {wouldBeOverdue ? (
-            <>
-              <div className="calc-row warning"><span>Late Surcharge ({SURCHARGE_RATES[type]}%) — due date already passed</span><strong>+{money(previewSurcharge)}</strong></div>
-              <div className="calc-total"><span>Total if Printed Today</span><strong>{money(amount + previewSurcharge)}</strong></div>
-              <p className="calc-surcharge-note">This due date has already passed, so a receipt printed today will carry the surcharge automatically. The amount saved to records is {money(amount)}; the surcharge is never added to that figure, only to whatever is printed after the due date.</p>
-            </>
-          ) : (
-            <div className="calc-total"><span>Total Amount Due</span><strong>{money(amount)}</strong></div>
-          )}
+          {/* The surcharge is always shown, so the tenant can be told what
+              lateness costs before it costs it. It joins the total only after
+              the due date, and never joins the amount saved to records. */}
+          <div className={`calc-row${wouldBeOverdue ? ' warning' : ' muted'}`}>
+            <span>Late Surcharge ({SURCHARGE_RATES[type]}%){wouldBeOverdue ? ' — due date already passed' : ` — only if unpaid after ${formatIsoDate(dueDate)}`}</span>
+            <strong>{wouldBeOverdue ? '+' : ''}{money(previewSurcharge)}</strong>
+          </div>
+          <div className="calc-total"><span>{wouldBeOverdue ? 'Total if Printed Today' : 'Total Amount Due'}</span><strong>{money(wouldBeOverdue ? amount + previewSurcharge : amount)}</strong></div>
+          <p className="calc-surcharge-note">
+            {wouldBeOverdue
+              ? `This due date has already passed, so a receipt printed today carries the surcharge automatically. The amount saved to records stays ${money(amount)} — the surcharge applies only to what prints.`
+              : `Not applied yet. If this bill is still unpaid after ${formatIsoDate(dueDate)}, a receipt printed from then on carries ${money(previewSurcharge)} on top, bringing it to ${money(amount + previewSurcharge)}. The amount on record stays ${money(amount)}.`}
+          </p>
           <div className="calc-row"><span>Due date</span><strong>{formatIsoDate(dueDate)}</strong></div>
           {error && <div className="calc-error"><span className="material-symbols-outlined">error</span>{error}</div>}
           <div className="calc-actions">
@@ -3701,7 +3822,7 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Tenant / Party Cited *</label>
-          <input className="form-input" list="violation-tenant-options" placeholder="e.g. Deep Blue Catch" value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
+          <input className="form-input" list="violation-tenant-options" placeholder="e.g. GERILLA, JOHN DRANDREB" value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
           <datalist id="violation-tenant-options">{tenants.map((t) => <option key={t.id} value={t.name}>{t.stallId}</option>)}</datalist>
           <span className="form-hint">Pick a tenant on record, or type any other party.</span>
         </div>
@@ -4320,6 +4441,26 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
   const countOf = (data: AppState) =>
     data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length + data.officers.length;
 
+  /* Read straight from the database rather than counted off the screen, so the
+     figures shown are the ones actually on disk. Re-read after every save. */
+  const [dbInfo, setDbInfo] = useState<DatabaseStats | null>(null);
+  const [dbCheck, setDbCheck] = useState('');
+  useEffect(() => { databaseStats().then(setDbInfo); }, [lastSaved]);
+
+  const runIntegrityCheck = () => {
+    setDbCheck('Checking…');
+    checkIntegrity()
+      .then((result) => setDbCheck(result?.ok ? 'No problems found — the records file is intact.' : `Reported: ${result?.result ?? 'unknown'}`))
+      .catch((error: unknown) => setDbCheck(error instanceof Error ? error.message : 'The check could not be run.'));
+  };
+
+  const saveDatabaseCopy = () => {
+    setDbCheck('');
+    backupDatabase()
+      .then((result) => { if (result && !result.canceled) setDbCheck(`Copy saved to ${result.filePath}`); })
+      .catch((error: unknown) => setDbCheck(error instanceof Error ? error.message : 'The copy could not be saved.'));
+  };
+
   return (
     <>
       <div className="page-header"><div><h2 className="page-title">Settings</h2><p className="page-subtitle">System configuration and data management.</p></div></div>
@@ -4328,9 +4469,34 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
           <div className="settings-section-header">System Information</div>
           <div className="settings-section-body">
             <div className="settings-item"><span className="settings-item-label">Application</span><span className="settings-item-value">Tanauan Public Market v1.0</span></div>
-            <div className="settings-item"><span className="settings-item-label">Storage</span><span className="settings-item-value">Local Browser Storage</span></div>
+            <div className="settings-item"><span className="settings-item-label">Storage</span><span className="settings-item-value">{backendName()}</span></div>
             <div className="settings-item"><span className="settings-item-label">Total Records</span><span className="settings-item-value">{state.stalls.length + state.tenants.length + state.applicants.length + state.logs.length + state.violations.length + state.utilities.length + state.officers.length}</span></div>
             <div className="settings-item"><span className="settings-item-label">Last Saved</span><span className="settings-item-value">{lastSaved ? new Date(lastSaved).toLocaleString() : 'Not yet saved'}</span></div>
+          </div>
+        </div>
+        <div className="settings-section">
+          <div className="settings-section-header">Section 43 — Market Stall Rates</div>
+          <div className="settings-section-body">
+            <p className="settings-note">The schedule the market charges by. A stall picked on a new tenancy starts on the rate for its kind.</p>
+            <div className="table-wrap">
+              <table className="mini-table">
+                <thead><tr><th>Description</th><th className="num">Stalls</th><th>Area per stall</th><th className="num">Per sq. m</th><th className="num">Monthly</th></tr></thead>
+                <tbody>
+                  {STALL_RATE_SCHEDULE.map((r) => (
+                    <tr key={r.description}>
+                      <td>{r.description}</td>
+                      <td className="num">{r.stalls ?? '—'}</td>
+                      <td>{r.area || '—'}</td>
+                      <td className="num">{r.perSqM === null ? '—' : money(r.perSqM)}</td>
+                      <td className="num">
+                        <strong>{r.monthly === null ? `${money(r.perMarketDay ?? 0)} / market day` : money(r.monthly)}</strong>
+                        {r.note && <span className="rate-note">{r.note}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
         <div className="settings-section">
@@ -4344,10 +4510,39 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
             <div className="settings-item"><span className="settings-item-label">Unpaid Utilities</span><span className="settings-item-value">{money(state.utilities.filter(b => b.status === 'Unpaid').reduce((s, b) => s + b.amount, 0))}</span></div>
           </div>
         </div>
+        {/* Only shown in the installed application — a browser has no file to
+            report on, and none of these actions would do anything there. */}
+        {dbInfo && (
+          <div className="settings-section full">
+            <div className="settings-section-header">Records Database</div>
+            <div className="settings-section-body">
+              <p className="settings-lead">
+                Every record is kept in one SQLite database file on this computer. The system never connects to the internet, and copying this file copies the whole system.
+              </p>
+              <div className="settings-item"><span className="settings-item-label">Database file</span><span className="settings-item-value" style={{ wordBreak: 'break-all' }}>{dbInfo.file}</span></div>
+              <div className="settings-item"><span className="settings-item-label">File size</span><span className="settings-item-value">{formatBytes(dbInfo.bytes)}</span></div>
+              <div className="settings-item"><span className="settings-item-label">Schema version</span><span className="settings-item-value">{dbInfo.schemaVersion}</span></div>
+              <div className="settings-item"><span className="settings-item-label">Rows stored</span><span className="settings-item-value">
+                {`${Object.values(dbInfo.counts).reduce((sum, n) => sum + n, 0)} — ${dbInfo.counts.tenants ?? 0} tenants, ${dbInfo.counts.stalls ?? 0} stalls, ${dbInfo.counts.applicants ?? 0} applicants, ${dbInfo.counts.utilities ?? 0} bills`}
+              </span></div>
+              <div className="settings-actions">
+                <button className="btn-primary" onClick={saveDatabaseCopy}><span className="material-symbols-outlined">save</span>Save a Copy of the Database</button>
+                <button className="btn-outline" onClick={() => { void revealDataFolder(); }}><span className="material-symbols-outlined">folder_open</span>Open Data Folder</button>
+                <button className="btn-outline" onClick={runIntegrityCheck}><span className="material-symbols-outlined">health_and_safety</span>Check for Damage</button>
+              </div>
+              {dbCheck && (
+                <p className="settings-note">
+                  <span className="material-symbols-outlined">info</span>
+                  {dbCheck}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
         <div className="settings-section full">
           <div className="settings-section-header">Data Management</div>
           <div className="settings-section-body">
-            <p className="settings-lead">Export the records held on this workstation, import them onto another, or reset the system to factory defaults. All data is stored locally in this browser.</p>
+            <p className="settings-lead">Export the records held on this workstation, import them onto another, or reset the system to factory defaults. Everything stays on this computer.</p>
             <div className="settings-actions">
               <button className="btn-primary" onClick={onExport}><span className="material-symbols-outlined">download</span>Export All Data</button>
               <button className="btn-outline" onClick={backup.choose}><span className="material-symbols-outlined">upload</span>Import Data</button>
@@ -4391,7 +4586,7 @@ const faqs = [
   { q: 'Where do saved utility bills appear?', a: 'Every saved bill is listed under Utility Billing → Billing Records, attached to the stall and tenant you selected. It also shows up in that tenant\'s and stall\'s detail modal, in the Analytics utility panel, in the Logbook as a Collection entry, and in exports and backups.' },
   { q: 'How do I record and resolve a violation?', a: 'Open the Violations page and click "Record Violation". Enter the tenant (pick one on record or type any other party), the offence, and how many demerit points it carries. Every citation starts Open. When it has been settled, click "Resolve" on its row — the resolution date is stamped automatically, and "Reopen" clears it again if the matter is not closed after all. Open points are totalled per tenant at the top of the page so repeat offenders are easy to spot.' },
   { q: 'Where can I view analytics?', a: 'The Analytics page provides a comprehensive view of stall occupancy, applicant pipeline, tenant distribution, violations summary, utility consumption and billing, and logbook activity.' },
-  { q: 'Where is my data stored?', a: 'All data is stored locally in your browser\'s localStorage. It persists across sessions but is not synced to a server.' },
+  { q: 'Where is my data stored?', a: 'In a SQLite database file on this computer, kept in the application data folder — open it from Settings → Records Database, or Help → Open Data Folder. Nothing is sent anywhere: the system works with no internet connection at all. Copying that one file copies every record.' },
   { q: 'How do I export reports?', a: 'You can export data from the Analytics page or Settings. Reports are available as JSON files. The Logbook page also offers CSV export.' },
   { q: 'How do I move records to another computer?', a: 'On the computer holding the records, open Settings → Data Management and click "Export All Data" to download a JSON file. Carry that file to the other computer, open Settings there, and click "Import Data". You will be shown what the file holds and what it will replace before anything is overwritten — nothing changes until you confirm. Importing replaces every record on that workstation, so export its current data first if it has not been filed elsewhere.' },
   { q: 'How do I backup and restore data?', a: 'Use the "Download Full Backup" button on this Support page to download all system data as a JSON file. To restore on another computer, click "Upload Backup" and select the previously downloaded file. The system will load all data from the backup.' },
@@ -4810,6 +5005,10 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
     setError('');
     const match = stalls.find((s) => s.id === id);
     if (match && SECTIONS.includes(match.section)) setSection(match.section);
+    /* Section 43 sets what a stall of this kind pays; the officer can still
+       change it, but the schedule is the starting figure. */
+    const scheduled = monthlyRentForStall(id);
+    if (scheduled > 0) setRent(scheduled);
   };
 
   const handleSubmit = () => {
@@ -4933,7 +5132,7 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   return (
     <div className="form-grid">
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="e.g. Maria Santos" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
+        <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="e.g. DUZON, DULCE CORAZON" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
         <div className="form-group">
           <label className="form-label">Mobile Number</label>
           <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
@@ -5779,7 +5978,7 @@ function StallkeeperDialogForm({ subject, onValidate, onConfirm, onCancel }: {
           <input
             className="form-input"
             autoFocus
-            placeholder={subject ? keepHint(subject.name) : 'e.g. Juan dela Cruz'}
+            placeholder={subject ? keepHint(subject.name) : 'e.g. Luz M. Maderazo'}
             value={name}
             onChange={(e) => edit(setName)(e.target.value)}
           />
@@ -6609,7 +6808,7 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Held By</label>
-            <input className="form-input" value={name} placeholder="e.g. Juan Dela Cruz" onChange={(e) => { setName(e.target.value); setError(''); }} />
+            <input className="form-input" value={name} placeholder="e.g. Luz M. Maderazo" onChange={(e) => { setName(e.target.value); setError(''); }} />
             <span className="form-hint">Leave blank if the post is vacant.</span>
           </div>
           <div className="form-group">
@@ -6736,11 +6935,22 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
   const [name, setName] = useState(() => { try { return localStorage.getItem(printedByKey) ?? ''; } catch { return ''; } });
   const [copies, setCopies] = useState(2);
   const [error, setError] = useState('');
+  /* Other tenants' bills the officer has added to this sheet. A sheet takes
+     four, so a collector walking a row can print the row rather than one
+     tenant at a time. */
+  const [added, setAdded] = useState<UtilityBill[]>([]);
 
-  /* One bill goes out in labelled copies; a batch goes out one receipt each. */
-  const receipts: PrintReceipt[] = request.single
+  /* One bill goes out in labelled copies, unless others have been added — then
+     the sheet is a run of different tenants and copy labels make no sense. */
+  const receipts: PrintReceipt[] = request.single && added.length === 0
     ? Array.from({ length: copies }, (_, i) => ({ bill: request.bills[0], label: RECEIPT_COPY_LABELS[i] ?? '' }))
-    : request.bills.map((bill) => ({ bill, label: '' }));
+    : [...request.bills, ...added].map((bill) => ({ bill, label: '' }));
+
+  /* What may still be added: anything on record that is not already on the
+     sheet, newest first, while there is room on it. */
+  const onSheet = new Set([...request.bills, ...added].map((b) => b.id).filter(Boolean));
+  const room = RECEIPTS_PER_SHEET - receipts.length;
+  const addable = billsOnRecord.filter((b) => b.id && !onSheet.has(b.id));
 
   const sheets = Math.ceil(Math.max(receipts.length, 1) / RECEIPTS_PER_SHEET);
 
@@ -6847,7 +7057,7 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
         <div className="form-group">
           <label className="form-label">Printed By *</label>
           <input
-            className="form-input" autoFocus value={name} placeholder="e.g. Juan Dela Cruz"
+            className="form-input" autoFocus value={name} placeholder="e.g. Luz M. Maderazo"
             onChange={(e) => { setName(e.target.value); setError(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           />
@@ -6856,14 +7066,49 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
         {request.single && (
           <div className="form-group">
             <label className="form-label">Copies on the Sheet</label>
-            <select className="form-select" value={copies} onChange={(e) => setCopies(Number(e.target.value))}>
+            <select className="form-select" value={copies} disabled={added.length > 0} onChange={(e) => setCopies(Number(e.target.value))}>
               <option value={1}>1 — {RECEIPT_COPY_LABELS[0]}</option>
               <option value={2}>2 — tenant and market office</option>
               <option value={4}>4 — fill the sheet</option>
             </select>
-            <span className="form-hint">Every copy prints on the one sheet, to be cut apart.</span>
+            <span className="form-hint">{added.length > 0 ? 'Not used while other tenants share the sheet.' : 'Every copy prints on the one sheet, to be cut apart.'}</span>
           </div>
         )}
+      </div>
+
+      {/* A sheet holds four receipts. Rather than print one tenant at a time,
+          the officer can fill the rest of the sheet with other bills. */}
+      <div className="form-group">
+        <label className="form-label">Other Tenants on This Sheet</label>
+        {added.length > 0 && (
+          <ul className="sheet-added">
+            {added.map((b) => (
+              <li key={b.id}>
+                <span>{b.stallId} — {b.tenantName || 'Unassigned'} · {b.type} · {money(b.amount)}</span>
+                <button type="button" className="row-icon-btn danger" title="Take off the sheet" aria-label="Take off the sheet" onClick={() => setAdded((prev) => prev.filter((x) => x.id !== b.id))}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <select
+          className="form-select"
+          value=""
+          disabled={room <= 0 || addable.length === 0}
+          onChange={(e) => {
+            const bill = addable.find((b) => b.id === e.target.value);
+            if (bill) setAdded((prev) => [...prev, bill]);
+          }}
+        >
+          <option value="">
+            {room <= 0 ? 'The sheet is full' : addable.length === 0 ? 'No other bills on record' : `Add a bill… (room for ${room} more)`}
+          </option>
+          {room > 0 && addable.map((b) => (
+            <option key={b.id} value={b.id}>{b.stallId} — {b.tenantName || 'Unassigned'} · {b.type} · {money(b.amount)}</option>
+          ))}
+        </select>
+        <span className="form-hint">Four receipts fit on a sheet, cut apart afterwards. Adding another tenant turns off the copies above.</span>
       </div>
 
       {willFile.length > 0 && (
@@ -7108,6 +7353,15 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
   const [count, setCount] = useState(1);
   const [issuedBy, setIssuedBy] = useState(() => { try { return localStorage.getItem(verifiedByKey) ?? ''; } catch { return ''; } });
   const [error, setError] = useState('');
+  const [zoom, setZoom] = useState(FIT_ZOOM);
+  const [full, setFull] = useState(false);
+
+  const stepZoom = (delta: number) => setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
+
+  /* Shown in the note under the preview. The slip itself re-reads the date as
+     it is built, so what prints is the day it printed. */
+  const dateIssued = todayIso();
+  const validUntil = isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS);
 
   /* Switching the errand re-ticks the checklist for it. The officer can still
      change any box afterwards — the defaults are the usual case, not a rule. */
@@ -7120,20 +7374,23 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
     prev.includes(item) ? prev.filter((c) => c !== item) : [...prev, item]
   ));
 
-  const dateIssued = todayIso();
-  const validUntil = isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS);
-
-  const draft = (): Omit<VerificationSlip, 'controlNo'> => ({
-    purpose,
-    issuedTo: issuedTo.trim(),
-    section: section.trim(),
-    stallNo: stallNo.trim(),
-    checked,
-    others: others.trim(),
-    dateIssued,
-    validUntil,
-    issuedBy: issuedBy.trim(),
-  });
+  /* Read at the moment they are needed, not when the dialog opened: a preview
+     left sitting open past midnight would otherwise print yesterday's date, and
+     the validity is counted from the day the slip is actually handed over. */
+  const draft = (): Omit<VerificationSlip, 'controlNo'> => {
+    const dateIssued = todayIso();
+    return {
+      purpose,
+      issuedTo: issuedTo.trim(),
+      section: section.trim(),
+      stallNo: stallNo.trim(),
+      checked,
+      others: others.trim(),
+      dateIssued,
+      validUntil: isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS),
+      issuedBy: issuedBy.trim(),
+    };
+  };
 
   /* Each slip on the sheet is a separate issuable leaf, so each gets its own
      number — printing four is running off a short pad, not four copies of one. */
@@ -7223,9 +7480,24 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
       </div>
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
 
-      <div className="print-preview" aria-label="Preview of the sheet that will print">
-        <div className="print-preview-scale">
-          <VerificationSheets slips={preview.map((s) => ({ ...s, issuedBy: s.issuedBy || '—' }))} />
+      <div className={`print-preview${full ? ' fullscreen' : ''}`} aria-label="Preview of the sheet that will print">
+        <div className="print-preview-toolbar">
+          <span className="print-preview-count">1 A4 sheet · {count} slip{count === 1 ? '' : 's'}</span>
+          <div className="print-preview-zoom">
+            <button type="button" className="row-icon-btn" title="Zoom out" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-0.15)}><span className="material-symbols-outlined">zoom_out</span></button>
+            <span className="print-preview-level">{Math.round(zoom * 100)}%</span>
+            <button type="button" className="row-icon-btn" title="Zoom in" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(0.15)}><span className="material-symbols-outlined">zoom_in</span></button>
+            <button type="button" className="btn-outline-sm" onClick={() => setZoom(FIT_ZOOM)}>Fit</button>
+            <button type="button" className="btn-outline-sm" onClick={() => setZoom(1)}>Actual size</button>
+            <button type="button" className="row-icon-btn" title={full ? 'Exit fullscreen' : 'Fullscreen'} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'} onClick={() => setFull((v) => !v)}>
+              <span className="material-symbols-outlined">{full ? 'fullscreen_exit' : 'fullscreen'}</span>
+            </button>
+          </div>
+        </div>
+        <div className="print-preview-viewport">
+          <div className="print-preview-scale zoomable" style={{ zoom }}>
+            <VerificationSheets slips={preview.map((s) => ({ ...s, issuedBy: s.issuedBy || '—' }))} />
+          </div>
         </div>
       </div>
 
@@ -7237,624 +7509,56 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
   );
 }
 
+
 /* ============================================================
-   Market Assistant — answers read off the records, never guessed
+   Start-up
    ============================================================ */
 
-/* The rule this whole section exists to enforce: a figure the office acts on
-   must be computed, not predicted. Every answer below is worked out here, by
-   the same functions the screens use, so the assistant and the register can
-   never disagree.
+/* Reading the records is a round trip to the database, so the app cannot be
+   built until they arrive. This holds a plain panel on screen for the moment
+   that takes, then hands the records over and steps out of the way. */
+function Boot() {
+  const [boot, setBoot] = useState<BootData | null>(null);
 
-   A language model, where one is installed, does two jobs and neither of them
-   is arithmetic: it decides which question was asked, and it puts the computed
-   answer into a sentence. Anything it writes is then checked digit by digit
-   against the figures that were actually computed — see `guardPhrasing`. A
-   sentence carrying a number nobody calculated is thrown away and the plain
-   answer shown instead, so a hallucinated peso can never reach the screen. */
-
-type FactAnswer = {
-  intent: string;
-  headline: string;
-  lines: string[];
-  navigate?: ModuleKey;
-};
-
-type AssistantMessage = {
-  id: string;
-  role: 'officer' | 'assistant';
-  text: string;
-  lines?: string[];
-  navigate?: ModuleKey;
-  /* How the wording was produced, so the officer can tell a computed sentence
-     from a model-written one. */
-  source?: 'records' | 'model' | 'model-rejected';
-};
-
-/* The bridge the desktop shell installs when a model file is present. In the
-   browser, or with no model on disk, this is simply absent and the assistant
-   runs on its own. */
-type AssistantBridge = {
-  ready: () => Promise<boolean>;
-  classify: (question: string, intents: Array<{ key: string; question: string }>) => Promise<string | null>;
-  phrase: (question: string, headline: string, lines: string[]) => Promise<string | null>;
-  modelName: () => Promise<string | null>;
-};
-
-declare global {
-  interface Window { marketAssistant?: AssistantBridge }
-}
-
-/* ---------- The figure guardrail ---------- */
-
-/* Every number in a piece of text, however it was punctuated. */
-function numericTokens(text: string): string[] {
-  return text.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
-}
-
-/* ₱3,500.00, ₱3500 and 3500 are the same figure written three ways; comparing
-   them loosely keeps the guardrail from rejecting a correct sentence merely
-   for reformatting what it was given. */
-function normalizeFigure(token: string): string {
-  const bare = token.replace(/,/g, '');
-  return bare.includes('.') ? bare.replace(/0+$/, '').replace(/\.$/, '') : bare;
-}
-
-/* Words the model may use freely: ordinary English, and the vocabulary the
-   answers themselves are built from. Anything else capitalised mid-sentence is
-   treated as a name it has introduced. */
-const PHRASING_ALLOWED_WORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'at', 'is', 'are', 'was', 'were',
-  'has', 'have', 'had', 'no', 'not', 'none', 'this', 'that', 'there', 'their', 'they', 'it',
-  'stall', 'stalls', 'tenant', 'tenants', 'rent', 'bill', 'bills', 'month', 'total', 'due',
-  'paid', 'unpaid', 'overdue', 'available', 'occupied', 'maintenance', 'market', 'office',
-  'collected', 'outstanding', 'violation', 'violations', 'applicant', 'applicants', 'meter',
-  'electricity', 'water', 'record', 'records', 'day', 'days', 'still', 'so', 'far', 'date',
-  'january', 'february', 'march', 'april', 'may', 'june', 'july',
-  'august', 'september', 'october', 'november', 'december',
-]);
-
-/* Proper nouns the model used — names of people, stalls, sections. A reworded
-   answer must not introduce one that was not in the computed facts. */
-function properNouns(text: string): string[] {
-  // Skip the first word of each sentence: its capital says nothing.
-  const withoutSentenceStarts = text.replace(/(^|[.!?]\s+)([A-Z])/g, (_m, lead, letter) => `${lead}${letter.toLowerCase()}`);
-  return (withoutSentenceStarts.match(/\b[A-Z][\w'-]*\b/g) ?? [])
-    .map((w) => w.toLowerCase())
-    .filter((w) => !PHRASING_ALLOWED_WORDS.has(w));
-}
-
-/* True when the model's wording introduced neither a figure nor a name that
-   the computed answer did not already contain. Numbers were always the danger;
-   a name swapped onto the wrong tenant is the quieter one, and just as wrong
-   in a register the office acts on. */
-function guardPhrasing(phrasing: string, fact: FactAnswer): boolean {
-  const facts = [fact.headline, ...fact.lines].join(' ');
-
-  const allowedFigures = new Set(numericTokens(facts).map(normalizeFigure));
-  if (!numericTokens(phrasing).every((t) => allowedFigures.has(normalizeFigure(t)))) return false;
-
-  const allowedNames = new Set(properNouns(facts));
-  return properNouns(phrasing).every((w) => allowedNames.has(w));
-}
-
-/* ---------- The facts ---------- */
-
-type AssistantIntent = {
-  key: string;
-  /* The canonical phrasing, offered as a suggestion and given to the model as
-     the menu it is choosing from. */
-  question: string;
-  /* Terms that decide the question on their own — "overdue", "violation". */
-  strong: string[];
-  /* Terms that merely lean, and must never outvote a decisive one. "Who is
-     overdue on rent" is a rent question, not a request to look up a tenant. */
-  weak: string[];
-  /* For questions whose giveaway is split around a name: "has <someone> paid". */
-  patterns?: RegExp[];
-  answer: (state: AppState, asked: string) => FactAnswer;
-};
-
-/* Finds the tenant a question is about, by name or by record number. */
-function tenantFromQuestion(state: AppState, asked: string): Tenant | undefined {
-  const q = asked.toLowerCase();
-  const byId = state.tenants.find((t) => q.includes(t.id.toLowerCase()));
-  if (byId) return byId;
-  const named = state.tenants
-    .filter((t) => t.name && q.includes(t.name.toLowerCase()))
-    .sort((a, b) => b.name.length - a.name.length);
-  if (named.length > 0) return named[0];
-  /* A surname on its own is how anyone actually asks. */
-  return state.tenants.find((t) => t.name.toLowerCase().split(/\s+/).some((word) => word.length > 3 && q.includes(word)));
-}
-
-/* The month a question is about — "July", "last month", otherwise this one. */
-function periodFromQuestion(asked: string): string {
-  const q = asked.toLowerCase();
-  const now = currentPeriod();
-  if (/last month|previous month/.test(q)) {
-    const [y, m] = now.split('-').map(Number);
-    const d = new Date(y, m - 2, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  }
-  const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
-  const found = months.findIndex((name) => q.includes(name));
-  if (found >= 0) {
-    const year = /\b(20\d{2})\b/.exec(q)?.[1] ?? now.slice(0, 4);
-    return `${year}-${String(found + 1).padStart(2, '0')}`;
-  }
-  return now;
-}
-
-const ASSISTANT_INTENTS: AssistantIntent[] = [
-  {
-    key: 'rent.overdue',
-    question: 'Which tenants are overdue on rent?',
-    strong: ['overdue','past due','delinquent','behind on rent','behind on payment','behind on payments','lumampas na'],
-    weak: ['late', 'rent', 'not paid', 'hindi nagbayad'],
-    answer: (state, asked) => {
-      const period = periodFromQuestion(asked);
-      const late = state.tenants.filter((t) => rentStatusOf(t, period) === 'Overdue');
-      const owed = late.reduce((s, t) => s + t.rent, 0);
-      return {
-        intent: 'rent.overdue',
-        headline: late.length === 0
-          ? `No tenant is overdue on rent for ${formatPeriod(period)}.`
-          : `${late.length} tenant${late.length === 1 ? ' is' : 's are'} overdue on rent for ${formatPeriod(period)}, owing ${money(owed)} in total.`,
-        lines: late.map((t) => `${t.name} (${t.id}, stall ${t.stallId}) — ${money(t.rent)}, due ${formatIsoDate(rentDueIso(t, period))}, ${rentDaysLate(t, period)} day${rentDaysLate(t, period) === 1 ? '' : 's'} late`),
-        navigate: 'tenants',
-      };
-    },
-  },
-  {
-    key: 'rent.unpaid',
-    question: 'Who has not paid rent this month?',
-    strong: ['has not paid','not yet paid','unpaid rent','wala pang bayad','still owe','who has not paid','hindi pa nagbabayad','hindi nagbabayad','hindi pa bayad','walang bayad'],
-    weak: ['unpaid','rent','outstanding','upa','bayad','nagbabayad'],
-    answer: (state, asked) => {
-      const period = periodFromQuestion(asked);
-      const unpaid = state.tenants.filter((t) => rentStatusOf(t, period) !== 'Paid');
-      const roll = rentRollFor(state.tenants, period);
-      return {
-        intent: 'rent.unpaid',
-        headline: unpaid.length === 0
-          ? `Every tenant has paid rent for ${formatPeriod(period)}.`
-          : `${unpaid.length} of ${state.tenants.length} tenants have not paid rent for ${formatPeriod(period)}. ${money(roll.outstanding)} is still outstanding.`,
-        lines: unpaid.map((t) => `${t.name} (stall ${t.stallId}) — ${money(t.rent)}, ${rentStatusOf(t, period)}`),
-        navigate: 'tenants',
-      };
-    },
-  },
-  {
-    key: 'rent.collected',
-    question: 'How much rent have we collected this month?',
-    strong: ['collected','collection','nakolekta','rent income','naipon','take in','taken in'],
-    weak: ['rent','how much','total','upa','magkano'],
-    answer: (state, asked) => {
-      const period = periodFromQuestion(asked);
-      const roll = rentRollFor(state.tenants, period);
-      return {
-        intent: 'rent.collected',
-        headline: `${money(roll.collected)} of ${money(roll.due)} rent has been collected for ${formatPeriod(period)}.`,
-        lines: [
-          `${roll.paidCount} of ${state.tenants.length} tenants have paid`,
-          `${money(roll.outstanding)} still outstanding across ${roll.unpaidCount} tenant${roll.unpaidCount === 1 ? '' : 's'}`,
-          `${roll.overdueCount} tenant${roll.overdueCount === 1 ? ' is' : 's are'} past the due date`,
-          ...(roll.discounted > 0
-            ? [`${money(roll.discounted)} given as ${EARLY_RENT_DISCOUNT_PCT}% early-payment discounts — collected is below the rent roll by that much`]
-            : []),
-        ],
-        navigate: 'tenants',
-      };
-    },
-  },
-  {
-    key: 'rent.tenant',
-    question: 'Has a particular tenant paid their rent?',
-    strong: ['paid na ba', 'already paid'],
-    weak: ['paid', 'rent', 'status of', 'account of'],
-    patterns: [/\b(has|did)\s+[\w'\s.-]{2,40}\s+(paid|pay)\b/i],
-    answer: (state, asked) => {
-      const tenant = tenantFromQuestion(state, asked);
-      const period = periodFromQuestion(asked);
-      if (!tenant) {
-        return {
-          intent: 'rent.tenant',
-          headline: 'I could not tell which tenant you meant. Name them as they appear on the record, or give the tenant number.',
-          lines: state.tenants.slice(0, 6).map((t) => `${t.name} (${t.id})`),
-          navigate: 'tenants',
-        };
-      }
-      const status = rentStatusOf(tenant, period);
-      const payment = rentPaymentFor(tenant, period);
-      return {
-        intent: 'rent.tenant',
-        headline: status === 'Paid'
-          ? `${tenant.name} has paid rent for ${formatPeriod(period)}.`
-          : `${tenant.name} has not paid rent for ${formatPeriod(period)} — ${status}.`,
-        lines: [
-          `Stall ${tenant.stallId}, ${tenant.section}`,
-          `Monthly rent ${money(tenant.rent)}, falls due day ${clampDueDay(tenant.rentDueDay)}`,
-          status === 'Paid' && payment?.paidOn
-            ? `Paid ${formatIsoDate(payment.paidOn)}, ${money(payment.amount)}${payment.discount > 0 ? ` (after a ${money(payment.discount)} early-payment discount)` : ''}`
-            : `Due ${formatIsoDate(rentDueIso(tenant, period))}${status === 'Overdue' ? `, ${rentDaysLate(tenant, period)} days late` : ''}${rentQuoteToday(tenant, period).early ? ` — ${money(rentQuoteToday(tenant, period).payable)} if settled today with the ${EARLY_RENT_DISCOUNT_PCT}% early discount` : ''}`,
-          `Rent collected from this tenant to date: ${money(rentTotalPaid(tenant))}`,
-        ],
-        navigate: 'tenants',
-      };
-    },
-  },
-  {
-    key: 'earnings.total',
-    question: 'What are the market earnings?',
-    strong: ['earnings','revenue','income','kita','rent roll','total earning'],
-    weak: ['total','how much','money','earning','magkano'],
-    answer: (state) => {
-      const period = currentPeriod();
-      const roll = rentRollFor(state.tenants, period);
-      const rentToDate = rentCollectedToDate(state.tenants);
-      const utilitiesPaid = state.utilities.filter((b) => b.status === 'Paid').reduce((s, b) => s + b.amount, 0);
-      return {
-        intent: 'earnings.total',
-        headline: `Total market earnings to date are ${money(rentToDate + utilitiesPaid)}.`,
-        lines: [
-          `Rent collected to date: ${money(rentToDate)}`,
-          `Utilities collected to date: ${money(utilitiesPaid)}`,
-          `Monthly rent roll: ${money(roll.due)} contracted from ${state.tenants.length} tenancies`,
-          `Collected for ${formatPeriod(period)}: ${money(roll.collected)}`,
-        ],
-        navigate: 'dashboard',
-      };
-    },
-  },
-  {
-    key: 'stalls.vacant',
-    question: 'Which stalls are vacant?',
-    strong: ['vacant','available stall','empty stall','bakante','free stall','open stall','walang laman','walang tao','puwesto na bakante'],
-    weak: ['stall','available','empty','puwesto','ilan'],
-    answer: (state) => {
-      const vacant = state.stalls.filter((s) => s.status === 'Available');
-      return {
-        intent: 'stalls.vacant',
-        headline: vacant.length === 0
-          ? 'No stalls are available — every stall is occupied or under maintenance.'
-          : `${vacant.length} of ${state.stalls.length} stalls are available to let.`,
-        lines: vacant.map((s) => `Stall ${s.id} — ${s.section}`),
-        navigate: 'stalls',
-      };
-    },
-  },
-  {
-    key: 'stalls.status',
-    question: 'What is the stall occupancy?',
-    strong: ['occupancy', 'occupied', 'stall status', 'under maintenance'],
-    weak: ['stall', 'how many', 'maintenance'],
-    answer: (state) => {
-      const occupied = state.stalls.filter((s) => s.status === 'Occupied').length;
-      const available = state.stalls.filter((s) => s.status === 'Available').length;
-      const maintenance = state.stalls.filter((s) => s.status === 'Maintenance').length;
-      const closed = state.stalls.filter((s) => s.status === 'Temporarily Closed').length;
-      const shut = state.stalls.filter((s) => s.status === 'Closed').length;
-      const abandoned = state.stalls.filter((s) => s.status === 'Abandoned').length;
-      return {
-        intent: 'stalls.status',
-        headline: `${occupied} of ${state.stalls.length} stalls are occupied — ${percent(ratio(occupied, state.stalls.length))} occupancy.`,
-        lines: [
-          `Occupied: ${occupied}`,
-          `Available: ${available}`,
-          `Temporarily closed: ${closed}`,
-          `Closed: ${shut}`,
-          `Abandoned: ${abandoned}`,
-          `Under maintenance: ${maintenance}`,
-        ],
-        navigate: 'stalls',
-      };
-    },
-  },
-  {
-    key: 'utilities.unpaid',
-    question: 'Which utility bills are unpaid or overdue?',
-    strong: ['utility', 'utilities', 'bill', 'bills', 'electricity', 'electric', 'water', 'kuryente', 'tubig'],
-    weak: ['unpaid', 'overdue', 'due'],
-    answer: (state) => {
-      const unpaid = state.utilities.filter((b) => b.status === 'Unpaid');
-      const overdue = state.utilities.filter(isOverdue);
-      const owed = unpaid.reduce((s, b) => s + b.amount, 0);
-      return {
-        intent: 'utilities.unpaid',
-        headline: unpaid.length === 0
-          ? 'Every utility bill on record has been paid.'
-          : `${unpaid.length} utility bill${unpaid.length === 1 ? ' is' : 's are'} unpaid, totalling ${money(owed)}. ${overdue.length} of them ${overdue.length === 1 ? 'is' : 'are'} past the due date.`,
-        lines: unpaid.map((b) => `${b.id} — ${b.type} for stall ${b.stallId}${b.tenantName ? ` (${b.tenantName})` : ''}, ${money(b.amount)}, due ${formatIsoDate(b.dueDate)}${isOverdue(b) ? ' — overdue' : ''}`),
-        navigate: 'utilities',
-      };
-    },
-  },
-  {
-    key: 'meter.lookup',
-    question: 'What is a tenant or stall meter number?',
-    strong: ['meter'],
-    weak: ['number', 'reading', 'metro'],
-    answer: (state, asked) => {
-      const tenant = tenantFromQuestion(state, asked);
-      if (tenant) {
-        return {
-          intent: 'meter.lookup',
-          headline: `${tenant.name} at stall ${tenant.stallId}:`,
-          lines: [
-            `Electricity meter — ${tenant.meters.Electricity || 'not on record'}`,
-            `Water meter — ${tenant.meters.Water || 'not on record'}`,
-          ],
-          navigate: 'tenants',
-        };
-      }
-      const onFile = state.tenants.filter((t) => t.meters.Electricity || t.meters.Water);
-      return {
-        intent: 'meter.lookup',
-        headline: `${onFile.length} of ${state.tenants.length} tenants have a meter number on record.`,
-        lines: onFile.map((t) => `${t.name} (stall ${t.stallId}) — electricity ${t.meters.Electricity || '—'}, water ${t.meters.Water || '—'}`),
-        navigate: 'tenants',
-      };
-    },
-  },
-  {
-    key: 'tenant.lookup',
-    question: 'Tell me about a tenant.',
-    strong: [],
-    weak: ['who is', 'tenant', 'details of', 'record of', 'contact', 'sino', 'tell me about'],
-    answer: (state, asked) => {
-      const tenant = tenantFromQuestion(state, asked);
-      if (!tenant) {
-        return {
-          intent: 'tenant.lookup',
-          headline: `${state.tenants.length} tenants are on record.`,
-          lines: state.tenants.map((t) => `${t.name} (${t.id}) — stall ${t.stallId}, ${t.section}, ${money(t.rent)}`),
-          navigate: 'tenants',
-        };
-      }
-      return {
-        intent: 'tenant.lookup',
-        headline: `${tenant.name} — tenant record ${tenant.id}.`,
-        lines: [
-          `Stall ${tenant.stallId}, ${tenant.section}`,
-          `Contact ${formatPhone(tenant.phone) || 'not on record'}`,
-          `Monthly rent ${money(tenant.rent)}, status ${tenant.status}`,
-          `Rent for ${formatPeriod(currentPeriod())}: ${rentStatusOf(tenant, currentPeriod())}`,
-          `Stallkeepers on record: ${tenant.keepers.length}`,
-        ],
-        navigate: 'tenants',
-      };
-    },
-  },
-  {
-    key: 'applicants.pending',
-    question: 'How many applicants are waiting for review?',
-    strong: ['applicant', 'application', 'aplikante'],
-    weak: ['pending', 'waiting', 'review'],
-    answer: (state) => {
-      const pending = state.applicants.filter((a) => a.status === 'Pending Review');
-      const incomplete = state.applicants.filter((a) => a.status === 'Incomplete');
-      return {
-        intent: 'applicants.pending',
-        headline: `${pending.length} applicant${pending.length === 1 ? ' is' : 's are'} awaiting review, out of ${state.applicants.length} on file.`,
-        lines: [
-          ...pending.map((a) => `${a.name} (${a.id})${a.stallId ? ` — stall ${a.stallId}` : ''}, applied ${a.dateApplied}`),
-          `${incomplete.length} application${incomplete.length === 1 ? ' is' : 's are'} incomplete`,
-        ],
-        navigate: 'applicants',
-      };
-    },
-  },
-  {
-    key: 'violations.open',
-    question: 'Are there any open violations?',
-    strong: ['violation', 'citation', 'offence', 'offense', 'paglabag'],
-    weak: ['open'],
-    answer: (state) => {
-      const open = state.violations.filter((v) => v.status === 'Open');
-      const points = open.reduce((s, v) => s + v.points, 0);
-      return {
-        intent: 'violations.open',
-        headline: open.length === 0
-          ? 'There are no open violations on the register.'
-          : `${open.length} violation${open.length === 1 ? ' is' : 's are'} open, carrying ${points} demerit point${points === 1 ? '' : 's'}.`,
-        lines: open.map((v) => `${v.id} — ${v.tenant}: ${v.issue}, recorded ${v.dateRecorded ? formatIsoDate(v.dateRecorded) : 'undated'}`),
-        navigate: 'violations',
-      };
-    },
-  },
-];
-
-/* Scores the question against each intent. Deterministic and first — the model
-   is only consulted when the wording gives nothing away. */
-function matchIntent(asked: string): { intent: AssistantIntent; score: number } | null {
-  const q = asked.toLowerCase();
-  let best: { intent: AssistantIntent; score: number } | null = null;
-  for (const intent of ASSISTANT_INTENTS) {
-    let score = 0;
-    for (const term of intent.strong) if (q.includes(term)) score += 5;
-    for (const term of intent.weak) if (q.includes(term)) score += 1;
-    for (const pattern of intent.patterns ?? []) if (pattern.test(q)) score += 5;
-    if (score > 0 && (!best || score > best.score)) best = { intent, score };
-  }
-  return best;
-}
-
-function answerFor(key: string, state: AppState, asked: string): FactAnswer | null {
-  const intent = ASSISTANT_INTENTS.find((i) => i.key === key);
-  return intent ? intent.answer(state, asked) : null;
-}
-
-/* ---------- The panel ---------- */
-
-function AssistantPage({ state, onNavigate }: { state: AppState; onNavigate: (k: ModuleKey) => void }) {
-  const [messages, setMessages] = useState<AssistantMessage[]>([]);
-  const [draft, setDraft] = useState('');
-  const [thinking, setThinking] = useState(false);
-  const [model, setModel] = useState<string | null>(null);
-  const seq = useRef(0);
-  const logEnd = useRef<HTMLDivElement | null>(null);
-
-  /* The shell only installs the bridge when a model file is actually on disk. */
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (!window.marketAssistant) return;
-        if (!(await window.marketAssistant.ready())) return;
-        const name = await window.marketAssistant.modelName();
-        if (!cancelled) setModel(name);
-      } catch { /* no model, no bridge — the assistant still answers */ }
-    })();
-    return () => { cancelled = true; };
+    let dropped = false;
+    loadStored()
+      .then((loaded) => {
+        if (dropped) return;
+        seedIdCounters(loaded.idCounters);
+        setBoot({
+          state: stateFrom(loaded.raw),
+          savedAt: loaded.savedAt,
+          problem: loaded.problem,
+          imported: loaded.imported,
+        });
+      })
+      .catch((error: unknown) => {
+        if (dropped) return;
+        seedIdCounters({});
+        setBoot({
+          state: initialState,
+          savedAt: '',
+          problem: error instanceof Error ? error.message : 'The records could not be read.',
+          imported: false,
+        });
+      });
+    return () => { dropped = true; };
   }, []);
 
-  useEffect(() => { logEnd.current?.scrollIntoView({ block: 'end' }); }, [messages, thinking]);
-
-  const push = (m: Omit<AssistantMessage, 'id'>) => {
-    seq.current += 1;
-    setMessages((prev) => [...prev, { ...m, id: `M${seq.current}` }]);
-  };
-
-  const ask = async (question: string) => {
-    const asked = question.trim();
-    if (!asked || thinking) return;
-    push({ role: 'officer', text: asked });
-    setDraft('');
-    setThinking(true);
-
-    try {
-      /* 1. Which question is this? Keywords first; the model only breaks a tie
-            it alone can break, and it may only pick from this list. */
-      let key = matchIntent(asked)?.intent.key ?? null;
-      if (!key && window.marketAssistant) {
-        try {
-          const picked = await window.marketAssistant.classify(
-            asked,
-            ASSISTANT_INTENTS.map((i) => ({ key: i.key, question: i.question })),
-          );
-          if (picked && ASSISTANT_INTENTS.some((i) => i.key === picked)) key = picked;
-        } catch { /* fall through to the plain reply below */ }
-      }
-
-      if (!key) {
-        push({
-          role: 'assistant',
-          source: 'records',
-          text: 'I can only answer from what is on record. Try one of these:',
-          lines: ASSISTANT_INTENTS.map((i) => i.question),
-        });
-        return;
-      }
-
-      /* 2. The answer itself, computed. */
-      const fact = answerFor(key, state, asked);
-      if (!fact) return;
-
-      /* 3. The model may rewrite it, but only within the figures it was given. */
-      let text = fact.headline;
-      let source: AssistantMessage['source'] = 'records';
-      if (window.marketAssistant && model) {
-        try {
-          const phrased = await window.marketAssistant.phrase(asked, fact.headline, fact.lines);
-          if (phrased && phrased.trim()) {
-            if (guardPhrasing(phrased, fact)) { text = phrased.trim(); source = 'model'; }
-            else source = 'model-rejected';
-          }
-        } catch { /* the computed sentence stands */ }
-      }
-
-      push({ role: 'assistant', text, lines: fact.lines, navigate: fact.navigate, source });
-    } finally {
-      setThinking(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Market Assistant</h2>
-          <p className="page-subtitle">Ask about tenants, rent, stalls, bills and violations. Every figure is read off the records.</p>
-        </div>
-        <div className="page-actions">
-          <span className={`assistant-model${model ? ' on' : ''}`} title={model ? `Language model in use: ${model}` : 'No language model installed — answers are computed and worded from the records'}>
-            <span className="material-symbols-outlined">{model ? 'neurology' : 'database'}</span>
-            {model ? model : 'Records only'}
-          </span>
-          {messages.length > 0 && <button className="btn-outline" onClick={() => setMessages([])}><span className="material-symbols-outlined">delete_sweep</span>Clear</button>}
+  if (!boot) {
+    return (
+      <div className="boot-screen">
+        <div className="boot-card">
+          <img className="boot-logo" src="./logo.jpg" alt="Municipality of Tanauan official seal" />
+          <p className="boot-title">Tanauan Public Market</p>
+          <p className="boot-note">Opening records&hellip;</p>
         </div>
       </div>
+    );
+  }
 
-      <div className="panel assistant-panel">
-        <div className="assistant-log">
-          {messages.length === 0 && (
-            <div className="assistant-intro">
-              <span className="material-symbols-outlined">forum</span>
-              <h3>What would you like to know?</h3>
-              <p>Answers are computed from the records in this system. Nothing is sent anywhere — the assistant works offline.</p>
-              <div className="assistant-suggestions">
-                {ASSISTANT_INTENTS.slice(0, 6).map((i) => (
-                  <button key={i.key} className="assistant-chip" onClick={() => ask(i.question)}>{i.question}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {messages.map((m) => (
-            <div className={`assistant-turn ${m.role}`} key={m.id}>
-              <div className="assistant-bubble">
-                <p className="assistant-text">{m.text}</p>
-                {m.lines && m.lines.length > 0 && (
-                  <ul className="assistant-lines">
-                    {m.lines.map((l, i) => <li key={i}>{l}</li>)}
-                  </ul>
-                )}
-                {m.role === 'assistant' && (
-                  <div className="assistant-meta">
-                    <span className="assistant-source" title={
-                      m.source === 'model' ? 'Worded by the local language model; every figure was checked against the records'
-                      : m.source === 'model-rejected' ? 'The model’s wording quoted a figure that was not in the records, so it was discarded and the computed answer shown'
-                      : 'Computed and worded directly from the records'
-                    }>
-                      <span className="material-symbols-outlined">{m.source === 'model' ? 'neurology' : m.source === 'model-rejected' ? 'shield' : 'database'}</span>
-                      {m.source === 'model' ? 'Worded by model · figures verified' : m.source === 'model-rejected' ? 'Model wording discarded — figures did not match' : 'From the records'}
-                    </span>
-                    {m.navigate && <button className="assistant-jump" onClick={() => onNavigate(m.navigate!)}>Open {navigation.find((n) => n.key === m.navigate)?.label ?? m.navigate}</button>}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {thinking && (
-            <div className="assistant-turn assistant">
-              <div className="assistant-bubble">
-                <p className="assistant-text assistant-working">Reading the records…</p>
-              </div>
-            </div>
-          )}
-          <div ref={logEnd} />
-        </div>
-
-        <form
-          className="assistant-composer"
-          onSubmit={(e) => { e.preventDefault(); ask(draft); }}
-        >
-          <input
-            className="assistant-input"
-            value={draft}
-            placeholder="e.g. Who is overdue on rent this month?"
-            onChange={(e) => setDraft(e.target.value)}
-            disabled={thinking}
-          />
-          <button className="btn-primary" type="submit" disabled={thinking || !draft.trim()}>
-            <span className="material-symbols-outlined">send</span>Ask
-          </button>
-        </form>
-      </div>
-    </>
-  );
+  return <App boot={boot} />;
 }
 
-export default App;
+export default Boot;

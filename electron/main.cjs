@@ -1,12 +1,16 @@
 // Electron main process for the Public Market Rental Monitoring System.
 //
-// The app is a fully offline static SPA that keeps its data in localStorage,
-// which Electron persists in the user-data directory (see DATA LOCATION below).
+// The app is fully offline. Records live in a SQLite database file in the
+// user-data directory, owned by this process (see db.cjs); the renderer reaches
+// it only through the calls listed in preload.cjs.
 // CommonJS (.cjs) because package.json declares "type": "module".
 
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('node:path');
-const llm = require('./llm.cjs');
+const db = require('./db.cjs');
+
+/** Where the records are kept. Backing this file up backs up the whole system. */
+const databaseFile = () => path.join(app.getPath('userData'), 'market-records.db');
 
 // A dev server URL is passed in by `npm run electron:dev`; otherwise we load
 // the built files from dist/.
@@ -33,8 +37,8 @@ function createWindow() {
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     autoHideMenuBar: !isDev,
     webPreferences: {
-      // The renderer is trusted local content but has no need for Node access.
-      // The preload adds one bridge only: the local assistant model.
+      // The renderer is trusted local content but has no need for Node access:
+      // it reaches the database through the preload bridge instead.
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
@@ -81,6 +85,75 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+/* ============================================================
+   Database
+   ============================================================ */
+
+/**
+ * Opens the database before the first window loads. If the file cannot be
+ * opened at all — a full disk, a folder the operator has no rights to — the app
+ * says so plainly and stops, rather than starting up and silently losing every
+ * record the clerk files that day.
+ */
+function openDatabase() {
+  try {
+    db.open(databaseFile());
+    return true;
+  } catch (error) {
+    dialog.showErrorBox(
+      'Unable to open the records database',
+      `The system could not open its records file.
+
+${databaseFile()}
+
+${error.message}
+
+` +
+      'Check that the folder is available and not full, then start the application again.',
+    );
+    return false;
+  }
+}
+
+/* Every database call the renderer can make. Each one is wrapped so a failure
+   comes back as a message the interface can show instead of a dead promise. */
+function registerDatabaseHandlers() {
+  const handle = (channel, fn) => {
+    ipcMain.handle(channel, async (_event, ...args) => {
+      try {
+        return { ok: true, data: await fn(...args) };
+      } catch (error) {
+        console.error(`[db] ${channel} failed:`, error);
+        return { ok: false, error: error.message };
+      }
+    });
+  };
+
+  handle('db:load', () => db.load());
+  handle('db:save', (payload) => db.save(payload));
+  handle('db:replace-all', (payload) => db.replaceAll(payload));
+  handle('db:clear', () => { db.clearAll(); return true; });
+  handle('db:stats', () => db.stats());
+  handle('db:integrity-check', () => db.integrityCheck());
+
+  handle('db:reveal-folder', async () => {
+    await shell.openPath(app.getPath('userData'));
+    return app.getPath('userData');
+  });
+
+  handle('db:backup', async () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save a copy of the records database',
+      defaultPath: path.join(app.getPath('documents'), `market-records-backup-${stamp}.db`),
+      filters: [{ name: 'Market records database', extensions: ['db'] }],
+    });
+    if (canceled || !filePath) return { canceled: true };
+    await db.backupTo(filePath);
+    return { canceled: false, filePath };
+  });
+}
+
 /**
  * Trimmed menu for a non-technical operator: no Node/Chromium internals, but
  * printing, zoom and reload stay reachable, plus a pointer to the data folder
@@ -121,16 +194,30 @@ function buildMenu() {
       label: 'Help',
       submenu: [
         {
-          label: 'Open Data Folder',
-          click: () => shell.openPath(app.getPath('userData')),
+          label: 'Back Up Records Database…',
+          click: async () => {
+            try {
+              const stamp = new Date().toISOString().slice(0, 10);
+              const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+                title: 'Save a copy of the records database',
+                defaultPath: path.join(app.getPath('documents'), `market-records-backup-${stamp}.db`),
+                filters: [{ name: 'Market records database', extensions: ['db'] }],
+              });
+              if (canceled || !filePath) return;
+              await db.backupTo(filePath);
+              dialog.showMessageBox(mainWindow, {
+                type: 'info', title: 'Backup saved', buttons: ['OK'],
+                message: 'A copy of the records has been saved.',
+                detail: filePath,
+              });
+            } catch (error) {
+              dialog.showErrorBox('Backup failed', error.message);
+            }
+          },
         },
         {
-          label: 'Assistant Model Folder',
-          click: () => {
-            const dir = require('node:path').join(app.getPath('userData'), 'models');
-            try { require('node:fs').mkdirSync(dir, { recursive: true }); } catch { /* shown below either way */ }
-            shell.openPath(dir);
-          },
+          label: 'Open Data Folder',
+          click: () => shell.openPath(app.getPath('userData')),
         },
         {
           label: 'About',
@@ -161,19 +248,10 @@ app.on('second-instance', () => {
   }
 });
 
-/* The assistant's model runs here in the main process, off the render thread,
-   so a slow answer never freezes the window. Every handler is local-only. */
-function registerAssistant() {
-  ipcMain.handle('assistant:ready', () => llm.ready(app));
-  ipcMain.handle('assistant:model-name', () => llm.modelName());
-  ipcMain.handle('assistant:classify', (_e, question, intents) => llm.classify(app, String(question || ''), Array.isArray(intents) ? intents : []));
-  ipcMain.handle('assistant:phrase', (_e, question, headline, lines) =>
-    llm.phrase(app, String(question || ''), String(headline || ''), Array.isArray(lines) ? lines.map(String) : []));
-}
-
 app.whenReady().then(() => {
+  if (!openDatabase()) { app.exit(1); return; }
+  registerDatabaseHandlers();
   buildMenu();
-  registerAssistant();
   createWindow();
 
   app.on('activate', () => {
@@ -184,3 +262,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+// Flush and release the database file so the next launch — or a backup copied
+// out of the data folder — sees a complete, closed file.
+app.on('will-quit', () => db.close());

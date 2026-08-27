@@ -3212,6 +3212,16 @@ ul, ol {
   color: #92400e;
 }
 
+/* A surcharge that has not bitten yet: present, and plainly not counted. */
+.calc-row.muted {
+  color: var(--color-text-secondary);
+}
+
+.calc-row.muted strong {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
 .calc-row.warning strong {
   color: var(--color-warning);
 }
@@ -5049,8 +5059,8 @@ ul, ol {
   box-sizing: border-box;
   overflow: hidden;
   font-family: 'Inter', system-ui, sans-serif;
-  font-size: 7.6px;
-  line-height: 1.38;
+  font-size: 9.8px;
+  line-height: 1.4;
   color: #000;
   background: #fff;
 }
@@ -5077,8 +5087,8 @@ ul, ol {
 }
 
 .receipt-seal {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -5091,12 +5101,12 @@ ul, ol {
 }
 
 .receipt-identity span {
-  font-size: 6.6px;
+  font-size: 8.2px;
   letter-spacing: 0.01em;
 }
 
 .receipt-identity strong {
-  font-size: 8.2px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -5110,7 +5120,7 @@ ul, ol {
   padding: 1.5px 4px;
   border: 1px solid #000;
   border-radius: 2px;
-  font-size: 5.8px;
+  font-size: 7.4px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -5118,8 +5128,8 @@ ul, ol {
 }
 
 .receipt-title {
-  margin: 5px 0 4px;
-  font-size: 9px;
+  margin: 6px 0 5px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -5130,10 +5140,10 @@ ul, ol {
   display: flex;
   justify-content: space-between;
   gap: 6px;
-  padding: 3px 0;
+  padding: 4px 0;
   border-top: 1px solid #000;
   border-bottom: 1px solid #000;
-  font-size: 7px;
+  font-size: 9px;
 }
 
 /* Stall and tenant, boxed away from the figures — this is the block that says
@@ -5142,8 +5152,8 @@ ul, ol {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin: 4px 0;
-  padding: 4px 5px;
+  margin: 5px 0;
+  padding: 5px 6px;
   border: 1px solid #444;
   background: #f4f4f4;
 }
@@ -5156,7 +5166,7 @@ ul, ol {
 
 .receipt-party-row span {
   flex: 0 0 21mm;
-  font-size: 6.6px;
+  font-size: 8.2px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: #333;
@@ -5165,7 +5175,7 @@ ul, ol {
 .receipt-party-row strong {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 8px;
+  font-size: 10.5px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5175,8 +5185,10 @@ ul, ol {
 .receipt-block {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 2px 0;
+  gap: 3px;
+  padding: 4px 0;
+  flex: 1 1 auto;
+  justify-content: space-between;
 }
 
 /* Leader dots carry the eye from each label across to its figure. */
@@ -5211,18 +5223,18 @@ ul, ol {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 3px;
-  padding: 3px 0;
+  margin-top: 5px;
+  padding: 5px 0;
   border-top: 1.5px solid #000;
   border-bottom: 1.5px solid #000;
-  font-size: 8px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
 .receipt-total strong {
-  font-size: 11px;
+  font-size: 15px;
 }
 
 /* The surcharge line, weighted so a tenant reading the quarter sees at once
@@ -5234,8 +5246,8 @@ ul, ol {
 }
 
 .receipt-status {
-  margin-top: 3px;
-  font-size: 7px;
+  margin-top: 4px;
+  font-size: 9px;
   letter-spacing: 0.02em;
 }
 
@@ -5252,9 +5264,9 @@ ul, ol {
   margin-top: 3px;
   padding: 3px 4px;
   border: 1px solid #ccc;
-  font-size: 6.8px;
+  font-size: 8.6px;
   line-height: 1.35;
-  max-height: 8mm;
+  max-height: 10mm;
   overflow: hidden;
 }
 
@@ -5268,7 +5280,7 @@ ul, ol {
   display: flex;
   gap: 6mm;
   margin-top: auto;
-  padding-top: 6mm;
+  padding-top: 7mm;
 }
 
 .receipt-sign {
@@ -5281,7 +5293,7 @@ ul, ol {
 }
 
 .receipt-sign-name {
-  font-size: 7px;
+  font-size: 9.2px;
   font-weight: 600;
   max-width: 100%;
   overflow: hidden;
@@ -5297,7 +5309,7 @@ ul, ol {
 
 .receipt-sign-role {
   margin-top: 2px;
-  font-size: 6.2px;
+  font-size: 8px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: #333;
@@ -5310,7 +5322,7 @@ ul, ol {
   margin-top: 3px;
   padding-top: 3px;
   border-top: 1px solid #999;
-  font-size: 6.2px;
+  font-size: 7.6px;
   color: #333;
 }
 
@@ -5498,6 +5510,7 @@ ul, ol {
   flex-direction: column;
   gap: 0;
   flex: 1 1 auto;
+  justify-content: space-between;
 }
 
 .slip-checklist li {
@@ -6409,210 +6422,77 @@ ul, ol {
   }
 }
 
+
 /* ============================================================
-   Market Assistant
-   ============================================================ */
+   Start-up screen
+   ============================================================
+   Shown for the moment it takes to read the records out of the database. */
 
-.assistant-panel {
+.boot-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--surface-muted, #f5f7fb);
+}
+
+.boot-card {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--topbar-height) - 190px);
-  min-height: 420px;
-}
-
-.assistant-log {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.assistant-intro {
-  margin: auto;
-  max-width: 560px;
-  text-align: center;
-  color: var(--color-text-secondary);
-}
-
-.assistant-intro > .material-symbols-outlined {
-  font-size: 46px;
-  color: var(--color-text-tertiary);
-}
-
-.assistant-intro h3 {
-  margin: 8px 0 4px;
-  font-size: 19.5px;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.assistant-intro p {
-  font-size: 15px;
-  line-height: 1.55;
-}
-
-.assistant-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 18px;
-}
-
-.assistant-chip {
-  padding: 7px 13px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-surface);
-  font-family: inherit;
-  font-size: 14.5px;
-  font-weight: 500;
-  color: var(--color-text);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.assistant-chip:hover {
-  border-color: var(--color-primary-light);
-  background: var(--color-primary-bg);
-}
-
-.assistant-turn {
-  display: flex;
-}
-
-.assistant-turn.officer {
-  justify-content: flex-end;
-}
-
-.assistant-bubble {
-  max-width: 78%;
-  padding: 12px 15px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg);
-}
-
-.assistant-turn.officer .assistant-bubble {
-  border-color: transparent;
-  background: var(--color-primary);
-  color: #fff;
-}
-
-.assistant-text {
-  font-size: 15.5px;
-  line-height: 1.55;
-}
-
-.assistant-working {
-  color: var(--color-text-secondary);
-  font-style: italic;
-}
-
-.assistant-lines {
-  margin: 9px 0 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 14.5px;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-}
-
-.assistant-lines li::marker {
-  color: var(--color-text-tertiary);
-}
-
-/* Where the wording came from. The officer should never have to wonder whether
-   a sentence was computed or written by the model. */
-.assistant-meta {
-  display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 12px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--color-border-light);
+  text-align: center;
 }
 
-.assistant-source {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12.5px;
-  font-weight: 600;
+.boot-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.boot-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: 0.02em;
+  color: var(--text-strong, #16233c);
+}
+
+.boot-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted, #64748b);
+}
+
+/* An annotation the office made against a rate — "charged as meat", or a figure
+   they have flagged for review. */
+.rate-note {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  font-style: italic;
   color: var(--color-text-tertiary);
 }
 
-.assistant-source .material-symbols-outlined {
-  font-size: 16px;
-}
-
-.assistant-jump {
+/* Other tenants sharing a sheet, listed so the officer can take one off again. */
+.sheet-added {
+  list-style: none;
+  margin: 0 0 8px;
   padding: 0;
-  border: none;
-  background: none;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--color-primary);
-  cursor: pointer;
-}
-
-.assistant-jump:hover {
-  text-decoration: underline;
-}
-
-.assistant-composer {
-  flex: 0 0 auto;
   display: flex;
-  gap: 10px;
-  padding: 14px 16px;
-  border-top: 1px solid var(--color-border-light);
+  flex-direction: column;
+  gap: 4px;
 }
 
-.assistant-input {
-  flex: 1 1 auto;
-  padding: 10px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  font-family: inherit;
-  font-size: 15.5px;
-  color: var(--color-text);
-}
-
-.assistant-input:focus {
-  outline: none;
-  border-color: var(--color-primary-light);
-}
-
-/* Whether a language model is installed at all. */
-.assistant-model {
-  display: inline-flex;
+.sheet-added li {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border: 1px solid var(--color-border);
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  font-size: 14.5px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.assistant-model.on {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-  color: #0b5030;
-}
-
-.assistant-model .material-symbols-outlined {
-  font-size: 19.5px;
+  background: var(--color-bg);
+  font-size: 12.5px;
 }

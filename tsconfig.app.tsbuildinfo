@@ -1,1 +1,1 @@
-{"version":"7.0.2","root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts"],"packageJsons":["./package.json"],"semanticErrors":true}
+{"root":["./src/app.tsx","./src/db.ts","./src/main.tsx","./src/vite-env.d.ts"],"version":"5.9.3"}
