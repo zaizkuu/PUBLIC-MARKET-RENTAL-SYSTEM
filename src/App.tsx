@@ -507,6 +507,25 @@ function monthlyRentForStall(stallId: string): number {
   return STALL_PREFIX_RATE[stallId.slice(0, 2).toUpperCase()] ?? 0;
 }
 
+/* What a stall in a section rents for each month. The schedule above is
+   written against stall numbers rather than sections, so rather than keep a
+   second copy of it that could drift, the figure is read back off the
+   register: whatever rate the stalls already in that section carry is what a
+   new one there would carry. If a section ever holds more than one rate —
+   none does today — the rate most of its stalls are on wins. */
+function monthlyRentForSection(section: string, stalls: Stall[]): number {
+  const tally = new Map<number, number>();
+  stalls.forEach((stall) => {
+    if (stall.section !== section) return;
+    const rate = monthlyRentForStall(stall.id);
+    if (rate > 0) tally.set(rate, (tally.get(rate) ?? 0) + 1);
+  });
+  let rate = 0;
+  let commonest = 0;
+  tally.forEach((count, value) => { if (count > commonest) { rate = value; commonest = count; } });
+  return rate;
+}
+
 /* ============================================================
    Initial Data
    ============================================================ */
@@ -4921,6 +4940,14 @@ function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, 
     () => stalls.filter((st) => st.section === section && st.status === 'Available' && !takenByTenant.has(st.id)),
     [stalls, section, takenByTenant],
   );
+  /* The rent this application would be signed at. A named stall settles it
+     outright; with none chosen yet the section rate stands in, which is the
+     figure the office quotes at the counter. */
+  const scheduledRent = useMemo(
+    () => (stallId ? monthlyRentForStall(stallId) : 0) || monthlyRentForSection(section, stalls),
+    [stallId, section, stalls],
+  );
+
   /* Who already asked for each stall, so the clerk is told rather than blocked. */
   const requestedBy = useMemo(() => {
     const map = new Map<string, string>();
@@ -4970,6 +4997,18 @@ function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, 
           <span className="form-hint">{openStalls.length} stall{openStalls.length === 1 ? '' : 's'} free in {section}.</span>
         </div>
       </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Monthly Rent (₱)</label>
+          <input className="form-input" value={scheduledRent > 0 ? scheduledRent.toLocaleString('en-PH') : '—'} readOnly />
+          <span className="form-hint">
+            {scheduledRent > 0
+              ? `Set by the rent schedule for ${stallId || section} — not typed in by hand.`
+              : 'No rate is on the schedule for this section yet.'}
+          </span>
+        </div>
+        <div className="form-group" />
+      </div>
       <RequirementsChecklist selected={requirements} onChange={setRequirements} />
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
       <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}><button className="btn-outline" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={handleSubmit}>Add Applicant</button></div>
@@ -4994,7 +5033,7 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
   const [name, setName] = useState(applicant.name);
   const [phone, setPhone] = useState(() => digitsOnly(applicant.phone));
   const [section, setSection] = useState(() => opening?.section ?? SECTIONS[0]);
-  const [rent, setRent] = useState(3500);
+  const [rent, setRent] = useState(() => monthlyRentForStall(opening?.id ?? '') || 0);
   const [status, setStatus] = useState('Active');
   const [error, setError] = useState('');
 
@@ -5008,6 +5047,15 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
     /* Section 43 sets what a stall of this kind pays; the officer can still
        change it, but the schedule is the starting figure. */
     const scheduled = monthlyRentForStall(id);
+    if (scheduled > 0) setRent(scheduled);
+  };
+
+  /* Picking the section by hand re-quotes the rent from the schedule too, so
+     the figure never lags behind the section it is meant to belong to. */
+  const applySection = (value: string) => {
+    setSection(value);
+    setError('');
+    const scheduled = monthlyRentForSection(value, stalls);
     if (scheduled > 0) setRent(scheduled);
   };
 
@@ -5061,7 +5109,7 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
             </div>
             <div className="form-group">
               <label className="form-label">Section</label>
-              <select className="form-select" value={section} onChange={(e) => setSection(e.target.value)}>{SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+              <select className="form-select" value={section} onChange={(e) => applySection(e.target.value)}>{SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             </div>
           </div>
 
