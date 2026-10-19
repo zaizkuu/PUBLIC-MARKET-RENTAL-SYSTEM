@@ -1,3 +1,5 @@
+import { backupRecords } from './backup';
+import MarketMap from './MarketMap';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -1826,9 +1828,98 @@ type BootData = {
   imported: boolean;
 };
 
+type BackupSchedule = { enabled: boolean; nextDate: string; lastDownload: string };
+const backupScheduleKey = 'pmrms-automatic-backup';
+
+function twoMonthsAfter(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1 + 2, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target.toISOString().slice(0, 10);
+}
+
+function readBackupSchedule(): BackupSchedule {
+  try {
+    const value = JSON.parse(localStorage.getItem(backupScheduleKey) ?? 'null');
+    const validDate = (date: unknown): date is string => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date));
+    if (value && typeof value.enabled === 'boolean' && validDate(value.nextDate)) {
+      return { enabled: value.enabled, nextDate: value.nextDate, lastDownload: validDate(value.lastDownload) ? value.lastDownload : '' };
+    }
+  } catch { /* Use a fresh schedule if none can be read. */ }
+  return { enabled: true, nextDate: twoMonthsAfter(todayIso()), lastDownload: '' };
+}
+
+function useAutomaticBackup(state: AppState, ready: boolean) {
+  const [schedule, setSchedule] = useState(readBackupSchedule);
+  const [problem, setProblem] = useState('');
+  const latest = useRef(state);
+  latest.current = state;
+  const update = useCallback((value: BackupSchedule) => {
+    try {
+      localStorage.setItem(backupScheduleKey, JSON.stringify(value));
+      setSchedule(value);
+      setProblem('');
+      return true;
+    } catch {
+      setProblem('The backup schedule could not be saved. Allow local storage and try again.');
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const check = () => {
+      const current = readBackupSchedule();
+      setSchedule(current);
+      if (!current.enabled || current.nextDate > todayIso()) return;
+      const next = { ...current, lastDownload: todayIso(), nextDate: twoMonthsAfter(todayIso()) };
+      if (!update(next)) return;
+      try {
+        downloadJSON(latest.current, `pmrms-automatic-backup-${todayIso()}.json`);
+      } catch {
+        update(current);
+        setProblem('The automatic download could not start. Use Download Full Backup to save your records.');
+      }
+    };
+    try {
+      if (!localStorage.getItem(backupScheduleKey)) localStorage.setItem(backupScheduleKey, JSON.stringify(readBackupSchedule()));
+    } catch { setProblem('Automatic backups require local storage to save the schedule.'); return; }
+    check();
+    const timer = window.setInterval(check, 60_000);
+    window.addEventListener('focus', check);
+    window.addEventListener('storage', check);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', check);
+      window.removeEventListener('storage', check);
+    };
+  }, [ready, update]);
+
+  return { schedule, problem, toggle: () => update({ ...schedule, enabled: !schedule.enabled }) };
+}
+
+function AutomaticBackupSettings({ backup }: { backup: ReturnType<typeof useAutomaticBackup> }) {
+  return (
+    <section className="settings-section full">
+      <div className="settings-section-header">Automatic Data Backup</div>
+      <div className="settings-section-body">
+        <div className="settings-item">
+          <label className="settings-item-label" htmlFor="automatic-backup">Download all records every 2 months</label>
+          <button id="automatic-backup" type="button" className="btn-outline" role="switch" aria-checked={backup.schedule.enabled} onClick={backup.toggle}>{backup.schedule.enabled ? 'On' : 'Off'}</button>
+        </div>
+        <div className="settings-item"><span className="settings-item-label">Next download</span><span className="settings-item-value">{backup.schedule.enabled ? formatIsoDate(backup.schedule.nextDate) : 'Paused'}</span></div>
+        <div className="settings-item"><span className="settings-item-label">Last automatic download requested</span><span className="settings-item-value">{backup.schedule.lastDownload ? formatIsoDate(backup.schedule.lastDownload) : 'None yet'}</span></div>
+        <p className="settings-note">Downloads a full, restorable JSON backup while the system is open. If closed on the scheduled date, it downloads when next opened. Allow downloads in your browser and check your Downloads folder.</p>
+        {backup.problem && <div className="form-error" role="alert">{backup.problem}</div>}
+      </div>
+    </section>
+  );
+}
 function App({ boot }: { boot: BootData }) {
   const [active, setActive] = useState<ModuleKey>('dashboard');
   const [state, setState] = useState<AppState>(boot.state);
+  const automaticBackup = useAutomaticBackup(state, !boot.problem);
   const [searchTerm, setSearchTerm] = useState('');
   const [modal, setModal] = useState<{ type: ModalType; data?: unknown }>({ type: null });
   const [toasts, setToasts] = useState<Array<{ id: number; message: string }>>([]);
@@ -2495,7 +2586,7 @@ function App({ boot }: { boot: BootData }) {
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details]), 'logbook.csv'); showToast('Log exported'); }} />}
           {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, officerLabel(state.officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-office-board.csv'); showToast('Office board exported'); }} />}
-          {active === 'settings' && <SettingsPage state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={downloadReport} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
+          {active === 'settings' && <SettingsPage automaticBackup={automaticBackup} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
       </main>
@@ -2686,6 +2777,8 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
 
   return (
     <>
+      <MarketMap existingStalls={state.stalls} />
+
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Stalls</span><span className="material-symbols-outlined stat-icon">grid_view</span></div>
@@ -3408,13 +3501,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
 
   /* Where the meter number in the box came from, so nobody has to guess whether
      it was filled in for them or is about to be recorded for the first time. */
-  const meterHint = (() => {
-    if (!stallId && !selectedTenant) return 'Select a stall or tenant and the meter on record fills in here.';
-    if (selectedTenant?.meters[type]) return `On record for ${selectedTenant.name}.`;
-    if (lastMeterFor(bills, stallId, type)) return `Carried over from the last ${type.toLowerCase()} bill for ${stallId}.`;
-    if (selectedTenant) return `No ${type.toLowerCase()} meter on record for ${selectedTenant.name} — what you enter is saved to the tenant.`;
-    return 'No meter on record for this stall yet.';
-  })();
 
   const prevNum = toAmount(previous);
   const currNum = toAmount(current);
@@ -3531,31 +3617,21 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
                 return <option key={sid} value={sid}>{sid}{t ? ` — ${t.name}` : ' — vacant'}</option>;
               })}
             </select>
-            <span className="form-hint">
-              {selectedTenant
-                ? `Billed to ${selectedTenant.name}. Meter number and last reading filled in from the record.`
-                : stallId
-                  ? 'No tenant on file for this stall — the bill is charged to the stall itself.'
-                  : 'Choosing a stall fills in the tenant, the meter number and the last reading on record.'}
-            </span>
           </div>
 
           <div className="form-group">
             <label className="form-label">{type} Meter Number</label>
             <input className="form-input" value={meterNumber} onChange={(e) => { setMeterNumber(e.target.value); setError(''); }} placeholder={`e.g. ${type === 'Electricity' ? 'EM-1101' : 'WM-2301'}`} />
-            <span className="form-hint">{meterHint}</span>
           </div>
 
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Period Covered — From *</label>
               <input className="form-input" type="date" value={periodStart} onChange={(e) => { setPeriodStart(e.target.value); setError(''); }} />
-              <span className="form-hint">First day the reading covers.</span>
             </div>
             <div className="form-group">
               <label className="form-label">Period Covered — To *</label>
               <input className="form-input" type="date" min={periodStart} value={periodEnd} onChange={(e) => applyPeriodEnd(e.target.value)} />
-              <span className="form-hint">{periodEnd && periodStart && periodEnd >= periodStart ? `${periodDays(periodStart, periodEnd)} day${periodDays(periodStart, periodEnd) === 1 ? '' : 's'} · filed under ${formatPeriod(period)}.` : 'Day the meter was read.'}</span>
             </div>
           </div>
 
@@ -3583,7 +3659,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
             <div className="form-group">
               <label className="form-label">Previous Reading ({preset.unit})</label>
               <input className="form-input" type="number" min="0" step="any" value={previous} onChange={(e) => { setPrevious(e.target.value); setError(''); }} placeholder="0" />
-              <span className="form-hint">{stallId && lastReadingFor(bills, stallId, type) !== null ? `Carried over from the last ${type.toLowerCase()} bill for ${stallId}.` : 'No previous bill found — enter the starting reading.'}</span>
             </div>
             <div className="form-group">
               <label className="form-label">Current Reading ({preset.unit}) *</label>
@@ -3595,7 +3670,6 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           <div className="form-group">
             <label className="form-label">Rate per {preset.unit} (₱)</label>
             <input className="form-input" type="number" min="0" step="0.01" value={rate} onChange={(e) => { setRate(e.target.value); setError(''); }} />
-            <span className="form-hint">The market's fee schedule sets this at {money(UTILITY_PRESETS[type].rate)} per {preset.unit} for {type.toLowerCase()} — editable per bill if a stall is metered on a different rate.</span>
           </div>
 
           <div className="form-group">
@@ -3843,12 +3917,10 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
           <label className="form-label">Tenant / Party Cited *</label>
           <input className="form-input" list="violation-tenant-options" placeholder="e.g. GERILLA, JOHN DRANDREB" value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
           <datalist id="violation-tenant-options">{tenants.map((t) => <option key={t.id} value={t.name}>{t.stallId}</option>)}</datalist>
-          <span className="form-hint">Pick a tenant on record, or type any other party.</span>
         </div>
         <div className="form-group">
           <label className="form-label">Demerit Points</label>
           <input className="form-input" type="number" min="0" step="1" value={points} onChange={(e) => setPoints(toAmount(e.target.value))} />
-          <span className="form-hint">Weight of the offence — open points are totalled per tenant.</span>
         </div>
       </div>
       <div className="form-group">
@@ -3938,11 +4010,6 @@ function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
             <option value="">— Keep {current.status}</option>
             <option value="Open">Open</option><option value="Resolved">Resolved</option>
           </select>
-          <span className="form-hint">
-            {current.status === 'Open'
-              ? 'Set this to Resolved to close the citation — the resolution date is stamped when you save.'
-              : 'Set this back to Open to reopen the citation — the resolution date is cleared when you save.'}
-          </span>
         </div>
       </div>
       <div className="form-row">
@@ -3965,13 +4032,11 @@ function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
         <div className="form-group">
           <label className="form-label">Date Recorded</label>
           <input className="form-input" type="date" value={dateRecorded} onChange={(e) => edit(setDateRecorded)(e.target.value)} />
-          <span className="form-hint">{keepHint(current.dateRecorded ? formatIsoDate(current.dateRecorded) : '')}</span>
         </div>
         {effectiveStatus === 'Resolved' && (
           <div className="form-group">
             <label className="form-label">Date Resolved</label>
             <input className="form-input" type="date" value={dateResolved} onChange={(e) => edit(setDateResolved)(e.target.value)} />
-            <span className="form-hint">{current.dateResolved ? keepHint(formatIsoDate(current.dateResolved)) : 'Left blank, resolving stamps today.'}</span>
           </div>
         )}
       </div>
@@ -4432,15 +4497,11 @@ function useBackupFile(onLoaded: (data: AppState, file: File) => void) {
     reader.onload = (evt) => {
       try {
         const parsed = JSON.parse(evt.target?.result as string);
-        const requiredKeys: (keyof AppState)[] = ['applicants', 'tenants', 'stalls', 'logs', 'activities'];
-        const looksRight = parsed && typeof parsed === 'object' && requiredKeys.every((k) => k in parsed);
-        if (!looksRight) {
-          complain('That is not a system backup — the file is missing the tenant, stall, or applicant records.');
-          return;
-        }
-        onLoaded(mergeState(parsed), file);
-      } catch {
-        complain('That file could not be read as a backup. Select the .json file downloaded from this system.');
+        onLoaded(mergeState(backupRecords(parsed)), file);
+      } catch (error) {
+        complain(error instanceof SyntaxError
+          ? 'That file is not valid JSON. Select a .json backup exported from this system.'
+          : error instanceof Error ? error.message : 'The backup could not be read. No records were changed.');
       }
     };
     reader.readAsText(file);
@@ -4451,7 +4512,56 @@ function useBackupFile(onLoaded: (data: AppState, file: File) => void) {
   return { choose, problem, field };
 }
 
-function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state: AppState; lastSaved: string; onReset: () => void; onExport: () => void; onImport: (data: AppState) => void }) {
+type Appearance = { dark: boolean; fontSize: number };
+
+function readAppearance(): Appearance {
+  try {
+    const saved = JSON.parse(localStorage.getItem('market-appearance') ?? '{}');
+    return { dark: saved.dark === true, fontSize: [90, 100, 110, 120, 130].includes(saved.fontSize) ? saved.fontSize : 100 };
+  } catch { return { dark: false, fontSize: 100 }; }
+}
+
+function applyAppearance(value: Appearance) {
+  document.documentElement.dataset.theme = value.dark ? 'dark' : 'light';
+  document.documentElement.style.setProperty('--font-scale', String(value.fontSize / 100));
+}
+
+function AppearanceSettings() {
+  const [appearance, setAppearance] = useState(readAppearance);
+  useEffect(() => {
+    applyAppearance(appearance);
+    try { localStorage.setItem('market-appearance', JSON.stringify(appearance)); } catch { /* Preferences still apply when storage is unavailable. */ }
+  }, [appearance]);
+
+  return (
+    <section className="settings-section full appearance-settings" aria-labelledby="appearance-heading">
+      <div className="settings-section-header" id="appearance-heading">Appearance</div>
+      <div className="settings-section-body appearance-controls">
+        <div className="appearance-control">
+          <label className="form-label" htmlFor="dark-mode">Dark mode</label>
+          <button id="dark-mode" type="button" className="theme-toggle" role="switch" aria-checked={appearance.dark}
+            onClick={() => setAppearance((value) => ({ ...value, dark: !value.dark }))}>
+            <span className="material-symbols-outlined" aria-hidden="true">{appearance.dark ? 'dark_mode' : 'light_mode'}</span>
+            <span>{appearance.dark ? 'On' : 'Off'}</span>
+            <span className="theme-toggle-track" aria-hidden="true"><span /></span>
+          </button>
+        </div>
+        <div className="appearance-control">
+          <label className="form-label" htmlFor="font-size">Font size</label>
+          <select id="font-size" className="form-select" value={appearance.fontSize}
+            onChange={(event) => setAppearance((value) => ({ ...value, fontSize: Number(event.target.value) }))}>
+            <option value={90}>Small — 90%</option>
+            <option value={100}>Default — 100%</option>
+            <option value={110}>Large — 110%</option>
+            <option value={120}>Larger — 120%</option>
+            <option value={130}>Largest — 130%</option>
+          </select>
+        </div>
+      </div>
+    </section>
+  );
+}
+function SettingsPage({ state, lastSaved, onReset, onExport, onImport, automaticBackup }: { automaticBackup: ReturnType<typeof useAutomaticBackup>; state: AppState; lastSaved: string; onReset: () => void; onExport: () => void; onImport: (data: AppState) => void }) {
   /* An import replaces every record on this workstation, so the file is read
      first and its contents shown before anything is overwritten. */
   const [pending, setPending] = useState<{ data: AppState; fileName: string } | null>(null);
@@ -4484,6 +4594,8 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
     <>
       <div className="page-header"><div><h2 className="page-title">Settings</h2><p className="page-subtitle">System configuration and data management.</p></div></div>
       <div className="settings-grid">
+        <AppearanceSettings />
+        <AutomaticBackupSettings backup={automaticBackup} />
         <div className="settings-section">
           <div className="settings-section-header">System Information</div>
           <div className="settings-section-body">
@@ -4493,8 +4605,8 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
             <div className="settings-item"><span className="settings-item-label">Last Saved</span><span className="settings-item-value">{lastSaved ? new Date(lastSaved).toLocaleString() : 'Not yet saved'}</span></div>
           </div>
         </div>
-        <div className="settings-section">
-          <div className="settings-section-header">Section 43 — Market Stall Rates</div>
+        <details className="settings-section full market-rates">
+          <summary className="settings-section-header">Section 43 — Market Stall Rates</summary>
           <div className="settings-section-body">
             <p className="settings-note">The schedule the market charges by. A stall picked on a new tenancy starts on the rate for its kind.</p>
             <div className="table-wrap">
@@ -4517,18 +4629,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport }: { state
               </table>
             </div>
           </div>
-        </div>
-        <div className="settings-section">
-          <div className="settings-section-header">Quick Stats</div>
-          <div className="settings-section-body">
-            <div className="settings-item"><span className="settings-item-label">Total Stalls</span><span className="settings-item-value">{state.stalls.length}</span></div>
-            <div className="settings-item"><span className="settings-item-label">Active Tenants</span><span className="settings-item-value">{state.tenants.filter(t => t.status === 'Active').length}</span></div>
-            <div className="settings-item"><span className="settings-item-label">Pending Applicants</span><span className="settings-item-value">{state.applicants.filter(a => a.status === 'Pending Review').length}</span></div>
-            <div className="settings-item"><span className="settings-item-label">Utility Bills Issued</span><span className="settings-item-value">{state.utilities.length}</span></div>
-            <div className="settings-item"><span className="settings-item-label">Open Violations</span><span className="settings-item-value">{state.violations.filter(v => v.status === 'Open').length}</span></div>
-            <div className="settings-item"><span className="settings-item-label">Unpaid Utilities</span><span className="settings-item-value">{money(state.utilities.filter(b => b.status === 'Unpaid').reduce((s, b) => s + b.amount, 0))}</span></div>
-          </div>
-        </div>
+        </details>
         {/* Only shown in the installed application — a browser has no file to
             report on, and none of these actions would do anything there. */}
         {dbInfo && (
@@ -4977,7 +5078,6 @@ function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, 
         <div className="form-group">
           <label className="form-label">Mobile Number</label>
           <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
-          <span className="form-hint">Digits only — 11-digit mobile number.</span>
         </div>
       </div>
       <div className="form-row">
@@ -4986,7 +5086,6 @@ function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, 
           <select className="form-select" value={section} onChange={(e) => { setSection(e.target.value); setStallId(''); setError(''); }}>
             {SECTIONS.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
           </select>
-          <span className="form-hint">Choosing a section lists the stalls still free in it.</span>
         </div>
         <div className="form-group">
           <label className="form-label">Preferred Stall</label>
@@ -4994,18 +5093,12 @@ function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, 
             <option value="">{openStalls.length === 0 ? '— None free in this section' : '— Decide later'}</option>
             {openStalls.map((st) => <option key={st.id} value={st.id}>{st.id}{requestedBy.has(st.id) ? ` · also asked for by ${requestedBy.get(st.id)}` : ''}</option>)}
           </select>
-          <span className="form-hint">{openStalls.length} stall{openStalls.length === 1 ? '' : 's'} free in {section}.</span>
         </div>
       </div>
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Monthly Rent (₱)</label>
           <input className="form-input" value={scheduledRent > 0 ? scheduledRent.toLocaleString('en-PH') : '—'} readOnly />
-          <span className="form-hint">
-            {scheduledRent > 0
-              ? `Set by the rent schedule for ${stallId || section} — not typed in by hand.`
-              : 'No rate is on the schedule for this section yet.'}
-          </span>
         </div>
         <div className="form-group" />
       </div>
@@ -5105,7 +5198,6 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
               <select className="form-select" value={stallId} onChange={(e) => applyStall(e.target.value)}>
                 {vacantStalls.map((s) => <option key={s.id} value={s.id}>{s.id} — {s.section}</option>)}
               </select>
-              <span className="form-hint">{vacantStalls.length} vacant stall{vacantStalls.length === 1 ? '' : 's'} available. Assigning marks it Occupied.</span>
             </div>
             <div className="form-group">
               <label className="form-label">Section</label>
@@ -5184,7 +5276,6 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
         <div className="form-group">
           <label className="form-label">Mobile Number</label>
           <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
-          <span className="form-hint">Digits only — 11-digit mobile number.</span>
         </div>
       </div>
       <div className="form-row">
@@ -5196,7 +5287,6 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
           <label className="form-label">Stall ID</label>
           <input className="form-input" placeholder="e.g. M-101" list="stall-id-options" value={stallId} onChange={(e) => applyStall(e.target.value)} />
           <datalist id="stall-id-options">{stalls.filter((s) => s.status === 'Available').map((s) => <option key={s.id} value={s.id}>{s.section}</option>)}</datalist>
-          <span className="form-hint">Assigning a stall marks it as occupied and enables utility billing for it.</span>
         </div>
       </div>
       <div className="form-row">
@@ -5208,7 +5298,6 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
         <div className="form-group">
           <label className="form-label">Rent Due Day</label>
           <RentDueDaySelect value={String(rentDueDay)} onChange={(v) => setRentDueDay(clampDueDay(v))} />
-          <span className="form-hint">Rent unpaid after this day of the month is flagged overdue.</span>
         </div>
       </div>
       <div className="form-row">
@@ -5219,7 +5308,6 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
         <div className="form-group">
           <label className="form-label">Water Meter Number</label>
           <input className="form-input" placeholder="e.g. WM-2301" value={waterMeter} onChange={(e) => setWaterMeter(e.target.value)} />
-          <span className="form-hint">Both fill in automatically when this tenant is billed.</span>
         </div>
       </div>
       <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { setKeeperDrafts(next); setError(''); }} />
@@ -5372,7 +5460,6 @@ function StallEditForm({ stall, occupant, bills, onSave, onClose }: { stall: Sta
         <div className="form-group">
           <label className="form-label">Tenant</label>
           <input className="form-input" value={locked ? occupant.name : tenant} disabled={locked} placeholder={locked ? '' : keepHint(recordedTenant || 'Vacant')} onChange={(e) => edit(setTenant)(e.target.value)} />
-          {locked && <span className="form-hint">Held by tenant record {occupant.id}. Rename or reassign from Tenant Records.</span>}
         </div>
         <div className="form-group">
           <label className="form-label">Status</label>
@@ -5380,7 +5467,6 @@ function StallEditForm({ stall, occupant, bills, onSave, onClose }: { stall: Sta
             <option value="">— Keep {stall.status}</option>
             {STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {locked && !releasing && <span className="form-hint">Held by tenant record {occupant.id}. Setting this to Available hands the stall back and removes that record.</span>}
           {releasing && (
             <span className="form-hint error">
               Saving will remove tenant {occupant.id} ({occupant.name}) from tenant records and leave {stall.id} vacant. Their utility bills are kept as billing history. This cannot be undone.
@@ -5479,8 +5565,6 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
   /* The checklist is ticked in the draft like every other field, so a document
      can be ticked and un-ticked freely before any of it is committed. */
   const [requirements, setRequirements] = useState<string[]>(() => [...current.requirements]);
-  const complete = REQUIREMENTS.every((r) => requirements.includes(r));
-  const missing = REQUIREMENTS.length - requirements.length;
   const reqsChanged = REQUIREMENTS.some((r) => requirements.includes(r) !== current.requirements.includes(r));
   const dirty = !!(name.trim() || phone.trim() || status || reqsChanged);
 
@@ -5541,9 +5625,6 @@ function ApplicantReviewForm({ applicant, current, onSave, onClose }: { applican
       </div>
 
       <RequirementsChecklist selected={requirements} onChange={edit(setRequirements)} />
-      {!complete && current.status !== 'Rejected' && (
-        <span className="form-hint">{missing} requirement(s) still missing — you can still approve, but the checklist will show it as incomplete.</span>
-      )}
 
       <div className="applicant-decision">
         <div className="applicant-decision-left">
@@ -5787,7 +5868,6 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
             <option value="—">Release the stall — no stall assigned</option>
             {stallOptions.map((id) => <option key={id} value={id}>{id}</option>)}
           </select>
-          <span className="form-hint">Reassigning releases the old stall and marks the new one Occupied.</span>
         </div>
         <div className="form-group">
           <label className="form-label">Section</label>
@@ -5811,7 +5891,6 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
         <div className="form-group">
           <label className="form-label">Rent Due Day</label>
           <RentDueDaySelect value={rentDueDay} keepLabel={`— Keep day ${clampDueDay(current.rentDueDay)}`} onChange={(v) => edit(setRentDueDay)(v)} />
-          <span className="form-hint">Rent unpaid after this day of the month is flagged overdue.</span>
         </div>
         <div className="form-group">
           <label className="form-label">Electricity Meter Number</label>
@@ -5821,7 +5900,6 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
       <div className="form-group">
         <label className="form-label">Water Meter Number</label>
         <input className="form-input" value={waterMeter} placeholder={keepHint(current.meters.Water)} onChange={(e) => edit(setWaterMeter)(e.target.value)} />
-        <span className="form-hint">Both meter numbers fill in automatically whenever this tenant is billed.</span>
       </div>
       <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { form.clearError(); setKeeperDrafts(next); }} />
     </div>
@@ -6844,7 +6922,6 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
           <div className="form-group">
             <label className="form-label">Position *</label>
             <input className="form-input" autoFocus value={position} placeholder="e.g. Market Supervisor" onChange={(e) => { setPosition(e.target.value); setError(''); }} />
-            <span className="form-hint">The post itself. It stays on the board when the person holding it changes.</span>
           </div>
           <div className="form-group">
             <label className="form-label">Office</label>
@@ -6857,7 +6934,6 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
           <div className="form-group">
             <label className="form-label">Held By</label>
             <input className="form-input" value={name} placeholder="e.g. Luz M. Maderazo" onChange={(e) => { setName(e.target.value); setError(''); }} />
-            <span className="form-hint">Leave blank if the post is vacant.</span>
           </div>
           <div className="form-group">
             <label className="form-label">Status</label>
@@ -6866,7 +6942,6 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
                 ? OFFICER_STATUSES.filter((st) => st !== 'Vacant').map((st) => <option key={st} value={st}>{st}</option>)
                 : <option value="Vacant">Vacant</option>}
             </select>
-            <span className="form-hint">{held ? 'On Leave keeps the seat on the board while its holder is away.' : 'A seat with nobody in it is vacant.'}</span>
           </div>
         </div>
 
@@ -6877,7 +6952,6 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
               <option value="">— Head of the board —</option>
               {superiors.map((o) => <option key={o.id} value={o.id}>{' '.repeat(officerDepth(officers, o) * 3)}{officerLabel(o)}</option>)}
             </select>
-            <span className="form-hint">{editing && forbidden.size > 1 ? 'This seat and the seats under it are not offered — a seat cannot report to itself.' : 'Where this seat sits on the chart.'}</span>
           </div>
           <div className="form-group">
             <label className="form-label">Date Appointed</label>
@@ -7109,7 +7183,6 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
             onChange={(e) => { setName(e.target.value); setError(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           />
-          <span className="form-hint">Printed on every receipt as the officer who issued it, and offered back next time.</span>
         </div>
         {request.single && (
           <div className="form-group">
@@ -7119,7 +7192,6 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
               <option value={2}>2 — tenant and market office</option>
               <option value={4}>4 — fill the sheet</option>
             </select>
-            <span className="form-hint">{added.length > 0 ? 'Not used while other tenants share the sheet.' : 'Every copy prints on the one sheet, to be cut apart.'}</span>
           </div>
         )}
       </div>
@@ -7156,7 +7228,6 @@ function PrintPreviewDialog({ request, billsOnRecord, onConfirm, onCancel }: { r
             <option key={b.id} value={b.id}>{b.stallId} — {b.tenantName || 'Unassigned'} · {b.type} · {money(b.amount)}</option>
           ))}
         </select>
-        <span className="form-hint">Four receipts fit on a sheet, cut apart afterwards. Adding another tenant turns off the copies above.</span>
       </div>
 
       {willFile.length > 0 && (
@@ -7467,7 +7538,6 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
             <option value="Renewal">Renewal — existing lessee</option>
             <option value="Issuance">Issuance — new lessee</option>
           </select>
-          <span className="form-hint">Prints on the slip and ticks the boxes that errand usually needs.</span>
         </div>
         <div className="form-group">
           <label className="form-label">Issued By *</label>
@@ -7476,7 +7546,6 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
             onChange={(e) => { setIssuedBy(e.target.value); setError(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           />
-          <span className="form-hint">Signs the slip as Market Supervisor, and is offered back next time.</span>
         </div>
         <div className="form-group">
           <label className="form-label">Issued To</label>
@@ -7500,7 +7569,6 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
             <option value={2}>2 slips</option>
             <option value={4}>4 — fill the sheet</option>
           </select>
-          <span className="form-hint">Each slip is issued its own control number. Leave the details blank to run off a numbered pad.</span>
         </div>
       </div>
 
@@ -7515,7 +7583,6 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
           ))}
         </div>
         <input className="form-input" value={others} placeholder="Others — e.g. until Dec 31, 2026" onChange={(e) => setOthers(e.target.value)} style={{ marginTop: '10px' }} />
-        <span className="form-hint">Unticked boxes print empty, for ticking by hand at the counter.</span>
       </div>
 
       <div className="dialog-note">
@@ -7566,6 +7633,7 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, onConfirm, on
    built until they arrive. This holds a plain panel on screen for the moment
    that takes, then hands the records over and steps out of the way. */
 function Boot() {
+  useEffect(() => { applyAppearance(readAppearance()); }, []);
   const [boot, setBoot] = useState<BootData | null>(null);
 
   useEffect(() => {

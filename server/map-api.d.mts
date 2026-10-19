@@ -1,0 +1,1 @@
+export default function marketMapPlugin(): import('vite').Plugin;

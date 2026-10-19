@@ -20,3 +20,6 @@ graphify-out/
 # Language model files for the assistant. Large binaries, fetched or copied in
 # per machine; build/models/README.txt explains where they go.
 *.gguf
+
+# Map database, local accounts and draft layouts
+.market-data/

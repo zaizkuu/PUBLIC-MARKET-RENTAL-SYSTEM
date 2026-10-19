@@ -53,7 +53,7 @@ edits as a last resort. Two sidecar files, `market-records.db-wal` and
 when it closes, so copy the folder rather than the single file if the app is
 open.
 
-**Offline.** The app makes zero network requests. Fonts and icons are vendored
+**Offline.** The dashboard Google Maps overview requires an internet connection. The indoor floor plan and local records work offline. Fonts and icons are vendored
 in `public/fonts/`; regenerate them with `scripts/fetch-fonts.mjs` if the
 typefaces ever change. Do not reintroduce the Google Fonts `<link>` tags — with
 no internet the Material Symbols ligatures fail and every icon renders as its
@@ -268,3 +268,6 @@ in the database (`id_counters`), so deleting the newest record does not
 hand its ID to the next one created — which would otherwise let an old utility
 bill attach itself to an unrelated new tenant. **Settings → Reset to Defaults**
 clears the counters along with the data.
+## Interactive market mapping
+
+The dashboard includes aerial-to-indoor navigation, a stall directory, and a local authenticated layout editor. See [MARKET-MAP.md](MARKET-MAP.md) for setup, privacy, database storage, publication, verification and tests.

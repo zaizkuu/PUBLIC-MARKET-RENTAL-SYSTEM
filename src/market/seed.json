@@ -1,0 +1,26 @@
+{
+ "market":{"name":"Tanauan Public Market","address":"Tanauan, Leyte, Philippines","aerial":"market/aerial-reference.jpg","latitude":null,"longitude":null},
+ "revision":0,"verified":false,
+ "sections":[
+  {"id":"fish","name":"Fish & Meat","code":"FM","x":40,"y":40,"w":520,"h":260,"color":"#76a9d8","active":true},
+  {"id":"produce","name":"Fruit & Vegetables","code":"FV","x":40,"y":324,"w":520,"h":260,"color":"#8bb78a","active":true},
+  {"id":"kakanin","name":"Kakanin","code":"KK","x":40,"y":608,"w":520,"h":120,"color":"#e2b17d","active":true},
+  {"id":"watson","name":"Watson","code":"WA","x":40,"y":752,"w":520,"h":120,"color":"#b3a0d4","active":true}
+ ],
+ "stalls":[
+  {"id":"ref-f1","sectionId":"fish","x":56,"y":58,"w":110,"h":78,"recordId":"","label":"Sketch F1"},
+  {"id":"ref-f2","sectionId":"fish","x":56,"y":174,"w":110,"h":78,"recordId":"","label":"Sketch F2"},
+  {"id":"ref-f3","sectionId":"fish","x":434,"y":58,"w":110,"h":60,"recordId":"","label":"Sketch F3"},
+  {"id":"ref-f4","sectionId":"fish","x":434,"y":148,"w":110,"h":60,"recordId":"","label":"Sketch F4"},
+  {"id":"ref-f5","sectionId":"fish","x":434,"y":238,"w":110,"h":48,"recordId":"","label":"Sketch F5"},
+  {"id":"ref-v1","sectionId":"produce","x":56,"y":342,"w":110,"h":58,"recordId":"","label":"Sketch V1"},
+  {"id":"ref-v2","sectionId":"produce","x":56,"y":424,"w":110,"h":58,"recordId":"","label":"Sketch V2"},
+  {"id":"ref-v3","sectionId":"produce","x":56,"y":506,"w":110,"h":58,"recordId":"","label":"Sketch V3"},
+  {"id":"ref-v4","sectionId":"produce","x":434,"y":342,"w":110,"h":58,"recordId":"","label":"Sketch V4"},
+  {"id":"ref-v5","sectionId":"produce","x":434,"y":424,"w":110,"h":58,"recordId":"","label":"Sketch V5"},
+  {"id":"ref-v6","sectionId":"produce","x":434,"y":506,"w":110,"h":58,"recordId":"","label":"Sketch V6"}
+ ],
+ "records":[],
+ "nodes":[{"id":"entry","x":300,"y":900,"entrance":true,"verified":false,"name":"Possible public access"},{"id":"front","x":300,"y":800,"entrance":false,"verified":false,"name":"Front aisle"},{"id":"kakanin-aisle","x":300,"y":668,"entrance":false,"verified":false,"name":"Kakanin aisle"},{"id":"produce-aisle","x":300,"y":454,"entrance":false,"verified":false,"name":"Produce aisle"},{"id":"fish-aisle","x":300,"y":170,"entrance":false,"verified":false,"name":"Fish and meat aisle"}],
+ "edges":[["entry","front"],["front","kakanin-aisle"],["kakanin-aisle","produce-aisle"],["produce-aisle","fish-aisle"]]
+}
