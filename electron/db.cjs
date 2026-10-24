@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -244,7 +244,7 @@ const TABLES = {
   utilities: ['id', 'type', 'stallId', 'tenantId', 'tenantName', 'section', 'period', 'periodStart', 'periodEnd',
     'meterNumber', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
     'dateIssued', 'dueDate', 'notes'],
-  violations: ['id', 'tenant', 'issue', 'status', 'points', 'dateRecorded', 'dateResolved', 'notes'],
+  violations: ['id', 'tenant', 'issue', 'status', 'points', 'offence', 'dateRecorded', 'dateResolved', 'notes'],
   logs: ['id', 'date', 'time', 'type', 'details', 'recordedBy'],
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
   officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed'],
@@ -298,6 +298,7 @@ const ADDED_COLUMNS = [
   ['tenants', 'meterWater', "TEXT NOT NULL DEFAULT ''"],
   ['utility_bills', 'meterNumber', "TEXT NOT NULL DEFAULT ''"],
   ['logs', 'recordedBy', "TEXT NOT NULL DEFAULT ''"],
+  ['violations', 'offence', 'INTEGER NOT NULL DEFAULT 1'],
 ];
 
 function addMissingColumns() {
@@ -391,7 +392,7 @@ function readAll() {
     requirements: requirements.filter((r) => r.applicantId === applicant.id).map((r) => r.requirement),
   }));
 
-  state.violations = state.violations.map((v) => ({ ...v, points: Number(v.points) || 0 }));
+  state.violations = state.violations.map((v) => ({ ...v, points: Number(v.points) || 0, offence: Number(v.offence) || 1 }));
 
   const slipItems = db.prepare('SELECT * FROM verification_items ORDER BY controlNo, position').all();
   state.verifications = db.prepare(
@@ -481,7 +482,7 @@ function bindable(record, columns, position, orderColumn = 'position') {
     }
   }
   // Numeric columns must not arrive as text, or comparisons in SQL misbehave.
-  for (const column of ['rent', 'points', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount']) {
+  for (const column of ['rent', 'points', 'offence', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount']) {
     if (column in row) row[column] = Number(row[column]) || 0;
   }
   return row;

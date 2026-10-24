@@ -24,18 +24,19 @@ summary, password hashing and lockout, backups, the market map, and — where
 The system opens on a sign-in page every time it starts. The person picks
 their account from the list, then types their password.
 
-- **First start.** One account exists: the head of the office board (the
-  Market Supervisor), as an **Administrator** with no password yet. Choosing
-  it asks for a new password. An administrator is then shown a **recovery
-  code** once — written down and kept in the office, it is the way back in if
-  the password is forgotten (*Forgot password?* on the sign-in page). Using it
-  issues a new one.
-- **Other people.** An administrator adds them in **Settings → User
-  Accounts**, picking from the office board or typing a name, with a temporary
-  password. Its owner must replace it at their first sign-in. The same panel
-  resets a forgotten password, unlocks an account and changes who is an
-  administrator; there is always at least one, and nobody can remove their own
-  account.
+- **Three accounts, fixed.** Engr. Luz M. Maderazo (Market Supervisor III,
+  **Administrator**), and the two officers in charge of market operation
+  under her, Manuel G. Mercado and Felmar Pica (**Staff**). Accounts are not
+  added or removed from the interface; the list is `OFFICE_ACCOUNTS` in
+  `src/security/accounts.ts`.
+- **First sign-in.** Each account starts with no password: choosing it asks
+  for a new one. The administrator is then shown a **recovery code** once —
+  written down and kept in the office, it is the way back in if the password
+  is forgotten (*Forgot password?* on the sign-in page). Using it issues a
+  new one.
+- **Forgotten passwords.** The administrator sets a temporary password for
+  either officer in **Settings → User Accounts**, which its owner replaces at
+  the next sign-in. The same panel unlocks a locked account.
 - **Passwords** are never stored — only a PBKDF2-SHA-256 hash with a random
   salt per account (600,000 iterations), computed by the browser engine's own
   Web Crypto, offline. A new password needs 8+ characters, a letter and a
@@ -51,7 +52,8 @@ their account from the list, then types their password.
   records who was signed in. Receipts and verification slips start with the
   signed-in officer's name.
 - **Administrator-only:** importing or restoring a backup, resetting to
-  defaults, deleting logbook entries, and managing accounts.
+  defaults, deleting logbook entries, resetting the officers' passwords, and
+  the screen-lock setting.
 
 Accounts live in their own `accounts` table, apart from the records:
 restoring a backup or resetting the records never changes who can sign in.
@@ -169,8 +171,8 @@ smudged numbers, crossed-out names) kept on the stall as its note. The rows
 are in `src/market/directory.ts`; `tests/directory.test.mjs` checks them
 against the directory's own summary table.
 
-A stall ID is its **section code** and the number painted on the layout, so
-stall 1 is `KS-001` and stall 105 is `FS-105`:
+A stall ID is its **section code** and the number exactly as the directory
+prints it, so stall 1 is `KS-1` and stall 105 is `FS-105`:
 
 | Section | Code | Stalls | Vacant | Monthly rent |
 | --- | --- | --- | --- | --- |
@@ -185,8 +187,15 @@ stall 1 is `KS-001` and stall 105 is `FS-105`:
 The codes live in one place, `SECTION_LIST` in `src/market/directory.ts`.
 
 - **Tenant records** are one per stall a vendor holds (156 in all), at the
-  section's Section 43 rate. The directory has no phone numbers, permits or
-  inspection dates, so those start blank / *Not Recorded*.
+  section's Section 43 rate, and follow the directory's numbering: the vendor
+  on stall 5 is tenant record 5, and the register lists them in stall order.
+  The directory has no phone numbers, permits or inspection dates, so those
+  start blank / *Not Recorded*.
+- **Electric meters** come from the cooperative's calibration sheets: 107
+  tenant records start with their meter's serial number, which utility
+  billing fills in on choosing the stall. See
+  [docs/ELECTRIC-METERS.md](docs/ELECTRIC-METERS.md) for how each was matched,
+  the stalls still without one, and the readings worth checking.
 - **Not counted as vacancies:** stalls 207–212 (an open area with no name on
   the layout) are listed as Available with that note, and stall 95, the
   PNP/Guard Station, is held but has no tenant record and pays no rent.
@@ -194,24 +203,28 @@ The codes live in one place, `SECTION_LIST` in `src/market/directory.ts`.
   (`KS-213`…). Typing just the number (`74`) adds the prefix; a prefix from
   another section is refused.
 - **Moving a stall to another section** renumbers it under that section's
-  code (`KS-074` → `FS-074`); its tenant record, applications and utility
+  code (`KS-74` → `FS-74`); its tenant record, applications and utility
   bills follow it, and the logbook notes the old number.
 - **Tenant IDs are not shown.** Tenant Records, its print-out, the detail and
   edit forms, dialogs and logbook entries identify a tenant by name and stall.
   The internal `TEN-` key still exists so bills and rent payments stay
   attached to the right person.
 
-**Upgrading an existing installation.** The first start of this version
-finds records from before the directory (no directory edition in `meta`).
-It first saves a copy of the whole database to `backups\market-records-before-stall-directory-<date>.db`
-in the data folder (in a browser, under the `pmrms-state-before-stall-directory`
-key), then replaces the stall register and tenant records with the
-directory's and writes a logbook entry saying where the copy is.
-Applications, bills, violations, the logbook, the office board and
-verification slips are kept. New tenant records are numbered after the
-installation's last one, so an old bill never points at a different person.
-If the copy cannot be made, nothing is changed and it is tried again at the
-next start. It runs once; restoring an older backup afterwards is respected.
+**Upgrading an existing installation: the old data is removed.** The
+directory is the office's latest record of the market, so the first start of
+this version clears everything recorded before it — stalls, tenants,
+applications, utility bills, violations, verification slips, the logbook and
+the activity feed — and starts again from the directory alone. Only the
+office board is kept, and the sign-in accounts, which are stored apart.
+
+Nothing is lost for good: before clearing anything it saves a copy of the
+whole database to
+`backups\market-records-before-market-stall-directory-2026-10b-<date>.db` in
+the data folder (in a browser, under the
+`pmrms-state-before-market-stall-directory-2026-10b` key), and the one
+logbook entry left says where that copy is. If the copy cannot be made,
+nothing is changed and it is tried again at the next start. It runs once per
+directory edition; a backup restored afterwards is respected.
 
 ## Current scope
 
@@ -272,14 +285,15 @@ application history, and the resulting tenant keeps an `applicantId` back-link.
 The Utility Billing module computes electricity and water charges per stall:
 
 - Pick **Electricity** or **Water** — the rate and unit (kWh / cu.m) switch to that utility's preset and stay editable per bill. There is no fixed or service charge: a bill is consumption × rate and nothing else.
-- Choose the **stall number** or the **tenant**; selecting either one fills in the other, so a bill is always attached to a stall and, when one exists, to that tenant's record.
+- Choose the **stall number**; the tenant's name and the electric meter's serial number fill in from the tenant record. **Billed To** stays editable, for a bill made out to a stallkeeper or under a new name — the bill still belongs to the stall's tenancy. The meter box offers every serial from the calibration sheets.
 - Set the **period covered** with a From and a To date — a bill is read to the day, so a stall that opened mid-month or a meter read early is billed for exactly the days it covers. **Cover all of &lt;month&gt;** fills in the whole month in one click. The day count and the month the bill is filed under are shown under the To date.
-- The **due date** follows the period: it defaults to 15 days after the period ends and moves with the end date until you set one yourself. A due date that falls before the period ends is refused.
+- The **due date** defaults to 15 days after the period ends and moves with the end date until you set one yourself; any date can be set, and a date before the period ends is pointed out rather than refused.
 - Bills are still grouped and de-duplicated by the **month the period ends in**, so "a second electricity bill for this stall this month" is still caught.
 - The **previous reading** is carried over automatically from the last bill for that stall and utility.
 - Total is `(current − previous) × rate`, shown live before saving. The rate per kWh and per cu.m are both shown on screen and on the printed receipt.
 - Saving posts the bill to Billing Records, the stall and tenant detail views, the Analytics utility panel, the Logbook (as a Collection entry), and all exports/backups.
 - Bills can be marked paid/unpaid or deleted, and are flagged **Overdue** once the due date passes while unpaid.
+- **Edit Details** on a saved bill changes who it is billed to, its due date and its notes, and writes what changed to the Logbook. The readings and the amount stay as billed.
 
 ### Late surcharge
 
@@ -312,9 +326,10 @@ The Violations module is the register of citations issued to tenants.
 
 - **Record Violation** captures the party cited, the offence, demerit points, the date, and notes. The tenant field suggests tenants on record but stays free text, since a stall or an applicant may also be cited.
 - The offence is chosen from the office's **Market Violations dropdown list** — `VIOLATION_GROUPS` in `src/App.tsx`: Section 22 prohibited acts (22-i … 22-xi), Section 23 duties not followed (23-a … 23-i), and *Other* (no health certificate / yearly medical exam). The code is shown beside the offence in the register, the detail sheet (as its ordinance reference), the printed list and the CSV export. *Not on this list — describe it* allows a free-text offence; citations recorded before the list keep their wording.
-- Every citation starts **Open**. Resolving and reopening are done in the **edit form**, not from the row: Status sits at the top of the form beside the violation ID — set it to *Resolved* to close the citation (the resolution date is stamped on save) or back to *Open* to reopen it (the resolution date is cleared), so a reopened citation never shows a stale resolution date.
-- Rows sort open-first, then newest, and **Open Points by Tenant** ranks who is carrying the most unresolved demerit points.
-- Adding, resolving, reopening, and deleting all write an Incident entry to the Logbook. Violations also feed the Analytics summary panel, the notification list, and all exports and backups.
+- **Offence — 1st, 2nd or 3rd.** A new citation counts the party's earlier citations for the same violation and fills in the next offence (a fourth and later still read as the 3rd); the officer can change it, and it can be changed later in the edit form. It shows in the register, the detail sheet, the printed list, the CSV export and the logbook entry.
+- Every citation starts **Open**. Once the offender has been reprimanded, set its status to **Reprimanded** in the **edit form** — the date reprimanded is stamped on save — or back to *Open* to reopen it, which clears that date. Citations recorded as *Resolved* before this change read as Reprimanded.
+- Rows sort open-first, then newest, and **Open Points by Tenant** ranks who is carrying the most demerit points not yet reprimanded.
+- Adding, reprimanding, reopening, and deleting all write an Incident entry to the Logbook. Violations also feed the Analytics summary panel, the notification list, and all exports and backups.
 
 ## Editing records
 

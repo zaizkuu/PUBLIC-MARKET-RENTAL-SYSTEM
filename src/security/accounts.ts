@@ -18,7 +18,6 @@
    ============================================================ */
 
 export type Role = 'Administrator' | 'Staff';
-export const ROLES: Role[] = ['Administrator', 'Staff'];
 
 export type Account = {
   id: string;
@@ -215,17 +214,28 @@ export function blankAccount(fields: AccountSummary, now: Date): Account {
   };
 }
 
-/* The first time the system starts there is nobody to sign in as, so the head
-   of the office board — the market supervisor — is given an administrator
-   account with no password yet. The password is chosen at the first sign-in,
-   and everybody else's accounts are added from Settings. */
-export function firstAccounts(head: { name: string; position: string } | undefined, now: Date): Account[] {
-  return [blankAccount({
-    id: 'ACC-001',
-    name: head?.name || 'Market Supervisor',
-    position: head?.position || 'Market Supervisor',
-    role: 'Administrator',
-  }, now)];
+/* The system has exactly three accounts: the head of the market office, and
+   the two officers in charge of market operation under her. The list is
+   fixed — accounts are not added or removed from the interface. Each starts
+   with no password, chosen at that person's first sign-in; the administrator
+   can reset either of the others' to a temporary one from Settings. */
+export const OFFICE_ACCOUNTS: AccountSummary[] = [
+  { id: 'ACC-001', name: 'Engr. Luz M. Maderazo', position: 'Market Supervisor III', role: 'Administrator' },
+  { id: 'ACC-002', name: 'Manuel G. Mercado', position: 'In Charge — Market Operation', role: 'Staff' },
+  { id: 'ACC-003', name: 'Felmar Pica', position: 'In Charge — Market Operation', role: 'Staff' },
+];
+
+/**
+ * The three office accounts, carrying over whatever was stored for each —
+ * a password already chosen, a lockout in progress — matched by id. Anything
+ * else stored (an account added by an earlier version) is dropped, and the
+ * name, position and role always come from OFFICE_ACCOUNTS.
+ */
+export function officeAccounts(stored: Account[], now: Date): Account[] {
+  return OFFICE_ACCOUNTS.map((seat) => {
+    const kept = stored.find((a) => a.id === seat.id);
+    return kept ? { ...kept, ...seat } : blankAccount(seat, now);
+  });
 }
 
 /** An account read back from storage, forced into shape — or null if it has no id. */
@@ -253,29 +263,7 @@ export function normalizeAccount(raw: unknown): Account | null {
   };
 }
 
-export function nextAccountId(accounts: Account[]): string {
-  const highest = accounts.map((a) => parseInt(a.id.replace(/\D/g, ''), 10)).filter(Number.isFinite);
-  return `ACC-${String((highest.length ? Math.max(...highest) : 0) + 1).padStart(3, '0')}`;
-}
-
 export function initialsOf(name: string): string {
   const words = name.replace(/^(engr|dr|atty|hon|mr|mrs|ms)\.?\s+/i, '').split(/[\s,]+/).filter((w) => /[a-z]/i.test(w) && !/^[a-z]\.$/i.test(w));
   return ((words[0]?.[0] ?? '') + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase() || '?';
-}
-
-const administrators = (accounts: Account[]) => accounts.filter((a) => a.role === 'Administrator');
-
-/** Why `target` cannot be removed by `actorId`, or '' if it can. */
-export function removalProblem(accounts: Account[], target: Account, actorId: string): string {
-  if (target.id === actorId) return 'You cannot remove the account you are signed in with.';
-  if (target.role === 'Administrator' && administrators(accounts).length <= 1) return 'This is the only administrator account. Make another account an administrator first.';
-  return '';
-}
-
-/** Why `target` cannot take `role`, or '' if it can. */
-export function roleChangeProblem(accounts: Account[], target: Account, role: Role): string {
-  if (target.role === 'Administrator' && role !== 'Administrator' && administrators(accounts).length <= 1) {
-    return 'The system needs at least one administrator. Make another account an administrator first.';
-  }
-  return '';
 }

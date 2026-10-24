@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DIRECTORY_ROWS, SECTION_LIST, VACANT, NO_NAME, buildDirectory,
-  parseStallId, renumberForSection, nextStallNumber, rateForStallId, stallIdFor,
+  parseStallId, renumberForSection, nextStallNumber, rateForStallId, stallIdFor, compareStallIds, compareStallNumbers,
 } from '../src/market/directory.ts';
 
 /* The summary table on page 1 of the Market Stall Directory. */
@@ -32,41 +32,45 @@ test('every stall number appears once and every section code is distinct', () =>
   assert.equal(new Set(SECTION_LIST.map((s) => s.code)).size, SECTION_LIST.length);
 });
 
-test('stall IDs carry the section code and the number on the layout', () => {
+test('stall IDs carry the section code and the number exactly as printed', () => {
   const { stalls, tenancies } = buildDirectory();
-  assert.equal(stalls[0].id, 'KS-001');
+  assert.equal(stalls[0].id, 'KS-1');
   assert.equal(stalls[0].section, 'Kakanin');
-  assert.equal(stalls.find((s) => s.id === 'DS-005')?.tenant, 'Operio Jenefer');
-  assert.equal(stalls.find((s) => s.id === 'MS-015')?.section, 'Meat - Carabeef/Beef & Pork');
-  assert.equal(stalls.find((s) => s.id === 'CS-028')?.section, 'Meat - Chicken');
-  assert.equal(stalls.find((s) => s.id === 'FD-007')?.section, 'Fruits/Duma');
-  assert.equal(stalls.find((s) => s.id === 'VS-011')?.section, 'Vegetable');
+  assert.equal(stalls.find((s) => s.id === 'DS-5')?.tenant, 'Operio Jenefer');
+  assert.equal(stalls.find((s) => s.id === 'MS-15')?.section, 'Meat - Carabeef/Beef & Pork');
+  assert.equal(stalls.find((s) => s.id === 'CS-28')?.section, 'Meat - Chicken');
+  assert.equal(stalls.find((s) => s.id === 'FD-7')?.section, 'Fruits/Duma');
+  assert.equal(stalls.find((s) => s.id === 'VS-11')?.section, 'Vegetable');
   assert.equal(stalls.find((s) => s.id === 'FS-105')?.section, 'Fish');
   for (const stall of stalls) {
     const code = SECTION_LIST.find((s) => s.name === stall.section).code;
     assert.ok(stall.id.startsWith(`${code}-`), `${stall.id} is in ${stall.section}`);
   }
   // Vacant and unnamed stalls are open; the guard post is held but rents to nobody.
-  assert.equal(stalls.find((s) => s.id === 'KS-074')?.status, 'Available');
+  assert.equal(stalls.find((s) => s.id === 'KS-74')?.status, 'Available');
   assert.equal(stalls.find((s) => s.id === 'DS-207')?.status, 'Available');
-  assert.equal(stalls.find((s) => s.id === 'VS-095')?.status, 'Occupied');
-  assert.ok(!tenancies.some((t) => t.stallId === 'VS-095'));
+  assert.equal(stalls.find((s) => s.id === 'VS-95')?.status, 'Occupied');
+  assert.ok(!tenancies.some((t) => t.stallId === 'VS-95'));
   const open = DIRECTORY_ROWS.filter(([, v]) => v === VACANT || v === NO_NAME).length;
   assert.equal(tenancies.length, 194 - open - 1);
+  // Each tenant record is numbered by its stall's number in the directory.
+  assert.equal(tenancies.find((t) => t.stallId === 'DS-5')?.number, 5);
   // Section 43 rates: chicken is charged as meat.
-  assert.equal(tenancies.find((t) => t.stallId === 'CS-029')?.rent, 1500);
-  assert.equal(tenancies.find((t) => t.stallId === 'KS-001')?.rent, 1000);
+  assert.equal(tenancies.find((t) => t.stallId === 'CS-29')?.rent, 1500);
+  assert.equal(tenancies.find((t) => t.stallId === 'KS-1')?.rent, 1000);
 });
 
 test('typed stall IDs are read against the chosen section', () => {
-  assert.deepEqual(parseStallId('74', 'Kakanin'), { id: 'KS-074' });
-  assert.deepEqual(parseStallId('ks-74', 'Kakanin'), { id: 'KS-074' });
+  assert.deepEqual(parseStallId('74', 'Kakanin'), { id: 'KS-74' });
+  assert.deepEqual(parseStallId('ks-074', 'Kakanin'), { id: 'KS-74' });
   assert.deepEqual(parseStallId(' KS 213 ', 'Kakanin'), { id: 'KS-213' });
   assert.match(parseStallId('FS-12', 'Kakanin').error, /start with KS-/);
   assert.match(parseStallId('stall twelve', 'Kakanin').error, /stall number/);
-  assert.equal(renumberForSection('KS-074', 'Fish'), 'FS-074');
-  assert.equal(nextStallNumber(['KS-001', 'DS-212', 'STL-007']), 213);
-  assert.equal(stallIdFor('vs', 5), 'VS-005');
-  assert.equal(rateForStallId('MS-050'), 1500);
+  assert.equal(renumberForSection('KS-74', 'Fish'), 'FS-74');
+  assert.equal(nextStallNumber(['KS-1', 'DS-212', 'STL-007']), 213);
+  assert.equal(stallIdFor('vs', 5), 'VS-5');
+  assert.equal(rateForStallId('MS-50'), 1500);
   assert.equal(rateForStallId('KK-01'), 1000, 'legacy prefixes still quote');
+  assert.deepEqual(['KS-10', 'KS-2', 'FS-105', 'KS-1'].sort(compareStallIds), ['FS-105', 'KS-1', 'KS-2', 'KS-10']);
+  assert.deepEqual(['FS-105', 'DS-5', 'KS-74', 'KS-1', '—'].sort(compareStallNumbers), ['KS-1', 'DS-5', 'KS-74', 'FS-105', '—']);
 });

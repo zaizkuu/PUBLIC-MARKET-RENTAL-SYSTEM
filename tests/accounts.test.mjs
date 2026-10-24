@@ -1,24 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  firstAccounts, withPassword, checkPassword, passwordRules, passwordProblem,
+  officeAccounts, withPassword, checkPassword, passwordRules, passwordProblem,
   afterFailedAttempt, afterSignIn, lockRemainingMs, attemptsLeft, MAX_FAILED_ATTEMPTS,
   newRecoveryCode, withRecoveryCode, checkRecoveryCode, normalizeAccount,
-  removalProblem, roleChangeProblem, nextAccountId, initialsOf, blankAccount, hasPassword,
+  initialsOf, blankAccount, hasPassword,
 } from '../src/security/accounts.ts';
 
 const now = new Date('2026-10-24T08:00:00Z');
-const head = { name: 'Engr. Luz M. Maderazo', position: 'Market Supervisor III' };
+test('there are exactly three accounts: the office head as administrator and the two officers under her', () => {
+  const accounts = officeAccounts([], now);
+  assert.deepEqual(accounts.map((a) => [a.name, a.role]), [
+    ['Engr. Luz M. Maderazo', 'Administrator'],
+    ['Manuel G. Mercado', 'Staff'],
+    ['Felmar Pica', 'Staff'],
+  ]);
+  assert.ok(accounts.every((a) => !hasPassword(a)), 'each chooses a password at first sign-in');
+});
 
-test('a new installation offers the head of the office board as its administrator, with no password yet', () => {
-  const [admin] = firstAccounts(head, now);
-  assert.equal(admin.role, 'Administrator');
-  assert.equal(admin.name, head.name);
-  assert.equal(hasPassword(admin), false);
+test('a password already chosen is kept, and accounts from an earlier version are dropped', async () => {
+  const [admin] = officeAccounts([], now);
+  const withPw = await withPassword(admin, 'Stall-2026', now);
+  const extra = blankAccount({ id: 'ACC-009', name: 'Someone Added Before', position: '', role: 'Administrator' }, now);
+  const accounts = officeAccounts([{ ...withPw, role: 'Staff', name: 'Renamed' }, extra], now);
+  assert.equal(accounts.length, 3);
+  assert.equal(await checkPassword(accounts[0], 'Stall-2026'), true);
+  assert.equal(accounts[0].role, 'Administrator', 'the role always comes from the fixed list');
+  assert.equal(accounts[0].name, 'Engr. Luz M. Maderazo');
+  assert.ok(!accounts.some((a) => a.id === 'ACC-009'));
 });
 
 test('passwords are stored only as a salted hash and checked against it', async () => {
-  const [admin] = firstAccounts(head, now);
+  const [admin] = officeAccounts([], now);
   const withPw = await withPassword(admin, 'Stall-2026', now);
   assert.ok(withPw.passwordHash && !withPw.passwordHash.includes('Stall-2026'));
   assert.ok(withPw.passwordIterations >= 600000);
@@ -57,22 +70,10 @@ test('five wrong passwords lock the account, longer each round, and a sign-in cl
 test('recovery codes are long, unambiguous, and checked however they are typed', async () => {
   const code = newRecoveryCode();
   assert.match(code, /^[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4}){3}$/);
-  const [admin] = firstAccounts(head, now);
+  const [admin] = officeAccounts([], now);
   const withCode = await withRecoveryCode(admin, code);
   assert.equal(await checkRecoveryCode(withCode, code.toLowerCase().replace(/-/g, ' ')), true);
   assert.equal(await checkRecoveryCode(withCode, newRecoveryCode()), false);
-});
-
-test('there is always an administrator, and nobody can remove themselves', () => {
-  const [admin] = firstAccounts(head, now);
-  const clerk = blankAccount({ id: nextAccountId([admin]), name: 'Louwhie Jane Bengero', position: 'Clerk I', role: 'Staff' }, now);
-  const list = [admin, clerk];
-  assert.equal(clerk.id, 'ACC-002');
-  assert.match(removalProblem(list, admin, clerk.id), /only administrator/);
-  assert.match(removalProblem(list, clerk, clerk.id), /signed in with/);
-  assert.equal(removalProblem(list, clerk, admin.id), '');
-  assert.match(roleChangeProblem(list, admin, 'Staff'), /at least one administrator/);
-  assert.equal(roleChangeProblem(list, clerk, 'Administrator'), '');
 });
 
 test('stored rows are repaired into accounts, and initials skip titles', () => {

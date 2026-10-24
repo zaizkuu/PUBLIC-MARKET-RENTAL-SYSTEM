@@ -18,8 +18,9 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.open(file);
     db.save({
       state: {
-        stalls: [{ id: 'KS-001', section: 'Kakanin', tenant: 'Norida Lerios', status: 'Occupied', permit: 'Not Recorded', lastInspection: '-', note: '' }],
+        stalls: [{ id: 'KS-1', section: 'Kakanin', tenant: 'Norida Lerios', status: 'Occupied', permit: 'Not Recorded', lastInspection: '-', note: '' }],
         logs: [{ id: 'LOG-001', date: '2026-10-24', time: '08:00 AM', type: 'Security', details: 'Signed in.', recordedBy: 'Engr. Luz M. Maderazo' }],
+        violations: [{ id: 'VIO-001', tenant: 'Norida Lerios', issue: 'Selling outside assigned area', status: 'Reprimanded', points: 1, offence: 2, dateRecorded: '2026-10-20', dateResolved: '2026-10-24', notes: '' }],
       },
       idCounters: { LOG: 1 },
       dataset: 'market-stall-directory-2026-10',
@@ -30,8 +31,10 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.open(file);
     const loaded = db.load();
     assert.equal(loaded.dataset, 'market-stall-directory-2026-10');
-    assert.equal(loaded.state.stalls[0].id, 'KS-001');
+    assert.equal(loaded.state.stalls[0].id, 'KS-1');
     assert.equal(loaded.state.logs[0].recordedBy, 'Engr. Luz M. Maderazo');
+    assert.equal(loaded.state.violations[0].offence, 2);
+    assert.equal(loaded.state.violations[0].status, 'Reprimanded');
     const [account] = db.loadAccounts();
     assert.equal(account.role, 'Administrator');
     assert.equal(account.mustChangePassword, true);
@@ -42,7 +45,7 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.replaceAll({ state: { stalls: [] }, idCounters: {} });
     db.clearAll();
     assert.equal(db.loadAccounts().length, 1);
-    assert.equal(db.stats().schemaVersion, 3);
+    assert.equal(db.stats().schemaVersion, 4);
 
     // The snapshot taken before the directory update is a complete, readable copy.
     const copy = join(folder, 'before.db');

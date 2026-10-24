@@ -6731,3 +6731,27 @@ ul, ol {
   font-size: calc(18px * var(--font-scale, 1));
   color: var(--color-text-tertiary);
 }
+
+/* 1st, 2nd and 3rd offence, each a step more insistent. */
+.offence-tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: var(--radius-full);
+  font-size: calc(12.5px * var(--font-scale, 1));
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+
+.offence-tag.offence-2 {
+  border-color: transparent;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.offence-tag.offence-3 {
+  border-color: transparent;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}

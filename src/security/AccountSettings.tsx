@@ -1,20 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
-import type { Account, Role } from './accounts';
+import type { Account } from './accounts';
 import {
-  ROLES, blankAccount, checkPassword, withPassword, withRecoveryCode, newRecoveryCode, passwordProblem, passwordRules,
-  nextAccountId, removalProblem, roleChangeProblem, hasPassword, lockRemainingMs, initialsOf,
+  checkPassword, withPassword, withRecoveryCode, newRecoveryCode, passwordProblem, passwordRules,
+  hasPassword, lockRemainingMs, initialsOf,
 } from './accounts';
 
 /* ============================================================
    Settings → Your Account / User Accounts / Sign-in Security
    ============================================================
 
-   Everyone can change their own password here. Administrators also add the
-   office's accounts, reset a forgotten password to a temporary one (which
-   its owner must replace at the next sign-in), change who is an
-   administrator, and set how soon an idle screen locks itself. Every change
-   is handed to `onChange` with a sentence for the logbook. */
+   Everyone can change their own password here. The administrator also resets
+   a forgotten password to a temporary one (which its owner must replace at
+   the next sign-in), unlocks an account, and sets how soon an idle screen
+   locks itself. The three accounts themselves are fixed (OFFICE_ACCOUNTS),
+   so none is added or removed here. Every change is handed to `onChange`
+   with a sentence for the logbook. */
 
 export const IDLE_LOCK_CHOICES = [5, 10, 15, 30, 0];
 export const idleLabel = (minutes: number) => (minutes > 0 ? `After ${minutes} minutes without use` : 'Never (not recommended)');
@@ -22,7 +23,6 @@ export const idleLabel = (minutes: number) => (minutes > 0 ? `After ${minutes} m
 type Props = {
   accounts: Account[];
   current: Account;
-  officers: Array<{ name: string; position: string }>;
   idleMinutes: number;
   onIdleMinutes: (minutes: number) => void;
   onChange: (next: Account[], audit: string, toast: string) => Promise<void>;
@@ -58,30 +58,19 @@ function Problem({ text }: { text: string }) {
   return text ? <div className="form-error" role="alert"><span className="material-symbols-outlined">error</span>{text}</div> : null;
 }
 
-export default function AccountSettings({ accounts, current, officers, idleMinutes, onIdleMinutes, onChange }: Props) {
+export default function AccountSettings({ accounts, current, idleMinutes, onIdleMinutes, onChange }: Props) {
   const admin = current.role === 'Administrator';
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
-  const [panel, setPanel] = useState<'' | 'password' | 'code' | 'add' | `reset:${string}` | `remove:${string}`>('');
+  const [panel, setPanel] = useState<'' | 'password' | 'code' | `reset:${string}`>('');
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [shownCode, setShownCode] = useState('');
-  /* Add-account draft. `pick` is an officer's name from the board, or '' to type one in. */
-  const [pick, setPick] = useState('');
-  const [name, setName] = useState('');
-  const [position, setPosition] = useState('');
-  const [role, setRole] = useState<Role>('Staff');
-
-  const withoutAccount = useMemo(
-    () => officers.filter((o) => o.name && !accounts.some((a) => a.name.trim().toLowerCase() === o.name.trim().toLowerCase())),
-    [officers, accounts],
-  );
 
   const open = (next: typeof panel) => {
     setPanel(panel === next ? '' : next);
     setProblem(''); setCurrentPw(''); setNewPw(''); setConfirmPw(''); setShownCode('');
-    setPick(''); setName(''); setPosition(''); setRole('Staff');
   };
 
   const run = (work: () => Promise<string | void>) => async (e?: FormEvent) => {
@@ -116,19 +105,6 @@ export default function AccountSettings({ accounts, current, officers, idleMinut
     setShownCode(code);
   });
 
-  const addAccount = run(async () => {
-    const officer = withoutAccount.find((o) => o.name === pick);
-    const fullName = (officer?.name ?? name).trim();
-    if (!fullName) return 'Choose a person from the office board, or type the name.';
-    if (accounts.some((a) => a.name.trim().toLowerCase() === fullName.toLowerCase())) return `${fullName} already has an account.`;
-    const bad = passwordProblem(newPw, confirmPw, fullName);
-    if (bad) return bad;
-    const fresh = blankAccount({ id: nextAccountId(accounts), name: fullName, position: (officer?.position ?? position).trim(), role }, new Date());
-    const account = await withPassword(fresh, newPw, new Date(), { mustChange: true });
-    await onChange([...accounts, account], `Account added for ${fullName} (${role}); a temporary password was set, to be changed at the first sign-in.`, `Account added for ${fullName}`);
-    open('');
-  });
-
   const resetPassword = (target: Account) => run(async () => {
     const bad = passwordProblem(newPw, confirmPw, target.name);
     if (bad) return bad;
@@ -137,21 +113,8 @@ export default function AccountSettings({ accounts, current, officers, idleMinut
     open('');
   });
 
-  const setRoleOf = (target: Account, next: Role) => run(async () => {
-    const bad = roleChangeProblem(accounts, target, next);
-    if (bad) return bad;
-    await onChange(replace({ ...target, role: next }), `${target.name} is now ${next === 'Administrator' ? 'an administrator' : 'a staff account'} (changed by ${current.name}).`, `${target.name} is now ${next}`);
-  });
-
   const unlock = (target: Account) => run(async () => {
     await onChange(replace({ ...target, failedAttempts: 0, lockedUntil: '' }), `${target.name}'s account was unlocked by ${current.name}.`, `${target.name} unlocked`);
-  });
-
-  const remove = (target: Account) => run(async () => {
-    const bad = removalProblem(accounts, target, current.id);
-    if (bad) return bad;
-    await onChange(accounts.filter((a) => a.id !== target.id), `${target.name}'s account was removed by ${current.name}.`, `${target.name}'s account removed`);
-    open('');
   });
 
   const passwordFields = (who: string) => (<>
@@ -223,7 +186,7 @@ export default function AccountSettings({ accounts, current, officers, idleMinut
       <div className="settings-section full">
         <div className="settings-section-header">User Accounts</div>
         <div className="settings-section-body">
-          <p className="settings-lead">Everyone who uses the system should have their own account, so the logbook shows who did what. New accounts start with a temporary password that the person replaces at their first sign-in.</p>
+          <p className="settings-lead">The system has three accounts: the Market Supervisor and the two officers in charge of market operation. Each person chooses their own password at their first sign-in, so the logbook shows who did what.</p>
           <div className="table-wrap">
             <table className="mini-table">
               <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
@@ -242,10 +205,6 @@ export default function AccountSettings({ accounts, current, officers, idleMinut
                         <div className="row-actions">
                           {!self && <button type="button" className="row-icon-btn" title="Set a temporary password" aria-label={`Set a temporary password for ${a.name}`} onClick={() => open(`reset:${a.id}`)}><span className="material-symbols-outlined">lock_reset</span></button>}
                           {lockedMs > 0 && <button type="button" className="row-icon-btn" title="Unlock" aria-label={`Unlock ${a.name}`} onClick={() => { void unlock(a)(); }}><span className="material-symbols-outlined">lock_open</span></button>}
-                          <button type="button" className="row-icon-btn" title={a.role === 'Administrator' ? 'Make staff' : 'Make administrator'} aria-label={`${a.role === 'Administrator' ? 'Make staff' : 'Make administrator'}: ${a.name}`} onClick={() => { void setRoleOf(a, a.role === 'Administrator' ? 'Staff' : 'Administrator')(); }}>
-                            <span className="material-symbols-outlined">{a.role === 'Administrator' ? 'remove_moderator' : 'add_moderator'}</span>
-                          </button>
-                          {!self && <button type="button" className="row-icon-btn danger" title="Remove account" aria-label={`Remove ${a.name}'s account`} onClick={() => open(`remove:${a.id}`)}><span className="material-symbols-outlined">person_remove</span></button>}
                         </div>
                       </td>
                     </tr>
@@ -255,40 +214,6 @@ export default function AccountSettings({ accounts, current, officers, idleMinut
             </table>
           </div>
           {!panel && <Problem text={problem} />}
-          <div className="settings-actions">
-            <button type="button" className="btn-primary" aria-expanded={panel === 'add'} onClick={() => open('add')}><span className="material-symbols-outlined">person_add</span>Add Account</button>
-          </div>
-
-          {panel === 'add' && (
-            <form className="account-form" onSubmit={addAccount} noValidate>
-              <h4>Add an account</h4>
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="acct-person">Person</label>
-                  <select id="acct-person" className="form-select" value={pick} onChange={(e) => setPick(e.target.value)}>
-                    <option value="">Someone not on the office board…</option>
-                    {withoutAccount.map((o) => <option key={o.name} value={o.name}>{o.name} — {o.position}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="acct-role">Role</label>
-                  <select id="acct-role" className="form-select" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </div>
-              </div>
-              {!pick && (
-                <div className="form-row">
-                  <Field id="acct-name" label="Full name" type="text" autoComplete="off" value={name} onChange={setName} placeholder="As it should appear in the logbook" />
-                  <Field id="acct-position" label="Position" type="text" autoComplete="off" value={position} onChange={setPosition} placeholder="e.g. Market Collector" />
-                </div>
-              )}
-              {passwordFields(pick || name)}
-              <p className="settings-note"><span className="material-symbols-outlined">info</span>Give the temporary password to the person privately. They choose their own at their first sign-in.</p>
-              <Problem text={problem} />
-              <div className="settings-actions"><button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Add Account'}</button><button type="button" className="btn-outline" onClick={() => open('')}>Cancel</button></div>
-            </form>
-          )}
 
           {accounts.map((a) => panel === `reset:${a.id}` && (
             <form key={a.id} className="account-form" onSubmit={resetPassword(a)} noValidate>
@@ -300,14 +225,6 @@ export default function AccountSettings({ accounts, current, officers, idleMinut
             </form>
           ))}
 
-          {accounts.map((a) => panel === `remove:${a.id}` && (
-            <div key={a.id} className="account-form" role="alertdialog" aria-label={`Remove ${a.name}'s account?`}>
-              <h4>Remove {a.name}'s account?</h4>
-              <p className="settings-note">They will no longer be able to sign in. Their name stays on everything they recorded in the logbook.</p>
-              <Problem text={problem} />
-              <div className="settings-actions"><button type="button" className="btn-danger" disabled={busy} onClick={() => { void remove(a)(); }}>Remove Account</button><button type="button" className="btn-outline" onClick={() => open('')}>Cancel</button></div>
-            </div>
-          ))}
         </div>
       </div>
     )}

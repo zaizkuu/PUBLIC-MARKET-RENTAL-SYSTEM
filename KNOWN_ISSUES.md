@@ -5,8 +5,8 @@ Last reviewed: 2026-07-28. Nothing outstanding — all seven bugs recorded in th
 ## Fixed
 
 ### 9. The build failed: `ProposedFloorPlan` was never committed — fixed
-The commit that added the interactive market map imported `src/market/ProposedFloorPlan`, but the file was not in the repository, so `npm run build` (and therefore `npm run dist`) stopped at the type check. The component now exists: the map's *Proposed layout* tab sets the register's own sections and stalls out in the two mapped blocks, labelled as a proposal that is not to scale.
-- `src/market/ProposedFloorPlan.tsx`, `src/MarketMap.css`
+The commit that added the interactive market map imported `src/market/ProposedFloorPlan`, but the file was not in the repository, so `npm run build` (and therefore `npm run dist`) stopped at the type check. The *Proposed layout* tab has since been taken out at the office's request, along with the import, so the map opens on the saved stall map.
+- `src/MarketMap.tsx`, `tests/market-browser.mjs`
 
 ### 10. A reopened database reused statements from the closed connection — fixed
 `electron/db.cjs` cached prepared statements for the life of the process, so after `close()` and `open()` a save ran a statement belonging to the closed connection and failed. The app only closes the database on quit, so no operator could hit it, but the new database test did. The cache is now cleared on close.

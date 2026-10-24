@@ -175,11 +175,12 @@ export async function persist(state: unknown, idCounters: IdCounters, dataset?: 
   return savedAt;
 }
 
-/** Replaces every record — restoring a backup, or resetting to the defaults. */
-export async function replaceAll(state: unknown, idCounters: IdCounters): Promise<string> {
+/** Replaces every record and ID counter — restoring a backup, resetting to
+    the defaults, or starting afresh on a new stall directory. */
+export async function replaceAll(state: unknown, idCounters: IdCounters, dataset?: string): Promise<string> {
   const db = bridge();
-  if (!db) return persist(state, idCounters);
-  const { savedAt } = await unwrap(db.replaceAll({ state, idCounters }));
+  if (!db) return persist(state, idCounters, dataset);
+  const { savedAt } = await unwrap(db.replaceAll({ state, idCounters, dataset }));
   return savedAt;
 }
 

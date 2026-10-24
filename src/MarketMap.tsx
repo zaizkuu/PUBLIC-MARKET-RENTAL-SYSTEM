@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import MapViewport from './market/MapViewport';
 import MapEditor from './market/MapEditor';
-import ProposedFloorPlan from './market/ProposedFloorPlan';
 import seed from './market/seed.json';
 import type { ExistingStall, Layout, MapUnit, Session, StallRecord } from './market/types';
 import { STATUSES } from './market/types';
@@ -20,7 +19,7 @@ export default function MarketMap({existingStalls=[]}:{existingStalls?:ExistingS
  const [published,setPublished]=useState<Layout>(initial),[draft,setDraft]=useState<Layout|null>(null),[versions,setVersions]=useState<Version[]>([]);
  const [session,setSession]=useState<Session>({authenticated:false,setupRequired:false});
  const [editing,setEditing]=useState(false),[preview,setPreview]=useState(false),[showLogin,setShowLogin]=useState(false);
- const [view,setView]=useState<'proposal'|'saved'|'illustration'>('proposal');
+ const [view,setView]=useState<'saved'|'illustration'>('saved');
  const [selected,setSelected]=useState<Selection>(null),[recordId,setRecordId]=useState(''),[query,setQuery]=useState(''),[status,setStatus]=useState('');
  const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[feedback,setFeedback]=useState(''),[dirty,setDirty]=useState(false);
  const [routeStart,setRouteStart]=useState(''),[showRoute,setShowRoute]=useState(false),[focus,setFocus]=useState<{x:number;y:number;key:string}>();
@@ -46,7 +45,6 @@ export default function MarketMap({existingStalls=[]}:{existingStalls?:ExistingS
  const startId=entrances.some(n=>n.id===routeStart)?routeStart:entrances[0]?.id??'';
  const route=showRoute&&selectedUnit?findRoute(data,startId,selectedUnit):null;
  const virtual=!editing&&view==='illustration';
- const showProposal=!editing&&view==='proposal';
  const canEdit=editing&&!preview&&session.authenticated;
  function changeDraft(layout:Layout){setDraft(layout);setDirty(true);setFeedback('');}
  function selectUnit(unit:MapUnit,center=false){setSelected({kind:'stall',id:unit.id});setRecordId(unit.recordId);setShowRoute(false);if(center)setFocus({x:unit.x+unit.w/2,y:unit.y+unit.h/2,key:crypto.randomUUID()});}
@@ -59,12 +57,11 @@ export default function MarketMap({existingStalls=[]}:{existingStalls?:ExistingS
  const sectionMatches=data.sections.filter(s=>!query||query.toLowerCase().split(/\W+/).some(word=>word.length>2&&s.name.toLowerCase().includes(word)));
  return <section className="panel public-market-map" aria-labelledby="market-heading">
   <header className="market-header"><div className="market-brand">{icon('map')}<div><h3 id="market-heading">Market floor plan</h3><p>Tanauan, Leyte · Interactive market floor plan</p></div></div><button type="button" className="market-admin-toggle" onClick={()=>{if(editing){if(dirty&&!confirm('Discard unsaved map changes?'))return;setEditing(false);setPreview(false);setDirty(false);setSelected(null);setRecordId('');}else if(session.authenticated)void loadDraft();else setShowLogin(v=>!v);}}>{icon(editing?'public':'admin_panel_settings')}{editing?'Public view':'Map administrator'}</button></header>
-  <div className="market-navigation"><nav className="market-tabs" aria-label="Floor plan views">{editing?<span className="market-eyebrow">Saved map administration</span>:([['proposal','Proposed layout'],['saved','Saved stall map'],['illustration','3D illustration']] as const).map(([id,label])=><button key={id} type="button" aria-current={view===id?'page':undefined} onClick={()=>{setView(id);setSelected(null);setRecordId('');setQuery('');setStatus('');setShowRoute(false);setFocus(undefined);}}>{label}</button>)}</nav><span className="market-layout-tag">{editing?preview?'DRAFT PREVIEW':'DRAFT EDITOR':showProposal?'CONCEPT PLAN':virtual?'ILLUSTRATION':'SAVED LAYOUT'}</span></div>
-  {!showProposal&&<div className="market-search-row"><form role="search" onSubmit={e=>{e.preventDefault();if(results[0])selectRecord(results[0]);else if(sectionMatches[0]){setSelected({kind:'section',id:sectionMatches[0].id});}}}>{icon('search')}<input aria-label="Search market floor plan" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search stall ID, products, business or section…"/>{query&&<button type="button" aria-label="Clear search" onClick={()=>setQuery('')}>{icon('close')}</button>}</form><select aria-label="Filter stalls by status" value={status} onChange={e=>setStatus(e.target.value)}><option value="">All statuses</option>{(data.statuses??STATUSES).map(s=><option key={s}>{s}</option>)}</select></div>}
+  <div className="market-navigation"><nav className="market-tabs" aria-label="Floor plan views">{editing?<span className="market-eyebrow">Saved map administration</span>:([['saved','Saved stall map'],['illustration','3D illustration']] as const).map(([id,label])=><button key={id} type="button" aria-current={view===id?'page':undefined} onClick={()=>{setView(id);setSelected(null);setRecordId('');setQuery('');setStatus('');setShowRoute(false);setFocus(undefined);}}>{label}</button>)}</nav><span className="market-layout-tag">{editing?preview?'DRAFT PREVIEW':'DRAFT EDITOR':virtual?'ILLUSTRATION':'SAVED LAYOUT'}</span></div>
+  <div className="market-search-row"><form role="search" onSubmit={e=>{e.preventDefault();if(results[0])selectRecord(results[0]);else if(sectionMatches[0]){setSelected({kind:'section',id:sectionMatches[0].id});}}}>{icon('search')}<input aria-label="Search market floor plan" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search stall ID, products, business or section…"/>{query&&<button type="button" aria-label="Clear search" onClick={()=>setQuery('')}>{icon('close')}</button>}</form><select aria-label="Filter stalls by status" value={status} onChange={e=>setStatus(e.target.value)}><option value="">All statuses</option>{(data.statuses??STATUSES).map(s=><option key={s}>{s}</option>)}</select></div>
   {loading&&<div className="market-notice" role="status">Loading the published market map…</div>}
   {error&&<div className="market-notice market-error" role="alert">{error}<button type="button" aria-label="Dismiss error" onClick={()=>setError('')}>×</button></div>}
   {showLogin&&<form className="market-login" onSubmit={authenticate}><div><h4>{session.setupRequired?'Set up map administrator':'Administrator sign-in'}</h4><p>Editing and publishing require a local administrator account.</p></div><label>Username<input autoComplete="username" required minLength={3} value={credentials.username} onChange={e=>setCredentials({...credentials,username:e.target.value})}/></label><label>Password<input type="password" required minLength={session.setupRequired?12:1} autoComplete={session.setupRequired?'new-password':'current-password'} value={credentials.password} onChange={e=>setCredentials({...credentials,password:e.target.value})}/></label><button className="market-primary" disabled={busy}>{busy?'Please wait…':session.setupRequired?'Create administrator':'Sign in'}</button></form>}
-  {showProposal?<ProposedFloorPlan records={data.records} onOpenSavedMap={()=>{setView('saved');setSelected(null);setRecordId('');}}/>:<>
   <div className="market-breadcrumb"><button type="button" onClick={()=>{setSelected(null);setRecordId('');setShowRoute(false);}}>Indoor floor plan</button>{(selectedSection||selectedRecord)&&<><span>›</span><span>{selectedRecord?.id??selectedSection?.name}</span></>}{editing&&<button className="market-reload" type="button" disabled={busy} onClick={()=>{if(!dirty||confirm('Discard unsaved changes and reload the saved draft?'))void loadDraft();}}>Reload saved draft</button>}</div>
   <div className={`market-workspace${canEdit?' is-editing':''}`}>
    <div className="market-main-view">
@@ -106,6 +103,5 @@ export default function MarketMap({existingStalls=[]}:{existingStalls?:ExistingS
     </>}
    </aside>
   </div>
-  </>}
  </section>;
 }

@@ -3,7 +3,7 @@ import MarketMap from './MarketMap';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import {
-  loadStored, persist, clearStored, keepCopyBefore, loadAccounts, saveAccounts,
+  loadStored, persist, replaceAll, clearStored, keepCopyBefore, loadAccounts, saveAccounts,
   usingDatabase, backendName, databaseStats, backupDatabase, checkIntegrity,
   revealDataFolder, formatBytes,
 } from './db';
@@ -11,13 +11,14 @@ import type { LoadResult } from './db';
 import LoginScreen from './security/LoginScreen';
 import type { SignInEvent } from './security/LoginScreen';
 import AccountSettings from './security/AccountSettings';
-import { firstAccounts, normalizeAccount, initialsOf } from './security/accounts';
+import { officeAccounts, normalizeAccount, initialsOf } from './security/accounts';
 import type { Account } from './security/accounts';
 import type { DatabaseStats, IdCounters } from './db';
 import {
   SECTION_LIST, SECTION_NAMES, buildDirectory, sectionInfo, rateForStallId,
-  parseStallId, renumberForSection, nextStallNumber, stallIdFor, DIRECTORY_EDITION,
+  parseStallId, renumberForSection, nextStallNumber, stallIdFor, compareStallNumbers, DIRECTORY_EDITION,
 } from './market/directory';
+import { electricMetersByStall, meterSuggestions } from './market/meters';
 
 /* ============================================================
    Types
@@ -49,7 +50,9 @@ type StallStatus = 'Occupied' | 'Available' | 'Maintenance' | 'Temporarily Close
    'Not Recorded' is its own answer — the sheet leaves the column blank. */
 type PermitStatus = 'With BP' | 'No BP' | 'Not Recorded';
 
-type ViolationStatus = 'Open' | 'Resolved';
+/* A citation is Open until the offender has been reprimanded for it. Records
+   from before were marked 'Resolved', which now reads as Reprimanded. */
+type ViolationStatus = 'Open' | 'Reprimanded';
 
 type UtilityType = 'Electricity' | 'Water';
 type BillStatus = 'Unpaid' | 'Paid';
@@ -113,7 +116,7 @@ type ModalType =
   | 'add-officer'
   | 'view-stall' | 'view-applicant' | 'view-tenant' | 'view-bill' | 'view-violation'
   | 'view-officer'
-  | 'edit-tenant' | 'edit-stall' | 'edit-applicant' | 'edit-violation' | 'edit-officer'
+  | 'edit-tenant' | 'edit-stall' | 'edit-applicant' | 'edit-violation' | 'edit-officer' | 'edit-bill'
   | 'confirm-logout' | 'confirm-reset' | 'confirm-delete-bill' | 'confirm-delete-stall'
   | 'confirm-delete-tenant' | 'confirm-delete-applicant' | 'confirm-delete-log'
   | 'confirm-delete-violation' | 'confirm-delete-officer';
@@ -219,7 +222,11 @@ type Violation = {
   status: ViolationStatus;
   points: number;
   dateRecorded: string;
+  /* The day the offender was reprimanded. Named for its old meaning, so
+     records and backups from before keep their dates. */
   dateResolved: string;
+  /* First, second or third offence of this kind by the same party. */
+  offence: number;
   notes: string;
 };
 
@@ -294,7 +301,7 @@ const countStatus = (stalls: Stall[], status: StallStatus) => stalls.filter((s) 
 const KEEPER_RELATIONS = ['Self (tenant tends the stall)', 'Spouse', 'Child', 'Parent', 'Sibling', 'Other Relative', 'Hired Helper'];
 /* 'Security' holds sign-ins, sign-outs, locks and account changes — the trail
    of who had the records open, written by the system itself. */
-const LOG_TYPES = ['Inspection', 'Incident', 'Maintenance', 'Collection', 'Announcement', 'Security'];
+const LOG_TYPES = ['Inspection', 'Visitation', 'Incident', 'Maintenance', 'Collection', 'Announcement', 'Security'];
 /* The offences a stallholder can be cited for, as the office's "Market
    Violations — Dropdown List": short labels for the prohibited acts of
    Section 22 and the duties of Section 23, each with the section and item it
@@ -341,6 +348,21 @@ const VIOLATION_GROUPS: Array<{ title: string; items: Array<{ code: string; labe
 const VIOLATION_CODES = new Map(VIOLATION_GROUPS.flatMap((g) => g.items.map((i) => [i.label, i.code] as const)));
 /* The choice that opens a text box for an offence the list does not name. */
 const OTHER_OFFENCE = '__other__';
+
+const OFFENCES = [1, 2, 3];
+const OFFENCE_LABELS: Record<number, string> = { 1: '1st Offence', 2: '2nd Offence', 3: '3rd Offence' };
+const clampOffence = (raw: unknown) => Math.min(3, Math.max(1, Math.round(Number(raw)) || 1));
+const offenceLabel = (n: number) => OFFENCE_LABELS[clampOffence(n)];
+
+/* How many times this party has been cited for this offence already, plus
+   one — what a new citation would be. A fourth and later still count as the
+   third, the highest the schedule goes. */
+function nextOffence(violations: Violation[], tenant: string, issue: string, except = '') {
+  const party = tenant.trim().toLowerCase();
+  if (!party || !issue.trim()) return 1;
+  const before = violations.filter((v) => v.id !== except && v.tenant.trim().toLowerCase() === party && v.issue === issue).length;
+  return clampOffence(before + 1);
+}
 
 /** The ordinance code for a citation's offence, or '' when it was typed in. */
 function violationCode(issue: string) {
@@ -597,12 +619,15 @@ function monthlyRentForSection(section: string, stalls: Stall[]): number {
    The directory records no contact details, permits or inspection dates, so
    those start blank — 'Not Recorded' and '-' — for the office to fill in. */
 
-/* Tenant records for the directory's vendors. `ids` lets an installation that
-   already numbered tenants continue past its last number instead of handing a
-   used one to somebody else (see `applyStallDirectory`). */
-function directoryTenants(ids: string[] = []): Tenant[] {
-  return buildDirectory().tenancies.map((t, i) => ({
-    id: ids[i] ?? `TEN-${String(i + 1).padStart(3, '0')}`,
+/* Tenant records for the directory's vendors, each numbered by its stall's
+   number in the directory: the vendor on stall 5 is tenant record 5. The
+   electric meter is the serial from the cooperative's calibration sheets
+   (src/market/meters.ts), so billing fills it in on choosing the stall. */
+function directoryTenants(): Tenant[] {
+  const { tenancies } = buildDirectory();
+  const electric = electricMetersByStall(tenancies.map((t) => [t.stallId, t.name]));
+  return tenancies.map((t) => ({
+    id: `TEN-${String(t.number).padStart(3, '0')}`,
     name: t.name,
     phone: '',
     barangay: '',
@@ -611,10 +636,18 @@ function directoryTenants(ids: string[] = []): Tenant[] {
     rent: t.rent,
     status: 'Active',
     keepers: [],
-    meters: { Electricity: '', Water: '' },
+    meters: { Electricity: electric.get(t.stallId)?.[3] ?? '', Water: '' },
     rentDueDay: DEFAULT_RENT_DUE_DAY,
     rentPayments: {},
   }));
+}
+
+/* Every serial on the calibration sheets, offered in the meter number boxes
+   so a meter not yet on a tenant record can be picked by number or name. */
+const ELECTRIC_METER_OPTIONS = meterSuggestions();
+
+function ElectricMeterOptions({ id }: { id: string }) {
+  return <datalist id={id}>{ELECTRIC_METER_OPTIONS.map((m) => <option key={`${m.serial}-${m.label}`} value={m.serial}>{m.label}</option>)}</datalist>;
 }
 
 const initialState = {
@@ -901,7 +934,9 @@ function mergeState(input: unknown): AppState {
       ...v,
       points: Math.max(0, Number(v?.points) || 0),
       dateRecorded: typeof v?.dateRecorded === 'string' ? v.dateRecorded : '',
+      status: (v?.status as string) === 'Resolved' || v?.status === 'Reprimanded' ? 'Reprimanded' : 'Open',
       dateResolved: typeof v?.dateResolved === 'string' ? v.dateResolved : '',
+      offence: clampOffence(v?.offence),
       notes: typeof v?.notes === 'string' ? v.notes : '',
     })),
     utilities: pick('utilities').map(normalizeBill),
@@ -920,31 +955,28 @@ function stateFrom(raw: unknown | null): AppState {
   try { return mergeState(raw); } catch { return initialState; }
 }
 
-/* Brings an installation that predates the Market Stall Directory up to it,
-   once. The stall register and the tenant records are replaced by the
-   directory's, because the directory is what the office now holds to be the
-   market; everything else — applications, bills, violations, the logbook,
-   the office board, verification slips — is history and stays as it is.
+/* Starts an installation over on the Market Stall Directory, once. The
+   directory is the office's latest word on the market, so nothing recorded
+   before it is carried forward: stalls, tenants, applications, bills,
+   violations, verification slips, the logbook and the activity feed all
+   start empty again, and the ID counters with them. Only the office board is
+   kept — it is the office's own roster, not market data — and the sign-in
+   accounts, which are stored apart from the records.
 
-   New tenant records are numbered after the installation's last one, so a
-   bill from before keeps pointing at nobody rather than at a stranger who
-   happened to be handed its old tenant's number. The caller has already put
-   a copy of the old records aside (`copyAt` says where), and the logbook
-   records both the change and where to find that copy. */
-function applyStallDirectory(state: AppState, copyAt: string): AppState {
-  const { stalls, tenancies } = buildDirectory();
-  const ids = claimIds('TEN', state.tenants.map((t) => t.id), tenancies.length);
-  const tenants = directoryTenants(ids);
-  const details = `Stall register replaced with the Market Stall Directory: ${stalls.length} stalls in ${SECTION_LIST.length} sections, `
-    + `${tenants.length} tenant records (previously ${state.stalls.length} stalls and ${state.tenants.length} tenant records). `
-    + `Stall IDs now carry their section code (${SECTION_LIST.map((s) => `${s.code} ${s.name}`).join(', ')}). `
-    + `A copy of the records from before the change was saved to ${copyAt}.`;
+   The caller has already put a copy of the old records aside (`copyAt` says
+   where), and the one logbook entry records both the fresh start and where
+   to find that copy. */
+function freshFromDirectory(previous: AppState, copyAt: string): AppState {
+  resetIdCounters();
+  const { stalls } = buildDirectory();
+  const tenants = directoryTenants();
+  const details = `Records started afresh from the Market Stall Directory: ${stalls.length} stalls in ${SECTION_LIST.length} sections and ${tenants.length} tenant records. `
+    + `Everything recorded before it — ${previous.stalls.length} stalls, ${previous.tenants.length} tenants, ${previous.utilities.length} bills, ${previous.violations.length} violations, ${previous.applicants.length} applications and ${previous.logs.length} logbook entries — was cleared; a copy was saved to ${copyAt}.`;
   return {
-    ...state,
-    stalls: stalls as Stall[],
-    tenants,
-    logs: [...state.logs, { id: nextId('LOG', state.logs.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type: 'Announcement', details, recordedBy: 'System update' }],
-    activities: [{ id: `ACT-${Date.now()}-dir`, icon: 'storefront', iconColor: 'blue', highlight: 'Market Stall Directory', text: ` loaded — ${stalls.length} stalls in ${SECTION_LIST.length} sections.`, time: 'Just now' }, ...state.activities].slice(0, MAX_ACTIVITIES),
+    ...initialState,
+    officers: previous.officers,
+    logs: [{ id: nextId('LOG', []), date: todayIso(), time: nowTimeStr(), type: 'Announcement', details, recordedBy: 'System update' }],
+    activities: [{ id: `ACT-${Date.now()}-dir`, icon: 'storefront', iconColor: 'blue', highlight: 'Market Stall Directory', text: ` loaded — ${stalls.length} stalls in ${SECTION_LIST.length} sections.`, time: 'Just now' }],
   };
 }
 
@@ -1892,6 +1924,7 @@ function App({ boot }: { boot: BootData }) {
   const liveApplicant = (a: Applicant) => state.applicants.find((x) => x.id === a.id) ?? a;
   const liveViolation = (v: Violation) => state.violations.find((x) => x.id === v.id) ?? v;
   const liveOfficer = (o: Officer) => state.officers.find((x) => x.id === o.id) ?? o;
+  const liveBill = (b: UtilityBill) => state.utilities.find((x) => x.id === b.id) ?? b;
 
   const withActivity = (list: ActivityItem[], icon: string, iconColor: string, highlight: string, text: string): ActivityItem[] =>
     [{ id: `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, icon, iconColor, highlight, text, time: 'Just now' }, ...list].slice(0, MAX_ACTIVITIES);
@@ -1959,7 +1992,7 @@ function App({ boot }: { boot: BootData }) {
   }, [locked, user]);
 
   const retryAccounts = () => {
-    void readAccounts(state.officers).then((read) => {
+    void readAccounts().then((read) => {
       setAccountsProblem(read.accountsProblem);
       if (!read.accountsProblem) { accountsRef.current = read.accounts; setAccounts(read.accounts); }
     });
@@ -1994,7 +2027,7 @@ function App({ boot }: { boot: BootData }) {
     showToast(permitted ? `Applicant ${app.name} added — stall ${permitted.id} is now With BP` : `Applicant ${app.name} added successfully`);
     closeModal();
   };
-  const addLog = (l: LogEntry) => { setState((p) => ({ ...p, logs: [...p.logs, l] })); showToast('Log entry added'); closeModal(); };
+  const addLog = (l: LogEntry) => { setState((p) => ({ ...p, logs: [...p.logs, { ...l, recordedBy: userRef.current?.name ?? '' }] })); showToast('Log entry added'); closeModal(); };
 
   const addTenant = (t: Tenant) => {
     setState((p) => ({
@@ -2015,6 +2048,23 @@ function App({ boot }: { boot: BootData }) {
       logs: [...p.logs, makeLog(p.logs, 'Collection', `${bill.type} bill ${bill.id} (${billPeriodText(bill)}) issued to stall ${bill.stallId}${bill.tenantName ? ` — ${bill.tenantName}` : ''}: ${money(bill.amount)}.`)],
     }));
     showToast(`${bill.type} bill ${bill.id} saved to stall ${bill.stallId}`);
+  };
+
+  const updateBill = (updated: UtilityBill) => {
+    const previous = state.utilities.find((b) => b.id === updated.id);
+    if (!previous) return;
+    const changes = [
+      previous.tenantName !== updated.tenantName ? `billed to ${updated.tenantName || 'nobody'} (was ${previous.tenantName || 'unassigned'})` : '',
+      previous.dueDate !== updated.dueDate ? `due ${formatIsoDate(updated.dueDate)} (was ${formatIsoDate(previous.dueDate)})` : '',
+      previous.notes !== updated.notes ? 'notes changed' : '',
+    ].filter(Boolean);
+    setState((p) => ({
+      ...p,
+      utilities: p.utilities.map((b) => (b.id === updated.id ? updated : b)),
+      logs: [...p.logs, makeLog(p.logs, 'Collection', `${updated.type} bill ${updated.id} for stall ${updated.stallId} was edited: ${changes.join('; ') || 'no change'}.`)],
+    }));
+    showToast(`Bill ${updated.id} updated`);
+    setModal({ type: 'view-bill', data: updated });
   };
 
   const toggleBillStatus = (id: string) => {
@@ -2114,7 +2164,7 @@ function App({ boot }: { boot: BootData }) {
       ...p,
       violations: [v, ...p.violations],
       activities: withActivity(p.activities, 'gavel', 'red', v.tenant, ` was cited for ${v.issue.toLowerCase()}.`),
-      logs: [...p.logs, makeLog(p.logs, 'Incident', `Violation ${v.id} recorded against ${v.tenant}: ${v.issue} (${v.points} point${v.points === 1 ? '' : 's'}).`)],
+      logs: [...p.logs, makeLog(p.logs, 'Incident', `Violation ${v.id} recorded against ${v.tenant}: ${issueWithCode(v.issue)}, ${offenceLabel(v.offence).toLowerCase()} (${v.points} point${v.points === 1 ? '' : 's'}).`)],
     }));
     showToast(`Violation ${v.id} recorded against ${v.tenant}`);
     closeModal();
@@ -2129,7 +2179,7 @@ function App({ boot }: { boot: BootData }) {
       violations: p.violations.map((v) => (v.id === updated.id ? updated : v)),
       ...(log
         ? {
-            activities: withActivity(p.activities, 'gavel', updated.status === 'Resolved' ? 'green' : 'red', updated.tenant, statusChanged ? `'s violation ${updated.id} was marked ${updated.status}.` : `'s violation ${updated.id} was updated.`),
+            activities: withActivity(p.activities, 'gavel', updated.status === 'Reprimanded' ? 'green' : 'red', updated.tenant, statusChanged ? `'s violation ${updated.id} was marked ${updated.status}.` : `'s violation ${updated.id} was updated.`),
             logs: [...p.logs, makeLog(p.logs, 'Incident', statusChanged && previous ? `Violation ${updated.id} (${updated.tenant}) changed from ${previous.status} to ${updated.status}.` : `Violation ${updated.id} (${updated.tenant}) was updated.`)],
           }
         : {}),
@@ -2444,11 +2494,11 @@ function App({ boot }: { boot: BootData }) {
           {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
           {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
-          {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Points','Status','Date Recorded','Date Resolved','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
+          {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Offence','Points','Status','Date Recorded','Date Reprimanded','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage canDelete={isAdmin} onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details','Recorded By'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, l.recordedBy || '—']), 'logbook.csv'); showToast('Log exported'); }} />}
           {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, officerLabel(state.officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-office-board.csv'); showToast('Office board exported'); }} />}
-          {active === 'settings' && <SettingsPage isAdmin={isAdmin} accountPanel={<AccountSettings accounts={accounts} current={user} officers={state.officers} idleMinutes={idleMinutes} onIdleMinutes={chooseIdleMinutes} onChange={changeAccounts} />} automaticBackup={automaticBackup} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
+          {active === 'settings' && <SettingsPage isAdmin={isAdmin} accountPanel={<AccountSettings accounts={accounts} current={user} idleMinutes={idleMinutes} onIdleMinutes={chooseIdleMinutes} onChange={changeAccounts} />} automaticBackup={automaticBackup} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage canRestore={isAdmin} state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
       </main>
@@ -2461,7 +2511,7 @@ function App({ boot }: { boot: BootData }) {
       {modal.type === 'add-officer' && <Modal title="Add Officer" subtitle="A seat on the market office board." wide onClose={closeModal}><OfficerForm officers={state.officers} onSubmit={addOfficer} onCancel={closeModal} /></Modal>}
       {modal.type === 'edit-officer' && <Modal title="Edit Officer" subtitle="Update the seat, who holds it, and where it sits on the board." wide onClose={closeModal}><OfficerForm officers={state.officers} officer={liveOfficer(modal.data as Officer)} onSubmit={updateOfficer} onCancel={closeModal} /></Modal>}
       {modal.type === 'view-officer' && <Modal title="Officer Details" sheet onClose={closeModal}><OfficerDetailView officer={liveOfficer(modal.data as Officer)} officers={state.officers} onEdit={() => setModal({ type: 'edit-officer', data: modal.data })} onClose={closeModal} /></Modal>}
-      {modal.type === 'add-violation' && <Modal title="Record a Violation" wide onClose={closeModal}><ViolationForm existingIds={state.violations.map(v => v.id)} tenants={state.tenants} onSubmit={addViolation} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-violation' && <Modal title="Record a Violation" wide onClose={closeModal}><ViolationForm existingIds={state.violations.map(v => v.id)} violations={state.violations} tenants={state.tenants} onSubmit={addViolation} onCancel={closeModal} /></Modal>}
       {modal.type === 'view-violation' && <Modal title="Violation Details" sheet onClose={closeModal}><ViolationDetailView violation={liveViolation(modal.data as Violation)} onEdit={() => setModal({ type: 'edit-violation', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-violation' && <Modal title="Edit Violation" wide onClose={closeModal}><ViolationEditForm violation={modal.data as Violation} current={liveViolation(modal.data as Violation)} tenants={state.tenants} onSave={updateViolation} onClose={closeModal} /></Modal>}
       {modal.type === 'view-stall' && <Modal title="Stall Details" sheet onClose={closeModal}><StallDetailView stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onEdit={() => setModal({ type: 'edit-stall', data: modal.data })} onVerify={() => { const s = liveStall(modal.data as Stall); closeModal(); setVerifyRequest({ stall: s }); }} onClose={closeModal} /></Modal>}
@@ -2470,7 +2520,8 @@ function App({ boot }: { boot: BootData }) {
       {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
       {modal.type === 'view-tenant' && <Modal title="Tenant Details" sheet onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-tenant' && <Modal title="Edit Tenant Details" wide onClose={closeModal}><TenantEditForm tenant={modal.data as Tenant} current={liveTenant(modal.data as Tenant)} tenants={state.tenants} stalls={state.stalls} onSave={updateTenant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" sheet onClose={closeModal}><BillDetailView bill={modal.data as UtilityBill} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-bill' && <Modal title="Utility Bill Details" sheet onClose={closeModal}><BillDetailView bill={liveBill(modal.data as UtilityBill)} onEdit={() => setModal({ type: 'edit-bill', data: modal.data })} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
+      {modal.type === 'edit-bill' && <Modal title="Edit Bill Details" subtitle="Who the bill is made out to, when it falls due, and its notes." onClose={closeModal}><BillEditForm bill={liveBill(modal.data as UtilityBill)} tenants={state.tenants} onSave={updateBill} onClose={() => setModal({ type: 'view-bill', data: modal.data })} /></Modal>}
       {modal.type === 'confirm-logout' && <ConfirmDialog icon="logout" iconStyle="warning" title="Log Out?" description={`${user.name} will be signed out and the sign-in page shown. Every record is already saved on this computer.`} confirmLabel="Log Out" onConfirm={signOut} onCancel={closeModal} />}
       {modal.type === 'confirm-reset' && <ConfirmDialog icon="delete_forever" iconStyle="danger" title="Reset All Data?" description="This will permanently reset all data to factory defaults. This cannot be undone." confirmLabel="Reset Data" confirmDanger onConfirm={resetData} onCancel={closeModal} />}
       {modal.type === 'confirm-delete-stall' && (() => {
@@ -2518,7 +2569,7 @@ function App({ boot }: { boot: BootData }) {
       {modal.type === 'confirm-delete-violation' && (() => {
         const violation = modal.data as Violation;
         return <ConfirmDialog icon="delete_forever" iconStyle="danger" title={`Delete violation ${violation.id}?`}
-          description={`The ${violation.status.toLowerCase()} citation against ${violation.tenant} for "${violation.issue}" will be permanently removed from the register.${violation.status === 'Open' ? ' Resolve it instead if it was served and settled — delete only if it was recorded in error.' : ' Delete only if it was recorded in error; resolved citations are the register’s history.'} This cannot be undone.`}
+          description={`The ${violation.status.toLowerCase()} citation against ${violation.tenant} for "${violation.issue}" will be permanently removed from the register.${violation.status === 'Open' ? ' Mark it Reprimanded instead once the offender has been reprimanded — delete only if it was recorded in error.' : ' Delete only if it was recorded in error; reprimanded citations are the register’s history.'} This cannot be undone.`}
           confirmLabel="Delete Violation" confirmDanger onConfirm={() => deleteViolation(violation)} onCancel={closeModal} />;
       })()}
       {printRequest && <PrintPreviewDialog signedIn={user.name} request={printRequest} billsOnRecord={state.utilities} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
@@ -2991,7 +3042,8 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
     }
     if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.section.toLowerCase().includes(q) && !t.keepers.some((k) => k.name.toLowerCase().includes(q))) return false; }
     return true;
-  }), [tenants, sectionFilter, statusFilter, rentFilter, period, search]);
+    /* In the directory's numbering, whenever a tenant was added. */
+  }).sort((a, b) => compareStallNumbers(a.stallId, b.stallId)), [tenants, sectionFilter, statusFilter, rentFilter, period, search]);
 
   const paged = paginate(filtered, page);
 
@@ -3294,6 +3346,11 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const [type, setType] = useState<UtilityType>('Electricity');
   const [stallId, setStallId] = useState('');
   const [tenantId, setTenantId] = useState('');
+  /* Filled with the stall's tenant on choosing the stall, and free to change
+     after — the bill may be made out to a stallkeeper or to a new name before
+     the tenant record catches up. The bill still belongs to the stall's
+     tenancy (`tenantId`); this is only the name it is made out to. */
+  const [billedTo, setBilledTo] = useState('');
   const [meterNumber, setMeterNumber] = useState('');
   /* The period is read to the day. It still belongs to the month its end date
      falls in, which is what groups and de-duplicates bills. */
@@ -3323,7 +3380,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     const ids = new Set<string>();
     stalls.forEach((s) => ids.add(s.id));
     tenants.forEach((t) => { if (t.stallId && t.stallId !== '—') ids.add(t.stallId); });
-    return Array.from(ids).sort();
+    return Array.from(ids).sort(compareStallNumbers);
   }, [stalls, tenants]);
 
   const tenantForStall = useCallback((sid: string) => tenants.find((t) => t.stallId === sid), [tenants]);
@@ -3356,6 +3413,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     setStallId(sid);
     const t = tenantForStall(sid);
     setTenantId(t ? t.id : '');
+    setBilledTo(t ? t.name : '');
     fillFromRecords(sid, t, type);
     setError('');
   };
@@ -3391,7 +3449,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     if (rateNum <= 0) return 'Rate per unit must be greater than zero.';
     if (!periodStart || !periodEnd) return 'Set the days this billing period covers.';
     if (periodEnd < periodStart) return 'The billing period cannot end before it starts.';
-    if (dueDate && dueDate < periodEnd) return 'The due date falls before the billing period ends.';
+    if (!dueDate) return 'Set the date this bill falls due.';
     return '';
   };
 
@@ -3404,7 +3462,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
       type,
       stallId,
       tenantId: tenant?.id ?? '',
-      tenantName: tenant?.name ?? '',
+      tenantName: billedTo.trim() || tenant?.name || '',
       section,
       meterNumber: meterNumber.trim(),
       period,
@@ -3482,8 +3540,16 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           </div>
 
           <div className="form-group">
+            <label className="form-label" htmlFor="bill-billed-to">Billed To</label>
+            <input id="bill-billed-to" className="form-input" list="bill-tenant-names" value={billedTo} disabled={!stallId} placeholder={stallId ? 'Name the bill is made out to' : 'Choose the stall first'} onChange={(e) => { setBilledTo(e.target.value); setError(''); }} aria-describedby="bill-billed-to-hint" />
+            <datalist id="bill-tenant-names">{tenants.map((t) => <option key={t.id} value={t.name}>{t.stallId}</option>)}</datalist>
+            {stallId && <span id="bill-billed-to-hint" className="form-hint">{selectedTenant && billedTo.trim() && billedTo.trim() !== selectedTenant.name ? `Made out to ${billedTo.trim()}; the bill stays on ${selectedTenant.name}'s record for stall ${stallId}.` : 'Filled in from the stall. Change it if the bill is made out to someone else.'}</span>}
+          </div>
+
+          <div className="form-group">
             <label className="form-label">{type} Meter Number</label>
-            <input className="form-input" value={meterNumber} onChange={(e) => { setMeterNumber(e.target.value); setError(''); }} placeholder={`e.g. ${type === 'Electricity' ? 'EM-1101' : 'WM-2301'}`} />
+            <input className="form-input" list={type === 'Electricity' ? 'bill-electric-meters' : undefined} value={meterNumber} onChange={(e) => { setMeterNumber(e.target.value); setError(''); }} placeholder={type === 'Electricity' ? 'Serial number on the meter' : 'e.g. WM-2301'} />
+            {type === 'Electricity' && <ElectricMeterOptions id="bill-electric-meters" />}
           </div>
 
           <div className="form-row">
@@ -3499,8 +3565,9 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
 
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Due Date</label>
-              <input className="form-input" type="date" min={periodEnd} value={dueDate} onChange={(e) => { setDueTouched(true); setDueDate(e.target.value); setError(''); }} />
+              <label className="form-label" htmlFor="bill-due-date">Due Date</label>
+              <input id="bill-due-date" className="form-input" type="date" value={dueDate} onChange={(e) => { setDueTouched(true); setDueDate(e.target.value); setError(''); }} />
+              {dueDate && dueDate < periodEnd && <span className="form-hint">This is before the period ends ({formatIsoDate(periodEnd)}). Keep it if that is intended.</span>}
             </div>
             <div className="form-group">
               <label className="form-label">Whole Month</label>
@@ -3545,7 +3612,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
             <span className="material-symbols-outlined">{preset.icon}</span>
             <div>
               <strong>{type} Bill</strong>
-              <span>{stallId ? `Stall ${stallId}` : 'No stall selected'}{selectedTenant ? ` · ${selectedTenant.name}` : ''}</span>
+              <span>{stallId ? `Stall ${stallId}` : 'No stall selected'}{billedTo.trim() ? ` · ${billedTo.trim()}` : selectedTenant ? ` · ${selectedTenant.name}` : ''}</span>
             </div>
           </div>
           <div className="calc-row"><span>Meter number</span><strong>{meterNumber.trim() || 'Not on record'}</strong></div>
@@ -3571,7 +3638,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           <div className="calc-row"><span>Due date</span><strong>{formatIsoDate(dueDate)}</strong></div>
           {error && <div className="calc-error"><span className="material-symbols-outlined">error</span>{error}</div>}
           <div className="calc-actions">
-            <button className="btn-outline" onClick={() => { setStallId(''); setTenantId(''); setMeterNumber(''); setPrevious(''); setCurrent(''); setNotes(''); setError(''); }}>Clear</button>
+            <button className="btn-outline" onClick={() => { setStallId(''); setTenantId(''); setBilledTo(''); setMeterNumber(''); setPrevious(''); setCurrent(''); setNotes(''); setError(''); }}>Clear</button>
             <button className="btn-outline" onClick={handlePrint}><span className="material-symbols-outlined">print</span>Print Receipt</button>
             <button className="btn-primary" onClick={handleSave}><span className="material-symbols-outlined">save</span>Save to Records</button>
           </div>
@@ -3605,8 +3672,8 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
   const printList = () => onPrintList(
     'Violations',
     `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
-    ['Violation ID', 'Tenant', 'Violation', 'Points', 'Status', 'Recorded'],
-    ordered.map((v) => [v.id, v.tenant, issueWithCode(v.issue), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—']),
+    ['Violation ID', 'Tenant', 'Violation', 'Offence', 'Points', 'Status', 'Recorded'],
+    ordered.map((v) => [v.id, v.tenant, issueWithCode(v.issue), offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—']),
   );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -3647,7 +3714,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
   return (
     <>
       <div className="page-header">
-        <div><h2 className="page-title">Violations</h2><p className="page-subtitle">Record citations issued to tenants and track them through to resolution.</p></div>
+        <div><h2 className="page-title">Violations</h2><p className="page-subtitle">Record citations issued to tenants, count the offence, and track each one until the offender is reprimanded.</p></div>
         <div className="page-actions">
           <button className="btn-outline" onClick={() => setStatusFilter('')}><span className="material-symbols-outlined">tune</span>Clear Filter</button>
           <button className="btn-outline" onClick={onExport}><span className="material-symbols-outlined">download</span>Export CSV</button>
@@ -3660,7 +3727,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Total Violations</span><span className="material-symbols-outlined stat-icon">gavel</span></div>
           <div className="stat-value">{violations.length}</div>
-          <div className="stat-caption">{openList.length} Open, {violations.length - openList.length} Resolved</div>
+          <div className="stat-caption">{openList.length} Open, {violations.length - openList.length} Reprimanded</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Open</span><span className="material-symbols-outlined stat-icon danger">error</span></div>
@@ -3668,7 +3735,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
           <div className="stat-caption">{percent(ratio(openList.length, violations.length))} of all cases</div>
         </div>
         <div className="stat-card">
-          <div className="stat-header"><span className="stat-label">Resolved</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div>
+          <div className="stat-header"><span className="stat-label">Reprimanded</span><span className="material-symbols-outlined stat-icon success">check_circle</span></div>
           <div className="stat-value success">{violations.length - openList.length}</div>
           <div className="stat-caption">{percent(ratio(violations.length - openList.length, violations.length))} of all cases</div>
         </div>
@@ -3692,31 +3759,32 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
 
       <div className="panel">
         <div className="filter-row">
-          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Open">Open</option><option value="Resolved">Resolved</option></select>
+          <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Open">Open</option><option value="Reprimanded">Reprimanded</option></select>
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} violations</span>
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Violation ID</th><th>Tenant</th><th>Violation</th><th>Points</th><th>Recorded</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Violation ID</th><th>Tenant</th><th>Violation</th><th>Offence</th><th>Points</th><th>Recorded</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {paged.items.map((v) => (
                 <tr key={v.id}>
                   <td><strong>{v.id}</strong></td>
                   <td>{v.tenant}</td>
                   <td><ViolationIssue issue={v.issue} /></td>
+                  <td className="no-wrap"><span className={`offence-tag offence-${clampOffence(v.offence)}`}>{offenceLabel(v.offence)}</span></td>
                   <td><strong>{v.points}</strong></td>
                   <td>{v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—'}</td>
                   <td><StatusBadge status={v.status} /></td>
                   <td>
                     <div className="row-actions">
                       <button type="button" className="row-icon-btn" title="View violation" aria-label="View violation" onClick={() => onView(v)}><span className="material-symbols-outlined">visibility</span></button>
-                      <button type="button" className="row-icon-btn edit" title="Edit violation — resolve or reopen it here" aria-label="Edit violation" onClick={() => onEdit(v)}><span className="material-symbols-outlined">edit</span></button>
+                      <button type="button" className="row-icon-btn edit" title="Edit violation — mark it reprimanded or reopen it here" aria-label="Edit violation" onClick={() => onEdit(v)}><span className="material-symbols-outlined">edit</span></button>
                       <button type="button" className="row-icon-btn danger" title="Delete violation" aria-label="Delete violation" onClick={() => onDelete(v)}><span className="material-symbols-outlined">delete</span></button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">gavel</span>{violations.length === 0 ? 'No violations recorded. Use "Record Violation" to cite a tenant.' : 'No violations match the current filters.'}</div></td></tr>}
+              {paged.items.length === 0 && <tr><td colSpan={8}><div className="empty-state"><span className="material-symbols-outlined">gavel</span>{violations.length === 0 ? 'No violations recorded. Use "Record Violation" to cite a tenant.' : 'No violations match the current filters.'}</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -3775,12 +3843,17 @@ function violationReference(issue: string) {
  * One form for both recording and editing a citation — the fields are identical,
  * so splitting them would only duplicate the validation.
  */
-function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: {
-  violation?: Violation; existingIds: string[]; tenants: Tenant[];
+function ViolationForm({ violation, existingIds, tenants, violations, onSubmit, onCancel }: {
+  violation?: Violation; existingIds: string[]; tenants: Tenant[]; violations: Violation[];
   onSubmit: (v: Violation) => void; onCancel: () => void;
 }) {
   const [tenant, setTenant] = useState(violation?.tenant ?? '');
   const [issue, setIssue] = useState(violation?.issue ?? '');
+  /* Counted from the register — the party's earlier citations for the same
+     offence — until the officer picks one by hand. */
+  const [offenceChoice, setOffenceChoice] = useState(violation ? String(violation.offence) : '');
+  const counted = nextOffence(violations, tenant, issue, violation?.id);
+  const offence = offenceChoice ? Number(offenceChoice) : counted;
   const [points, setPoints] = useState(violation?.points ?? 1);
   const [status, setStatus] = useState<ViolationStatus>(violation?.status ?? 'Open');
   const [dateRecorded, setDateRecorded] = useState(violation?.dateRecorded || todayIso());
@@ -3790,14 +3863,14 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
 
   const applyStatus = (next: ViolationStatus) => {
     setStatus(next);
-    setDateResolved(next === 'Resolved' ? (dateResolved || todayIso()) : '');
+    setDateResolved(next === 'Reprimanded' ? (dateResolved || todayIso()) : '');
     setError('');
   };
 
   const handleSubmit = () => {
     if (!tenant.trim()) { setError('Enter the tenant or party being cited.'); return; }
     if (!issue.trim()) { setError('Choose the violation from the list, or pick "Not on this list" and describe it.'); return; }
-    if (dateResolved && dateRecorded && dateResolved < dateRecorded) { setError('Resolution date cannot be earlier than the date recorded.'); return; }
+    if (dateResolved && dateRecorded && dateResolved < dateRecorded) { setError('The reprimand date cannot be earlier than the date recorded.'); return; }
     onSubmit({
       ...(violation ?? {}),
       id: violation?.id ?? nextId('VIO', existingIds),
@@ -3806,7 +3879,8 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
       points,
       status,
       dateRecorded,
-      dateResolved: status === 'Resolved' ? (dateResolved || todayIso()) : '',
+      dateResolved: status === 'Reprimanded' ? (dateResolved || todayIso()) : '',
+      offence,
       notes: notes.trim(),
     });
   };
@@ -3822,7 +3896,7 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Tenant / Party Cited *</label>
-          <input className="form-input" list="violation-tenant-options" placeholder="e.g. GERILLA, JOHN DRANDREB" value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
+          <input className="form-input" list="violation-tenant-options" placeholder="Choose a tenant or type the name" value={tenant} onChange={(e) => { setTenant(e.target.value); setError(''); }} />
           <datalist id="violation-tenant-options">{tenants.map((t) => <option key={t.id} value={t.name}>{t.stallId}</option>)}</datalist>
         </div>
         <div className="form-group">
@@ -3834,19 +3908,31 @@ function ViolationForm({ violation, existingIds, tenants, onSubmit, onCancel }: 
         <label className="form-label" htmlFor="violation-issue">Violation *</label>
         <ViolationIssuePicker id="violation-issue" value={issue} onChange={(v) => { setIssue(v); setError(''); }} />
       </div>
+      <div className="form-group">
+        <label className="form-label" htmlFor="violation-offence">Offence</label>
+        <select id="violation-offence" className="form-select" value={offenceChoice} onChange={(e) => setOffenceChoice(e.target.value)} aria-describedby="violation-offence-hint">
+          <option value="">{offenceLabel(counted)} — counted from the register</option>
+          {OFFENCES.map((n) => <option key={n} value={n}>{offenceLabel(n)}</option>)}
+        </select>
+        <span id="violation-offence-hint" className="form-hint">
+          {tenant.trim() && issue
+            ? counted > 1 ? `${tenant.trim()} has ${counted - 1} earlier citation${counted === 2 ? '' : 's'} for this offence on record.` : `No earlier citation of ${tenant.trim()} for this offence is on record.`
+            : 'Choose the party and the violation, and the offence is counted for you.'}
+        </span>
+      </div>
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Status</label>
-          <select className="form-select" value={status} onChange={(e) => applyStatus(e.target.value as ViolationStatus)}><option value="Open">Open</option><option value="Resolved">Resolved</option></select>
+          <select className="form-select" value={status} onChange={(e) => applyStatus(e.target.value as ViolationStatus)}><option value="Open">Open</option><option value="Reprimanded">Reprimanded</option></select>
         </div>
         <div className="form-group">
           <label className="form-label">Date Recorded</label>
           <input className="form-input" type="date" value={dateRecorded} onChange={(e) => { setDateRecorded(e.target.value); setError(''); }} />
         </div>
       </div>
-      {status === 'Resolved' && (
+      {status === 'Reprimanded' && (
         <div className="form-group">
-          <label className="form-label">Date Resolved</label>
+          <label className="form-label">Date Reprimanded</label>
           <input className="form-input" type="date" value={dateResolved} onChange={(e) => { setDateResolved(e.target.value); setError(''); }} />
         </div>
       )}
@@ -3877,10 +3963,11 @@ function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
   const [notes, setNotes] = useState('');
 
   const effectiveStatus: ViolationStatus = status || current.status;
-  const dirty = !!(tenant.trim() || issue.trim() || points.trim() || status || dateRecorded || dateResolved || notes.trim());
+  const [offence, setOffence] = useState('');
+  const dirty = !!(tenant.trim() || issue.trim() || points.trim() || status || dateRecorded || dateResolved || offence || notes.trim());
 
   const merged = (): Violation => {
-    const resolvedOn = dateResolved || current.dateResolved || todayIso();
+    const reprimandedOn = dateResolved || current.dateResolved || todayIso();
     return {
       ...current,
       tenant: keepText(tenant, current.tenant),
@@ -3888,7 +3975,8 @@ function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
       points: points.trim() ? toAmount(points) : current.points,
       status: effectiveStatus,
       dateRecorded: dateRecorded || current.dateRecorded,
-      dateResolved: effectiveStatus === 'Resolved' ? resolvedOn : '',
+      dateResolved: effectiveStatus === 'Reprimanded' ? reprimandedOn : '',
+      offence: offence ? Number(offence) : current.offence,
       notes: keepText(notes, current.notes ?? ''),
     };
   };
@@ -3896,7 +3984,7 @@ function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
   const commit = () => {
     const next = merged();
     if (next.dateResolved && next.dateRecorded && next.dateResolved < next.dateRecorded) {
-      return 'Resolution date cannot be earlier than the date recorded.';
+      return 'The reprimand date cannot be earlier than the date recorded.';
     }
     onSave(next, {}, violation);
     return '';
@@ -3914,7 +4002,7 @@ function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
           <label className="form-label">Status</label>
           <select className="form-select" value={status} onChange={(e) => edit(setStatus)(e.target.value as ViolationStatus)}>
             <option value="">— Keep {current.status}</option>
-            <option value="Open">Open</option><option value="Resolved">Resolved</option>
+            <option value="Open">Open</option><option value="Reprimanded">Reprimanded</option>
           </select>
         </div>
       </div>
@@ -3933,14 +4021,21 @@ function ViolationEditForm({ violation, current, tenants, onSave, onClose }: {
         <label className="form-label" htmlFor="violation-edit-issue">Violation</label>
         <ViolationIssuePicker id="violation-edit-issue" value={issue} keepLabel={`— Keep ${issueWithCode(current.issue)}`} onChange={(v) => edit(setIssue)(v)} />
       </div>
+      <div className="form-group">
+        <label className="form-label" htmlFor="violation-edit-offence">Offence</label>
+        <select id="violation-edit-offence" className="form-select" value={offence} onChange={(e) => edit(setOffence)(e.target.value)}>
+          <option value="">— Keep {offenceLabel(current.offence)}</option>
+          {OFFENCES.map((n) => <option key={n} value={n}>{offenceLabel(n)}</option>)}
+        </select>
+      </div>
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Date Recorded</label>
           <input className="form-input" type="date" value={dateRecorded} onChange={(e) => edit(setDateRecorded)(e.target.value)} />
         </div>
-        {effectiveStatus === 'Resolved' && (
+        {effectiveStatus === 'Reprimanded' && (
           <div className="form-group">
-            <label className="form-label">Date Resolved</label>
+            <label className="form-label">Date Reprimanded</label>
             <input className="form-input" type="date" value={dateResolved} onChange={(e) => edit(setDateResolved)(e.target.value)} />
           </div>
         )}
@@ -4251,7 +4346,7 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
       <ReportSection index="VI" title="Compliance and Violations" summary="Citations issued against tenants and their present standing." action={<button className="btn-outline-sm" onClick={() => onNavigate('violations')}>Open Register</button>}>
         <div className="report-figures compact">
           <ReportFigure label="Open Citations" value={String(openViolations)} basis="Awaiting compliance" tone={openViolations > 0 ? 'danger' : 'success'} />
-          <ReportFigure label="Resolved" value={String(resolvedViolations)} basis={`${percent(ratio(resolvedViolations, state.violations.length))} of the register`} tone="success" />
+          <ReportFigure label="Reprimanded" value={String(resolvedViolations)} basis={`${percent(ratio(resolvedViolations, state.violations.length))} of the register`} tone="success" />
           <ReportFigure label="Demerit Points" value={String(demeritPoints)} basis={`Across ${state.violations.length} citation${state.violations.length === 1 ? '' : 's'}`} />
         </div>
         <div className="report-table-wrap">
@@ -4620,7 +4715,7 @@ const faqs = [
   { q: 'How are requirements recorded?', a: 'Requirements are a simple checklist — tick the box for each document the applicant has physically handed in. Nothing is uploaded or stored as a file. While an application is still in progress the status follows the checklist automatically (Incomplete until all boxes are ticked, then Pending Review). Once you approve or reject it, that decision stays put and ticking boxes will not change it.' },
   { q: 'How do I compute an electricity or water bill?', a: 'Open Utility Billing, pick Electricity or Water, then choose the stall number or the tenant — selecting one fills in the other. Enter the previous and current meter readings (the previous reading is carried over automatically from the last bill for that stall), adjust the rate or fixed charge if needed, and the total is computed live. Click "Save to Records" to post the bill.' },
   { q: 'Where do saved utility bills appear?', a: 'Every saved bill is listed under Utility Billing → Billing Records, attached to the stall and tenant you selected. It also shows up in that tenant\'s and stall\'s detail modal, in the Analytics utility panel, in the Logbook as a Collection entry, and in exports and backups.' },
-  { q: 'How do I record and resolve a violation?', a: 'Open the Violations page and click "Record Violation". Enter the tenant (pick one on record or type any other party), the offence, and how many demerit points it carries. Every citation starts Open. When it has been settled, click "Resolve" on its row — the resolution date is stamped automatically, and "Reopen" clears it again if the matter is not closed after all. Open points are totalled per tenant at the top of the page so repeat offenders are easy to spot.' },
+  { q: 'How do I record a violation and mark it reprimanded?', a: 'Open the Violations page and click "Record Violation". Enter the tenant (pick one on record or type any other party), choose the violation from the Section 22/23 list, and set the demerit points. The offence — 1st, 2nd or 3rd — is counted for you from the party\'s earlier citations for the same violation, and can be changed. Every citation starts Open. Once the offender has been reprimanded, open the citation\'s edit form and set its status to Reprimanded — the date is stamped automatically, and setting it back to Open clears it. Open points are totalled per tenant at the top of the page so repeat offenders are easy to spot.' },
   { q: 'Where can I view analytics?', a: 'The Analytics page provides a comprehensive view of stall occupancy, applicant pipeline, tenant distribution, violations summary, utility consumption and billing, and logbook activity.' },
   { q: 'Where is my data stored?', a: 'In a SQLite database file on this computer, kept in the application data folder — open it from Settings → Records Database, or Help → Open Data Folder. Nothing is sent anywhere: the system works with no internet connection at all. Copying that one file copies every record.' },
   { q: 'How do I export reports?', a: 'You can export data from the Analytics page or Settings. Reports are available as JSON files. The Logbook page also offers CSV export.' },
@@ -5209,7 +5304,7 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   return (
     <div className="form-grid">
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="e.g. DUZON, DULCE CORAZON" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
+        <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="Full name of the stallholder" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
         <div className="form-group">
           <label className="form-label">Mobile Number</label>
           <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
@@ -5222,7 +5317,7 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
         </div>
         <div className="form-group">
           <label className="form-label">Stall ID</label>
-          <input className="form-input" placeholder="e.g. KS-074" list="stall-id-options" value={stallId} onChange={(e) => applyStall(e.target.value)} />
+          <input className="form-input" placeholder="e.g. KS-74" list="stall-id-options" value={stallId} onChange={(e) => applyStall(e.target.value)} />
           <datalist id="stall-id-options">{stalls.filter((s) => s.status === 'Available').map((s) => <option key={s.id} value={s.id}>{s.section}</option>)}</datalist>
         </div>
       </div>
@@ -5240,7 +5335,8 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Electricity Meter Number</label>
-          <input className="form-input" placeholder="e.g. EM-1101" value={electricMeter} onChange={(e) => setElectricMeter(e.target.value)} />
+          <input className="form-input" list="add-tenant-electric-meters" placeholder="Serial number on the meter" value={electricMeter} onChange={(e) => setElectricMeter(e.target.value)} />
+          <ElectricMeterOptions id="add-tenant-electric-meters" />
         </div>
         <div className="form-group">
           <label className="form-label">Water Meter Number</label>
@@ -5353,7 +5449,7 @@ function StallEditForm({ stall, occupant, bills, existingIds, onSave, onClose }:
      before it is saved, because the tenant record does not come back. */
   const releasing = locked && effectiveStatus === 'Available';
   /* The stall ID carries its section's code, so a stall moved to another
-     section keeps its number under the new code: KS-074 becomes FS-074. */
+     section keeps its number under the new code: KS-74 becomes FS-74. */
   const movedTo = section && section !== stall.section ? section : '';
   const renumbered = movedTo ? renumberForSection(stall.id, movedTo) : stall.id;
 
@@ -5840,7 +5936,8 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
         </div>
         <div className="form-group">
           <label className="form-label">Electricity Meter Number</label>
-          <input className="form-input" value={electricMeter} placeholder={keepHint(current.meters.Electricity)} onChange={(e) => edit(setElectricMeter)(e.target.value)} />
+          <input className="form-input" list="edit-tenant-electric-meters" value={electricMeter} placeholder={keepHint(current.meters.Electricity)} onChange={(e) => edit(setElectricMeter)(e.target.value)} />
+          <ElectricMeterOptions id="edit-tenant-electric-meters" />
         </div>
       </div>
       <div className="form-group">
@@ -6258,7 +6355,7 @@ function StatusBadge({ status }: { status: string }) {
     'Temporarily Closed': 'badge badge-closed', 'Closed': 'badge badge-shut', 'Abandoned': 'badge badge-abandoned',
     'Pending Review': 'badge badge-pending', 'Incomplete': 'badge badge-incomplete', 'Approved': 'badge badge-approved', 'Rejected': 'badge badge-rejected',
     'No BP': 'badge badge-nobp',
-    'Active': 'badge badge-active', 'Expiring Soon': 'badge badge-expiring', 'Open': 'badge badge-open', 'Resolved': 'badge badge-resolved',
+    'Active': 'badge badge-active', 'Expiring Soon': 'badge badge-expiring', 'Open': 'badge badge-open', 'Reprimanded': 'badge badge-resolved', 'Resolved': 'badge badge-resolved',
   };
   return <span className={map[status] || 'badge'}>{status}</span>;
 }
@@ -6321,7 +6418,8 @@ function ViolationDetailView({ violation, onEdit, onClose }: { violation: Violat
           <RecordRow label="Offence" value={violation.issue} />
           <RecordRow label="Ordinance Reference" value={violationReference(violation.issue)} />
           <RecordRow label="Date Recorded" value={violation.dateRecorded ? formatIsoDate(violation.dateRecorded) : ''} />
-          <RecordRow label="Date Resolved" value={violation.dateResolved ? formatIsoDate(violation.dateResolved) : ''} />
+          <RecordRow label="Offence" value={offenceLabel(violation.offence)} />
+          <RecordRow label="Date Reprimanded" value={violation.dateResolved ? formatIsoDate(violation.dateResolved) : ''} />
         </div>
         <RecordTotal label="Demerit Points" value={String(violation.points)} />
       </RecordSection>
@@ -6338,7 +6436,7 @@ function ViolationDetailView({ violation, onEdit, onClose }: { violation: Violat
   </>);
 }
 
-function BillDetailView({ bill, onToggleStatus, onPrint, onClose }: { bill: UtilityBill; onToggleStatus: (id: string) => void; onPrint: (b: UtilityBill) => void; onClose: () => void }) {
+function BillDetailView({ bill, onToggleStatus, onPrint, onEdit, onClose }: { bill: UtilityBill; onToggleStatus: (id: string) => void; onPrint: (b: UtilityBill) => void; onEdit: () => void; onClose: () => void }) {
   const preset = UTILITY_PRESETS[bill.type];
   return (<>
     <RecordSheet
@@ -6386,9 +6484,64 @@ function BillDetailView({ bill, onToggleStatus, onPrint, onClose }: { bill: Util
 
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
+      <button className="btn-outline" onClick={onEdit}><span className="material-symbols-outlined">edit</span>Edit Details</button>
       <button className="btn-outline" onClick={() => onPrint(bill)}><span className="material-symbols-outlined">print</span>Print Receipt</button>
       <button className="btn-primary" onClick={() => { onToggleStatus(bill.id); onClose(); }}>{bill.status === 'Paid' ? 'Mark as Unpaid' : 'Mark as Paid'}</button>
     </div>
+  </>);
+}
+
+/* What can be changed on a bill once it is on record: who it is made out to,
+   when it falls due, and the notes. The readings and the amount are what was
+   billed and stay as they are — a wrong reading is a new bill, not an edit.
+   Blank keeps what is on record, as on every other edit form. */
+function BillEditForm({ bill, tenants, onSave, onClose }: { bill: UtilityBill; tenants: Tenant[]; onSave: (b: UtilityBill) => void; onClose: () => void }) {
+  const [billedTo, setBilledTo] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const dirty = !!(billedTo.trim() || dueDate || notes.trim());
+
+  const commit = () => {
+    const next: UtilityBill = {
+      ...bill,
+      tenantName: keepText(billedTo, bill.tenantName),
+      dueDate: dueDate || bill.dueDate,
+      notes: keepText(notes, bill.notes),
+    };
+    if (!next.dueDate) return 'Set the date this bill falls due.';
+    onSave(next);
+    return '';
+  };
+
+  const form = useSaveChanges(dirty, commit);
+  const edit = <T,>(set: (v: T) => void) => (value: T) => { form.clearError(); set(value); };
+  const effectiveDue = dueDate || bill.dueDate;
+
+  return (<>
+    <div className="form-grid">
+      <SaveNote error={form.error} />
+      <div className="form-row">
+        <div className="form-group"><label className="form-label">Bill</label><input className="form-input" value={`${bill.id} · ${bill.type} · Stall ${bill.stallId}`} disabled /></div>
+        <div className="form-group"><label className="form-label">Amount on Record</label><input className="form-input" value={money(bill.amount)} disabled /></div>
+      </div>
+      <div className="form-group">
+        <label className="form-label" htmlFor="edit-bill-billed-to">Billed To</label>
+        <input id="edit-bill-billed-to" className="form-input" list="edit-bill-tenant-names" value={billedTo} placeholder={keepHint(bill.tenantName || 'Unassigned')} onChange={(e) => edit(setBilledTo)(e.target.value)} />
+        <datalist id="edit-bill-tenant-names">{tenants.map((t) => <option key={t.id} value={t.name}>{t.stallId}</option>)}</datalist>
+      </div>
+      <div className="form-group">
+        <label className="form-label" htmlFor="edit-bill-due">Due Date</label>
+        <input id="edit-bill-due" className="form-input" type="date" value={dueDate} onChange={(e) => edit(setDueDate)(e.target.value)} />
+        <span className="form-hint">
+          On record: {formatIsoDate(bill.dueDate)}.{effectiveDue < todayIso() && bill.status === 'Unpaid' ? ` Unpaid past ${formatIsoDate(effectiveDue)}, a printed receipt carries the ${SURCHARGE_RATES[bill.type]}% late surcharge.` : ''}
+        </span>
+      </div>
+      <div className="form-group">
+        <label className="form-label" htmlFor="edit-bill-notes">Notes</label>
+        <input id="edit-bill-notes" className="form-input" value={notes} placeholder={keepHint(bill.notes)} onChange={(e) => edit(setNotes)(e.target.value)} />
+      </div>
+    </div>
+    <EditActions dirty={dirty} onSave={form.save} onCancel={onClose} />
   </>);
 }
 
@@ -7507,7 +7660,7 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, signedIn, onC
         </div>
         <div className="form-group">
           <label className="form-label">Stall No.</label>
-          <input className="form-input" value={stallNo} placeholder="e.g. MS-01" onChange={(e) => setStallNo(e.target.value)} />
+          <input className="form-input" value={stallNo} placeholder="e.g. KS-1" onChange={(e) => setStallNo(e.target.value)} />
         </div>
         <div className="form-group">
           <label className="form-label">Slips on the Sheet</label>
@@ -7576,16 +7729,11 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, signedIn, onC
    Start-up
    ============================================================ */
 
-/* The seat at the head of the office board: who the first administrator
-   account is offered to on a brand new installation. */
-function boardHead(officers: Officer[]) {
-  return officers.find((o) => !o.reportsTo && o.name) ?? officers.find((o) => o.name);
-}
-
-async function readAccounts(officers: Officer[]): Promise<{ accounts: Account[]; accountsProblem: string }> {
+/* The three office accounts, with any password already chosen on them. */
+async function readAccounts(): Promise<{ accounts: Account[]; accountsProblem: string }> {
   try {
-    const accounts = (await loadAccounts()).map(normalizeAccount).filter((a): a is Account => !!a);
-    return { accounts: accounts.length > 0 ? accounts : firstAccounts(boardHead(officers), new Date()), accountsProblem: '' };
+    const stored = (await loadAccounts()).map(normalizeAccount).filter((a): a is Account => !!a);
+    return { accounts: officeAccounts(stored, new Date()), accountsProblem: '' };
   } catch (error) {
     return { accounts: [], accountsProblem: error instanceof Error ? error.message : 'The accounts could not be read.' };
   }
@@ -7608,12 +7756,17 @@ async function startUp(): Promise<BootData> {
   let notice = '';
   if (!loaded.problem && loaded.raw && loaded.dataset !== DIRECTORY_EDITION) {
     try {
-      const copyAt = await keepCopyBefore('stall-directory', loaded.raw);
-      state = applyStallDirectory(state, copyAt);
+      const copyAt = await keepCopyBefore(DIRECTORY_EDITION, loaded.raw);
+      const fresh = freshFromDirectory(state, copyAt);
+      /* Written at once, replacing every table and counter, so nothing old
+         can linger in a row the new records happen not to mention. */
+      await replaceAll(fresh, currentIdCounters(), DIRECTORY_EDITION);
+      state = fresh;
       dataset = DIRECTORY_EDITION;
-      notice = `The stall register now follows the Market Stall Directory — ${state.stalls.length} stalls in ${SECTION_LIST.length} sections. The records from before were saved to ${copyAt}.`;
+      notice = `The records now hold only the Market Stall Directory — ${state.stalls.length} stalls, ${state.tenants.length} tenants. Everything from before was cleared; a copy was saved to ${copyAt}.`;
     } catch (error) {
-      notice = `The stall register was not updated to the Market Stall Directory, because a safety copy of the current records could not be made first (${error instanceof Error ? error.message : 'unknown error'}). Nothing was changed; it will be tried again at the next start.`;
+      seedIdCounters(loaded.idCounters);
+      notice = `The records were not updated to the Market Stall Directory, because a safety copy of the current records could not be made first (${error instanceof Error ? error.message : 'unknown error'}). Nothing was changed; it will be tried again at the next start.`;
     }
   }
   return {
@@ -7621,7 +7774,7 @@ async function startUp(): Promise<BootData> {
     savedAt: loaded.savedAt,
     problem: loaded.problem,
     imported: loaded.imported,
-    ...(await readAccounts(state.officers)),
+    ...(await readAccounts()),
   };
 }
 

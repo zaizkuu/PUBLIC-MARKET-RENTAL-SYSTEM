@@ -266,7 +266,7 @@ export default function LoginScreen({ accounts, problem, onRetry, lockedAccount,
             );
           })}
         </ul>
-        <p className="login-hint">Not on the list? Ask an administrator to add your account in <strong>Settings → User Accounts</strong>.</p>
+        <p className="login-hint">First time here? Choose your name and set your own password. Forgotten it? The Market Supervisor can reset it from <strong>Settings → User Accounts</strong>.</p>
       </>
     );
   } else if (step === 'password') {

@@ -9,9 +9,9 @@
    reordering them would mean guessing which word is the surname.
 
    Stall numbers are the ones painted on the layout, unique across the whole
-   market. A stall's ID is its section code followed by that number, so
-   stall 1 in the Kakanin section is KS-001 and can still be found on the
-   sheet by its number.
+   market. A stall's ID is its section code followed by that number exactly as
+   the directory prints it, so stall 1 in the Kakanin section is KS-1 and
+   stall 105 in Fish is FS-105 — found on the sheet by the same number.
 
    Plain TypeScript with no imports, so the Node test runner can load it as-is
    (see tests/directory.test.mjs).
@@ -55,9 +55,24 @@ export function sectionByCode(code: string): SectionInfo | undefined {
   return SECTION_LIST.find((s) => s.code === upper);
 }
 
-/** KS + 1 → KS-001. */
+/** KS + 1 → KS-1: the number as the directory prints it, no leading zeros. */
 export function stallIdFor(code: string, number: number): string {
-  return `${code.toUpperCase()}-${String(number).padStart(3, '0')}`;
+  return `${code.toUpperCase()}-${number}`;
+}
+
+/* Stall IDs in number order — KS-2 before KS-10 — rather than letter order. */
+export function compareStallIds(a: string, b: string): number {
+  return a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' });
+}
+
+/* The directory's own order: by the number on the layout, whatever the
+   section — KS-4, DS-5, DS-6, FD-7… IDs without a number go last. */
+export function compareStallNumbers(a: string, b: string): number {
+  const x = stallNumber(a);
+  const y = stallNumber(b);
+  if (Number.isFinite(x) && Number.isFinite(y) && x !== y) return x - y;
+  if (Number.isFinite(x) !== Number.isFinite(y)) return Number.isFinite(x) ? -1 : 1;
+  return compareStallIds(a, b);
 }
 
 /** The number painted on the stall, or NaN for an ID that carries none. */
@@ -80,8 +95,8 @@ export function rateForStallId(stallId: string): number {
 
 /**
  * Reads what an officer typed into a Stall ID box for a stall in `section`.
- * A bare number takes the section's prefix ("74" → "KS-074"); a full ID is
- * tidied ("ks-74" → "KS-074"). A prefix belonging to another section, or
+ * A bare number takes the section's prefix ("74" → "KS-74"); a full ID is
+ * tidied ("ks-074" → "KS-74"). A prefix belonging to another section, or
  * anything that is not a stall ID at all, comes back as an error.
  */
 export function parseStallId(typed: string, section: string): { id: string } | { error: string } {
@@ -322,8 +337,9 @@ export const DIRECTORY_ROWS: DirectoryRow[] = [
   [212, NO_NAME, 'DS', OPEN_AREA],
 ];
 
-/** Bumped whenever the rows above change, so an installation knows to reload them. */
-export const DIRECTORY_EDITION = 'market-stall-directory-2026-10';
+/** Bumped whenever the rows above change, so an installation knows to reload them.
+    The "b" edition numbers stalls as printed (KS-1) and starts every record afresh. */
+export const DIRECTORY_EDITION = 'market-stall-directory-2026-10b';
 
 export type DirectoryStall = {
   id: string;
@@ -335,8 +351,9 @@ export type DirectoryStall = {
   note: string;
 };
 
-/** A vendor's hold on one stall — a tenant record before the app adds its own fields. */
-export type DirectoryTenancy = { stallId: string; name: string; section: string; rent: number };
+/** A vendor's hold on one stall — a tenant record before the app adds its own fields.
+    `number` is the stall's number in the directory, which also numbers the tenant record. */
+export type DirectoryTenancy = { number: number; stallId: string; name: string; section: string; rent: number };
 
 /**
  * The register the directory describes: every stall in stall-number order,
@@ -361,7 +378,7 @@ export function buildDirectory(): { stalls: DirectoryStall[]; tenancies: Directo
       note,
     });
     if (!open && !NON_VENDOR_STALLS.has(vendor)) {
-      tenancies.push({ stallId: id, name: vendor, section: section.name, rent: section.rate });
+      tenancies.push({ number, stallId: id, name: vendor, section: section.name, rent: section.rate });
     }
   }
   return { stalls, tenancies };

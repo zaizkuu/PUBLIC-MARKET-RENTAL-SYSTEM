@@ -44,25 +44,12 @@ try {
 
  await page.setViewport({ width: 1440, height: 1100 });
  await page.goto('http://127.0.0.1:' + server.address().port, { waitUntil: 'networkidle0' });
- await page.waitForSelector('.market-proposal');
+ await page.waitForSelector('.market-stall');
  await page.$eval('.public-market-map', element => element.scrollIntoView());
- assert.ok(await page.$('[aria-label="Search proposal and stall records"]'), 'proposal offers its own search');
- assert.ok((await page.$$('.proposal-zone')).length >= 3, 'proposal presents selectable market zones');
- assert.ok((await page.$$('.proposal-bay')).length > 0, 'proposal has conceptual unassigned bays');
- assert.equal(await page.$('.market-stall'), null, 'saved stall assignments are not presented as proposal geometry');
- assert.equal(await page.$eval('.market-proposal svg', element => /FV-01|MS-01|FS-01/.test(element.textContent)), false, 'proposal does not attach real office stall IDs to imagined positions');
- await page.$eval('.proposal-zone', element => element.focus());
- await page.keyboard.press('Enter');
- assert.ok(await page.$('.proposal-zone[aria-pressed="true"]'), 'zones can be selected using the keyboard');
- await page.$eval('.proposal-bay', element => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
- assert.match(await page.$eval('.market-proposal', element => element.textContent), /Concept bay/i);
- assert.ok((await page.$$eval('.proposal-sources a[href]', elements => elements.filter(element => element.href.startsWith('https://')).length)) >= 2, 'research sources are linked');
- assert.ok(await page.evaluate(() => [...document.querySelectorAll('.market-proposal a, .market-proposal button')].some(element => element.textContent.trim() === 'Download plan (SVG)')), 'a standalone plan can be downloaded');
- const beforeProposal = await publicLayout();
- assert.equal(beforeProposal.revision, 0);
- assert.equal(beforeProposal.records.length, 0);
- assert.ok(beforeProposal.stalls.every(unit => !unit.recordId), 'opening a proposal does not assign rental records');
- await screenshot('market-proposed-plan.png');
+ const beforeEditing = await publicLayout();
+ assert.equal(beforeEditing.revision, 0);
+ assert.equal(beforeEditing.records.length, 0);
+ assert.ok(beforeEditing.stalls.every(unit => !unit.recordId), 'opening the map does not assign rental records');
 
  await clickText('Saved stall map');
  await page.waitForSelector('.market-stall');
@@ -125,7 +112,6 @@ try {
  assert.equal(published.verified, false, 'publication does not verify entrances');
 
  await clickText('Public view');
- if (await page.$('.market-proposal')) await clickText('Saved stall map');
  await page.waitForSelector('[aria-label="Search market floor plan"]');
  await page.type('[aria-label="Search market floor plan"]', 'FV-01');
  await page.keyboard.press('Enter');
@@ -138,14 +124,9 @@ try {
  await page.setViewport({ width: 600, height: 900 });
  assert.equal(await page.$eval('.public-market-map', element => element.scrollWidth <= element.clientWidth), true, 'saved map fits narrow screens');
  await screenshot('market-saved-mobile.png');
- await clickText('Proposed layout');
- await page.waitForSelector('.market-proposal');
- assert.equal(await page.$eval('.public-market-map', element => element.scrollWidth <= element.clientWidth), true, 'proposal fits narrow screens');
- assert.equal(await page.$eval('.market-proposal svg', element => /FV-01|MS-01|FS-01/.test(element.textContent)), false, 'publishing a saved assignment does not turn a conceptual bay into an official location');
  assert.equal((await publicLayout()).revision, published.revision, 'switching views does not mutate the saved map');
- await screenshot('market-proposed-mobile.png');
  assert.deepEqual(errors, []);
- console.log('PASS: proposed layout, concept bays, source links/export, saved-map search, isolated administration, draft privacy, publication, mapped stall selection, unverified routing, and narrow layouts.');
+ console.log('PASS: saved-map search, isolated administration, draft privacy, publication, mapped stall selection, unverified routing, and narrow layouts.');
 } finally {
  await browser?.close();
  server.closeAllConnections();
