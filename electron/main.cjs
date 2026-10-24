@@ -5,8 +5,9 @@
 // it only through the calls listed in preload.cjs.
 // CommonJS (.cjs) because package.json declares "type": "module".
 
-const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain, session } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
 const db = require('./db.cjs');
 
 /** Where the records are kept. Backing this file up backs up the whole system. */
@@ -136,6 +137,22 @@ function registerDatabaseHandlers() {
   handle('db:stats', () => db.stats());
   handle('db:integrity-check', () => db.integrityCheck());
 
+  handle('accounts:load', () => db.loadAccounts());
+  handle('accounts:save', (accounts) => db.saveAccounts(accounts));
+
+  /* A copy taken without asking, before the app itself changes records in
+     bulk (bringing an installation up to a new stall directory). It lands in
+     a "backups" folder beside the database, named for what it precedes. */
+  handle('db:snapshot', async (label) => {
+    const safe = String(label || 'snapshot').toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 60);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const folder = path.join(app.getPath('userData'), 'backups');
+    fs.mkdirSync(folder, { recursive: true });
+    const target = path.join(folder, `market-records-before-${safe}-${stamp}.db`);
+    await db.backupTo(target);
+    return target;
+  });
+
   handle('db:reveal-folder', async () => {
     await shell.openPath(app.getPath('userData'));
     return app.getPath('userData');
@@ -152,6 +169,26 @@ function registerDatabaseHandlers() {
     await db.backupTo(filePath);
     return { canceled: false, filePath };
   });
+}
+
+/**
+ * The system is offline by design: records never leave this computer. Any
+ * request the window makes to the network is refused here, so no part of the
+ * interface — present or future — can quietly start depending on internet
+ * access or send records anywhere. Links the operator clicks still open in
+ * the system browser (see setWindowOpenHandler); in development the local
+ * dev server is the one address allowed through.
+ */
+function keepOffline() {
+  const allowed = isDev ? new URL(DEV_SERVER_URL).host : null;
+  session.defaultSession.webRequest.onBeforeRequest(
+    { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },
+    (details, callback) => {
+      let host = '';
+      try { host = new URL(details.url).host; } catch { /* unparseable — refuse it */ }
+      callback({ cancel: !(allowed && host === allowed) });
+    },
+  );
 }
 
 /**
@@ -250,6 +287,7 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
   if (!openDatabase()) { app.exit(1); return; }
+  keepOffline();
   registerDatabaseHandlers();
   buildMenu();
   createWindow();

@@ -1,7 +1,7 @@
 // The only bridge between the renderer (the React app) and the desktop shell.
 //
-// One surface is exposed and nothing else: the SQLite database, which only the
-// main process may touch. The renderer stays sandboxed — no Node, no filesystem, no shell — so a bug in the interface
+// One surface is exposed and nothing else: the SQLite database (records and the
+// sign-in accounts), which only the main process may touch. The renderer stays sandboxed — no Node, no filesystem, no shell — so a bug in the interface
 // cannot reach the rest of the machine. `contextIsolation` stays on and
 // `nodeIntegration` stays off; the calls listed here are the whole surface.
 
@@ -34,4 +34,11 @@ contextBridge.exposeInMainWorld('pmrmsDB', {
 
   /** Opens the folder holding the database in File Explorer. */
   revealFolder: () => ipcRenderer.invoke('db:reveal-folder'),
+
+  /** Copies the database into its backups folder before a bulk change. */
+  snapshot: (label) => ipcRenderer.invoke('db:snapshot', label),
+
+  /** Who may sign in. Stored apart from the records; see db.cjs. */
+  loadAccounts: () => ipcRenderer.invoke('accounts:load'),
+  saveAccounts: (accounts) => ipcRenderer.invoke('accounts:save', accounts),
 });

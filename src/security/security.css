@@ -1,0 +1,631 @@
+/* ============================================================
+   Sign-in screen and account management
+   ============================================================
+   Built from the same tokens as the rest of the system: the sidebar's
+   blue-to-violet gradient and gold accent on the brand panel, the white
+   surface cards, the Inter type scale, and the dark-mode overrides. */
+
+.login-screen {
+  position: relative;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.1fr);
+  min-height: var(--viewport-h);
+  background: var(--color-bg);
+}
+
+/* Over the app when the screen is locked, so the page underneath (and any
+   half-filled form on it) is still there when it is unlocked. */
+.login-screen.overlay {
+  position: fixed;
+  inset: 0;
+  min-height: 0;
+  height: var(--viewport-h);
+  overflow: auto;
+}
+
+/* ---- Brand panel ---- */
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+  padding: 56px 52px 40px;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text-active);
+  position: relative;
+  overflow: hidden;
+}
+
+/* A faint ring behind the seal — the market's mark, not decoration for its own sake. */
+.login-brand::after {
+  content: '';
+  position: absolute;
+  right: -160px;
+  bottom: -160px;
+  width: 460px;
+  height: 460px;
+  border-radius: 50%;
+  border: 56px solid rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+}
+
+.login-brand-top {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.login-seal {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.45), 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.login-brand-kicker {
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sidebar-accent);
+}
+
+.login-brand-title {
+  margin-top: 6px;
+  font-size: calc(34px * var(--font-scale, 1));
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.login-brand-sub {
+  margin-top: 8px;
+  font-size: calc(16px * var(--font-scale, 1));
+  color: var(--sidebar-text);
+}
+
+.login-brand-points {
+  display: grid;
+  gap: 16px;
+  max-width: 420px;
+}
+
+.login-brand-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: calc(15px * var(--font-scale, 1));
+  line-height: 1.5;
+  color: var(--sidebar-text);
+}
+
+.login-brand-points .material-symbols-outlined {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--sidebar-accent);
+  font-size: calc(20px * var(--font-scale, 1));
+}
+
+.login-brand-foot {
+  margin-top: auto;
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--sidebar-text);
+  border-top: 1px solid var(--sidebar-border);
+  padding-top: 18px;
+}
+
+/* ---- Sign-in panel ---- */
+
+.login-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 48px 32px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 480px;
+  padding: 36px 36px 32px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.login-card form {
+  display: grid;
+  gap: 16px;
+}
+
+.login-title {
+  font-size: calc(26px * var(--font-scale, 1));
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.login-lead {
+  margin-top: -8px;
+  font-size: calc(15px * var(--font-scale, 1));
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.login-card > .login-lead {
+  margin: 6px 0 20px;
+}
+
+.login-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 480px;
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--color-text-tertiary);
+}
+
+.login-foot .material-symbols-outlined {
+  font-size: calc(18px * var(--font-scale, 1));
+}
+
+/* ---- Account list ---- */
+
+.login-accounts {
+  display: grid;
+  gap: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.login-account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.login-account:hover {
+  border-color: var(--color-primary-light);
+  background: var(--color-primary-bg);
+}
+
+.login-account:focus-visible,
+.login-link:focus-visible,
+.login-reveal:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.login-avatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary-hover));
+  color: #fff;
+  font-size: calc(16px * var(--font-scale, 1));
+  font-weight: 700;
+  box-shadow: 0 0 0 3px var(--color-primary-bg);
+}
+
+/* The administrator's ring is the sidebar's gold, so the office head is easy to find. */
+.login-avatar.admin {
+  background: linear-gradient(135deg, #3a3aa0, #243b8f);
+  box-shadow: 0 0 0 3px var(--sidebar-accent);
+}
+
+.login-account-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.login-account-text strong {
+  font-size: calc(16px * var(--font-scale, 1));
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.login-account-text span {
+  font-size: calc(13.5px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+}
+
+.login-chevron {
+  color: var(--color-text-tertiary);
+}
+
+.login-tag {
+  justify-self: start;
+  margin-top: 4px;
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 600;
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.login-tag.locked {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.login-tag.change {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+/* ---- The chosen account, above its password ---- */
+
+.login-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-light);
+}
+
+.login-who-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.login-who-text strong {
+  font-size: calc(15.5px * var(--font-scale, 1));
+  color: var(--color-text);
+}
+
+.login-who-text span {
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+}
+
+/* ---- Fields ---- */
+
+.login-field {
+  display: grid;
+  gap: 7px;
+}
+
+.login-field label {
+  font-size: calc(15px * var(--font-scale, 1));
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.login-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.login-input:focus-within {
+  border-color: var(--color-primary-light);
+  box-shadow: 0 0 0 3px rgba(43, 93, 212, 0.12);
+}
+
+.login-input > .material-symbols-outlined {
+  color: var(--color-text-tertiary);
+  font-size: calc(20px * var(--font-scale, 1));
+}
+
+.login-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: calc(16px * var(--font-scale, 1));
+  color: var(--color-text);
+  letter-spacing: 0.02em;
+}
+
+.login-reveal {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.login-reveal:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.login-reveal .material-symbols-outlined {
+  font-size: calc(20px * var(--font-scale, 1));
+}
+
+.login-submit {
+  justify-content: center;
+  width: 100%;
+  padding: 12px 18px;
+  margin-top: 4px;
+}
+
+.login-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.login-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.login-link {
+  padding: 2px 0;
+  font-size: calc(14px * var(--font-scale, 1));
+  font-weight: 600;
+  color: var(--color-primary);
+  border-radius: var(--radius-xs);
+}
+
+.login-link:hover {
+  text-decoration: underline;
+}
+
+.login-hint {
+  font-size: calc(13.5px * var(--font-scale, 1));
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+.login-card > .login-hint {
+  margin-top: 18px;
+}
+
+/* ---- Notes: errors, caps lock, lockout — the app's ruled marginal note ---- */
+
+.login-error,
+.login-caps,
+.login-locked {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: calc(14.5px * var(--font-scale, 1));
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.login-error .material-symbols-outlined { color: var(--color-danger); font-size: calc(20px * var(--font-scale, 1)); }
+.login-caps { border-left-color: var(--color-warning); }
+.login-caps .material-symbols-outlined { color: var(--color-warning); font-size: calc(20px * var(--font-scale, 1)); }
+.login-locked { border-left-color: var(--color-warning); background: var(--color-warning-bg); }
+.login-locked .material-symbols-outlined { color: var(--color-warning); font-size: calc(20px * var(--font-scale, 1)); }
+
+/* ---- Password rules ---- */
+
+.login-rules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 14px;
+  font-size: calc(13.5px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+}
+
+.login-rules li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.login-rules .material-symbols-outlined {
+  font-size: calc(17px * var(--font-scale, 1));
+  color: var(--color-text-tertiary);
+}
+
+.login-rules li.met { color: var(--color-text); }
+.login-rules li.met .material-symbols-outlined { color: var(--color-success); }
+
+/* ---- Recovery code ---- */
+
+.login-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 2px dashed var(--sidebar-accent);
+  border-radius: var(--radius-lg);
+  background: var(--color-warning-bg);
+}
+
+.login-code code {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: calc(19px * var(--font-scale, 1));
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.login-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: calc(14.5px * var(--font-scale, 1));
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.login-check input {
+  margin-top: 3px;
+  width: 17px;
+  height: 17px;
+  accent-color: var(--color-primary);
+}
+
+/* ---- Narrow windows: the brand panel becomes a header ---- */
+
+@media (max-width: 900px) {
+  .login-screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .login-brand { padding: 28px 24px; gap: 18px; }
+  .login-brand-top { flex-direction: row; align-items: center; gap: 16px; }
+  .login-seal { width: 64px; height: 64px; }
+  .login-brand-title { font-size: calc(24px * var(--font-scale, 1)); }
+  .login-brand-points, .login-brand-foot, .login-brand::after { display: none; }
+  .login-panel { justify-content: flex-start; padding: 28px 16px; }
+  .login-card { padding: 26px 22px; }
+  .login-rules { grid-template-columns: 1fr; }
+}
+
+:root[data-theme="dark"] .login-avatar.admin { background: linear-gradient(135deg, #4b4bc0, #2e4aa8); }
+:root[data-theme="dark"] .login-code code { color: var(--color-text); }
+
+/* ============================================================
+   Signed-in account menu (top bar)
+   ============================================================ */
+
+.account-menu-wrapper { position: relative; }
+
+.account-menu-button {
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
+.account-menu-button:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  /* Above the shared click-away backdrop (90), like the notifications panel. */
+  z-index: 100;
+  width: 280px;
+  padding: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.account-menu-head {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+  margin-bottom: 6px;
+}
+
+.account-menu-head strong { font-size: calc(15px * var(--font-scale, 1)); color: var(--color-text); }
+.account-menu-head span { font-size: calc(13px * var(--font-scale, 1)); color: var(--color-text-secondary); }
+
+.account-menu button.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  font-size: calc(14.5px * var(--font-scale, 1));
+  color: var(--color-text);
+  text-align: left;
+}
+
+.account-menu button.account-menu-item:hover,
+.account-menu button.account-menu-item:focus-visible {
+  background: var(--color-surface-hover);
+  outline: none;
+}
+
+.account-menu-item .material-symbols-outlined {
+  font-size: calc(20px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+}
+
+/* ============================================================
+   Settings → User Accounts
+   ============================================================ */
+
+.account-role {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: var(--radius-full);
+  font-size: calc(12.5px * var(--font-scale, 1));
+  font-weight: 600;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.account-role.admin {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-color: transparent;
+}
+
+.account-state { font-size: calc(13px * var(--font-scale, 1)); color: var(--color-text-secondary); }
+.account-state.warn { color: var(--color-warning); font-weight: 600; }
+.account-state.danger { color: var(--color-danger); font-weight: 600; }
+
+.account-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+}
+
+.account-form h4 {
+  font-size: calc(16px * var(--font-scale, 1));
+  color: var(--color-text);
+}
+
+.account-form .login-rules { margin-top: -4px; }
+
+.account-code {
+  margin-top: 14px;
+}
+
+/* The app underneath a locked screen: kept as it was, but neither seen nor reached. */
+.app-shell.locked {
+  visibility: hidden;
+}

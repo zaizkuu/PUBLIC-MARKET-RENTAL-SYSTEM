@@ -20,13 +20,13 @@
 
 export type IdCounters = Record<string, number>;
 
-type SavePayload = { state: unknown; idCounters: IdCounters };
+type SavePayload = { state: unknown; idCounters: IdCounters; dataset?: string };
 
 type BridgeResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 type Bridge = {
   available: true;
-  load: () => Promise<BridgeResult<{ state: Record<string, unknown[]>; idCounters: IdCounters; savedAt: string; file: string }>>;
+  load: () => Promise<BridgeResult<{ state: Record<string, unknown[]>; idCounters: IdCounters; savedAt: string; dataset?: string; file: string }>>;
   save: (payload: SavePayload) => Promise<BridgeResult<{ savedAt: string; file: string }>>;
   replaceAll: (payload: SavePayload) => Promise<BridgeResult<{ savedAt: string; file: string }>>;
   clear: () => Promise<BridgeResult<true>>;
@@ -34,6 +34,9 @@ type Bridge = {
   integrityCheck: () => Promise<BridgeResult<{ ok: boolean; result: string }>>;
   backup: () => Promise<BridgeResult<{ canceled: boolean; filePath?: string }>>;
   revealFolder: () => Promise<BridgeResult<string>>;
+  snapshot?: (label: string) => Promise<BridgeResult<string>>;
+  loadAccounts?: () => Promise<BridgeResult<unknown[]>>;
+  saveAccounts?: (accounts: unknown[]) => Promise<BridgeResult<true>>;
 };
 
 export type DatabaseStats = {
@@ -61,6 +64,9 @@ export const backendName = () => (usingDatabase() ? 'SQLite database (offline)' 
 const stateKey = 'pmrms-state-v3';
 const savedAtKey = 'pmrms-saved-at';
 const idCounterKey = 'pmrms-id-counters';
+const datasetKey = 'pmrms-dataset';
+const accountsKey = 'pmrms-accounts';
+const snapshotKey = (label: string) => `pmrms-state-before-${label}`;
 
 /* Unwraps the { ok, data } envelope the main process replies with, turning a
    reported failure back into a thrown error for the caller to handle. */
@@ -81,22 +87,26 @@ export type LoadResult = {
   problem: string;
   /** Set when records were carried over from an older, pre-database install. */
   imported: boolean;
+  /** The stall-directory edition the records were last brought up to ('' if none). */
+  dataset: string;
 };
 
 function readLocal(): LoadResult {
   let raw: unknown | null = null;
   let counters: IdCounters = {};
   let savedAt = '';
+  let dataset = '';
   try {
     const stored = localStorage.getItem(stateKey);
     if (stored) raw = JSON.parse(stored);
     savedAt = localStorage.getItem(savedAtKey) ?? '';
+    dataset = localStorage.getItem(datasetKey) ?? '';
   } catch { /* unreadable or unavailable — start from the defaults */ }
   try {
     const stored = JSON.parse(localStorage.getItem(idCounterKey) ?? '{}');
     if (stored && typeof stored === 'object') counters = stored as IdCounters;
   } catch { /* counters fall back to max(existing id) */ }
-  return { raw, idCounters: counters, savedAt, problem: '', imported: false };
+  return { raw, idCounters: counters, savedAt, problem: '', imported: false, dataset };
 }
 
 /* Records held by a version of the app that ran before the database existed.
@@ -126,12 +136,12 @@ export async function loadStored(): Promise<LoadResult> {
       // over — or a genuinely new installation, which starts from the defaults.
       const legacy = legacyRecords();
       if (legacy.raw) {
-        return { raw: legacy.raw, idCounters: legacy.idCounters, savedAt: '', problem: '', imported: true };
+        return { raw: legacy.raw, idCounters: legacy.idCounters, savedAt: '', problem: '', imported: true, dataset: '' };
       }
-      return { raw: null, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false };
+      return { raw: null, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false, dataset: '' };
     }
 
-    return { raw: lists, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false };
+    return { raw: lists, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false, dataset: loaded.dataset ?? '' };
   } catch (error) {
     // The records exist but could not be read. Report it and let the caller
     // hold back every save, so a display built from defaults is never written
@@ -142,23 +152,26 @@ export async function loadStored(): Promise<LoadResult> {
       savedAt: '',
       problem: error instanceof Error ? error.message : String(error),
       imported: false,
+      dataset: '',
     };
   }
 }
 
 /* ---------- Writing ---------- */
 
-/** Files the current records. Resolves with the time they were saved. */
-export async function persist(state: unknown, idCounters: IdCounters): Promise<string> {
+/** Files the current records, and the directory edition they are at.
+    Resolves with the time they were saved. */
+export async function persist(state: unknown, idCounters: IdCounters, dataset?: string): Promise<string> {
   const db = bridge();
   if (!db) {
     localStorage.setItem(stateKey, JSON.stringify(state));
     localStorage.setItem(idCounterKey, JSON.stringify(idCounters));
+    if (typeof dataset === 'string') localStorage.setItem(datasetKey, dataset);
     const stamp = new Date().toISOString();
     localStorage.setItem(savedAtKey, stamp);
     return stamp;
   }
-  const { savedAt } = await unwrap(db.save({ state, idCounters }));
+  const { savedAt } = await unwrap(db.save({ state, idCounters, dataset }));
   return savedAt;
 }
 
@@ -205,6 +218,41 @@ export async function backupDatabase(): Promise<{ canceled: boolean; filePath?: 
   const db = bridge();
   if (!db) return null;
   return unwrap(db.backup());
+}
+
+/**
+ * Keeps a copy of the records as they stand before the app changes them in
+ * bulk. In the desktop app the whole database file is copied into its
+ * "backups" folder; in a browser the records are kept under their own key.
+ * Resolves with where the copy went, and throws if no copy could be made —
+ * the caller must then leave the records alone.
+ */
+export async function keepCopyBefore(label: string, raw: unknown): Promise<string> {
+  const db = bridge();
+  if (db?.snapshot) return unwrap(db.snapshot(label));
+  localStorage.setItem(snapshotKey(label), JSON.stringify({ savedAt: new Date().toISOString(), records: raw }));
+  return `browser storage (${snapshotKey(label)})`;
+}
+
+/* ---------- Accounts ----------
+
+   Who may sign in, kept apart from the records: a backup restored or a reset
+   to defaults leaves them alone. Rows pass through untouched; their shape is
+   checked in src/security/accounts.ts. */
+
+export async function loadAccounts(): Promise<unknown[]> {
+  const db = bridge();
+  if (db?.loadAccounts) return unwrap(db.loadAccounts());
+  try {
+    const stored = JSON.parse(localStorage.getItem(accountsKey) ?? '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch { return []; }
+}
+
+export async function saveAccounts(accounts: unknown[]): Promise<void> {
+  const db = bridge();
+  if (db?.saveAccounts) { await unwrap(db.saveAccounts(accounts)); return; }
+  localStorage.setItem(accountsKey, JSON.stringify(accounts));
 }
 
 /** Opens the folder holding the database file. */

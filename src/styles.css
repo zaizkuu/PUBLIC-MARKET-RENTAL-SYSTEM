@@ -6698,3 +6698,36 @@ ul, ol {
 .market-rates > summary { cursor: pointer; list-style-position: inside; }
 .market-rates:not([open]) > summary { border-bottom: none; }
 .market-rates > summary:focus-visible { outline: 3px solid var(--color-primary); outline-offset: -4px; }
+/* A citation's ordinance code (22-i, 23-c…) set in front of its offence. */
+.violation-issue {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.violation-code {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: calc(12.5px * var(--font-scale, 1));
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Who was signed in when a logbook entry was made. */
+.log-by {
+  display: block;
+  margin-top: 2px;
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--color-text-tertiary);
+}
+
+.log-locked {
+  justify-self: center;
+  font-size: calc(18px * var(--font-scale, 1));
+  color: var(--color-text-tertiary);
+}

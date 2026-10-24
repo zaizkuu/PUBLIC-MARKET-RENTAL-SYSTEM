@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -208,6 +208,29 @@ CREATE TABLE IF NOT EXISTS rent_payments (
 
 CREATE INDEX IF NOT EXISTS idx_rent_payments_tenant ON rent_payments(tenantId);
 CREATE INDEX IF NOT EXISTS idx_verif_items_control  ON verification_items(controlNo);
+
+/* Who may sign in. Kept apart from the records on purpose: restoring a backup
+   or resetting the records never changes who can open the system. Passwords
+   and recovery codes are stored only as salted PBKDF2 hashes (see
+   src/security/accounts.ts); nothing here can be read back as a password. */
+CREATE TABLE IF NOT EXISTS accounts (
+  id                 TEXT PRIMARY KEY,
+  name               TEXT NOT NULL DEFAULT '',
+  position           TEXT NOT NULL DEFAULT '',
+  role               TEXT NOT NULL DEFAULT 'Staff',
+  passwordHash       TEXT NOT NULL DEFAULT '',
+  passwordSalt       TEXT NOT NULL DEFAULT '',
+  passwordIterations INTEGER NOT NULL DEFAULT 0,
+  mustChangePassword INTEGER NOT NULL DEFAULT 0,
+  recoveryHash       TEXT NOT NULL DEFAULT '',
+  recoverySalt       TEXT NOT NULL DEFAULT '',
+  failedAttempts     INTEGER NOT NULL DEFAULT 0,
+  lockedUntil        TEXT NOT NULL DEFAULT '',
+  lastSignIn         TEXT NOT NULL DEFAULT '',
+  createdAt          TEXT NOT NULL DEFAULT '',
+  passwordChangedAt  TEXT NOT NULL DEFAULT '',
+  listOrder          INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 /* The record types the renderer sends, and the columns each one stores. The
@@ -222,7 +245,7 @@ const TABLES = {
     'meterNumber', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
     'dateIssued', 'dueDate', 'notes'],
   violations: ['id', 'tenant', 'issue', 'status', 'points', 'dateRecorded', 'dateResolved', 'notes'],
-  logs: ['id', 'date', 'time', 'type', 'details'],
+  logs: ['id', 'date', 'time', 'type', 'details', 'recordedBy'],
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
   officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed'],
 };
@@ -274,6 +297,7 @@ const ADDED_COLUMNS = [
   ['tenants', 'meterElectricity', "TEXT NOT NULL DEFAULT ''"],
   ['tenants', 'meterWater', "TEXT NOT NULL DEFAULT ''"],
   ['utility_bills', 'meterNumber', "TEXT NOT NULL DEFAULT ''"],
+  ['logs', 'recordedBy', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 function addMissingColumns() {
@@ -304,6 +328,8 @@ function close() {
   if (!db) return;
   try { db.close(); } catch { /* already closed */ }
   db = null;
+  // Prepared statements belong to the connection just closed.
+  statementCache.clear();
 }
 
 /* ============================================================
@@ -394,12 +420,14 @@ function readIdCounters() {
   return counters;
 }
 
-/** Everything the renderer needs at start-up, in one trip. */
+/** Everything the renderer needs at start-up, in one trip. `dataset` names
+    the edition of the stall directory the records were last brought up to. */
 function load() {
   return {
     state: readAll(),
     idCounters: readIdCounters(),
     savedAt: readMeta('saved_at'),
+    dataset: readMeta('dataset'),
     file: dbFile,
   };
 }
@@ -501,6 +529,9 @@ function save(payload) {
          ON CONFLICT(prefix) DO UPDATE SET value = MAX(value, excluded.value)`,
       ).run(String(prefix), next);
     }
+
+    // Written with the records it describes, so the two can never disagree.
+    if (payload && typeof payload.dataset === 'string') writeMeta('dataset', payload.dataset);
   });
 
   write();
@@ -645,6 +676,45 @@ function replaceAll(payload) {
 }
 
 /* ============================================================
+   Accounts
+   ============================================================ */
+
+const ACCOUNT_COLUMNS = ['id', 'name', 'position', 'role', 'passwordHash', 'passwordSalt', 'passwordIterations',
+  'mustChangePassword', 'recoveryHash', 'recoverySalt', 'failedAttempts', 'lockedUntil', 'lastSignIn',
+  'createdAt', 'passwordChangedAt'];
+const ACCOUNT_NUMBERS = new Set(['passwordIterations', 'failedAttempts']);
+
+function loadAccounts() {
+  return db.prepare(`SELECT ${ACCOUNT_COLUMNS.join(', ')} FROM accounts ORDER BY listOrder, id`).all()
+    .map((row) => ({ ...row, mustChangePassword: row.mustChangePassword === 1 }));
+}
+
+/* The list is a handful of people, so it is rewritten whole in one
+   transaction rather than diffed. */
+function saveAccounts(accounts) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  const insert = db.prepare(
+    `INSERT INTO accounts (${ACCOUNT_COLUMNS.join(', ')}, listOrder)
+     VALUES (${ACCOUNT_COLUMNS.map((c) => `@${c}`).join(', ')}, @listOrder)`,
+  );
+  db.transaction(() => {
+    db.prepare('DELETE FROM accounts').run();
+    list.forEach((account, index) => {
+      if (!account || !account.id) return;
+      const row = { listOrder: index };
+      for (const column of ACCOUNT_COLUMNS) {
+        const value = account[column];
+        if (column === 'mustChangePassword') row[column] = value ? 1 : 0;
+        else if (ACCOUNT_NUMBERS.has(column)) row[column] = Number(value) || 0;
+        else row[column] = value === null || value === undefined ? '' : String(value);
+      }
+      insert.run(row);
+    });
+  })();
+  return true;
+}
+
+/* ============================================================
    Maintenance
    ============================================================ */
 
@@ -682,6 +752,7 @@ function stats() {
 
 module.exports = {
   open, close, load, save, replaceAll, clearAll, isEmpty,
+  loadAccounts, saveAccounts,
   backupTo, compact, integrityCheck, stats,
   readMeta, writeMeta,
   SCHEMA_VERSION,

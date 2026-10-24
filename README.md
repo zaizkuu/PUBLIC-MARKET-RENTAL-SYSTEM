@@ -9,6 +9,55 @@ npm install
 npm run dev
 ```
 
+## Test
+
+```bash
+npm test
+```
+
+Runs every suite in `tests/`: the stall directory against the PDF's own
+summary, password hashing and lockout, backups, the market map, and — where
+`better-sqlite3` is built for the local Node — the database file itself.
+
+## Signing in
+
+The system opens on a sign-in page every time it starts. The person picks
+their account from the list, then types their password.
+
+- **First start.** One account exists: the head of the office board (the
+  Market Supervisor), as an **Administrator** with no password yet. Choosing
+  it asks for a new password. An administrator is then shown a **recovery
+  code** once — written down and kept in the office, it is the way back in if
+  the password is forgotten (*Forgot password?* on the sign-in page). Using it
+  issues a new one.
+- **Other people.** An administrator adds them in **Settings → User
+  Accounts**, picking from the office board or typing a name, with a temporary
+  password. Its owner must replace it at their first sign-in. The same panel
+  resets a forgotten password, unlocks an account and changes who is an
+  administrator; there is always at least one, and nobody can remove their own
+  account.
+- **Passwords** are never stored — only a PBKDF2-SHA-256 hash with a random
+  salt per account (600,000 iterations), computed by the browser engine's own
+  Web Crypto, offline. A new password needs 8+ characters, a letter and a
+  number, must not contain the person's name, and must not be a common one.
+- **Wrong passwords.** Five in a row lock the account for 5 minutes, doubling
+  each further round up to an hour. The lock survives a restart.
+- **Leaving the desk.** *Lock Screen* in the account menu (top right), or no
+  use for 15 minutes (Settings → Sign-in Security), locks the screen over the
+  page without closing it, so a half-filled form is still there after
+  unlocking. *Log Out* returns to the account list.
+- **Who did what.** Sign-ins, sign-outs, locks, failed attempts and account
+  changes go to the Logbook as *Security* entries, and every logbook entry
+  records who was signed in. Receipts and verification slips start with the
+  signed-in officer's name.
+- **Administrator-only:** importing or restoring a backup, resetting to
+  defaults, deleting logbook entries, and managing accounts.
+
+Accounts live in their own `accounts` table, apart from the records:
+restoring a backup or resetting the records never changes who can sign in.
+The logic is in `src/security/accounts.ts`; the screens are
+`src/security/LoginScreen.tsx` and `src/security/AccountSettings.tsx`.
+
 ## Build
 
 ```bash
@@ -53,7 +102,12 @@ edits as a last resort. Two sidecar files, `market-records.db-wal` and
 when it closes, so copy the folder rather than the single file if the app is
 open.
 
-**Offline.** The dashboard Google Maps overview requires an internet connection. The indoor floor plan and local records work offline. Fonts and icons are vendored
+**Offline.** Everything works with no internet connection: records, sign-in,
+printing and the market map. The desktop app enforces it — the main process
+refuses every outgoing network request from the window (`keepOffline()` in
+`electron/main.cjs`), so nothing can quietly start depending on the internet or
+send records anywhere. Links the operator clicks (the Support page's e-mail
+addresses, the map's source references) open in the system browser. Fonts and icons are vendored
 in `public/fonts/`; regenerate them with `scripts/fetch-fonts.mjs` if the
 typefaces ever change. Do not reintroduce the Google Fonts `<link>` tags — with
 no internet the Material Symbols ligatures fail and every icon renders as its
@@ -77,8 +131,9 @@ app never touches it directly, reaching it only through the calls exposed in
 
 Tables: `stalls`, `tenants`, `stallkeepers`, `applicants`,
 `applicant_requirements`, `utility_bills`, `violations`, `logs`, `activities`,
-plus `id_counters` and a `meta` key/value table holding the schema version and
-last save time. Stallkeepers and applicant requirements are child rows keyed to
+`officers`, `verifications`, `rent_payments`, plus `id_counters`, the sign-in
+`accounts`, and a `meta` key/value table holding the schema version, last save
+time, and the stall-directory edition the records are at. Stallkeepers and applicant requirements are child rows keyed to
 their parent and removed with it, rather than JSON packed into a column, so they
 can be queried and counted like anything else.
 
@@ -104,6 +159,59 @@ as-is, so no compiler and no `electron-rebuild` step is involved. The build sets
 `npmRebuild: false` to keep electron-builder from trying to compile it from
 source, and `asarUnpack` to place the binary beside the archive, since a `.node`
 file cannot be loaded from inside `app.asar`.
+
+## Stall directory, sections and stall IDs
+
+The register holds the **Market Stall Directory** the office compiled from its
+final layout sheets: 194 stalls in seven sections, each vendor's name exactly
+as printed on the sheet, and the sheet's margin notes (illegible edits,
+smudged numbers, crossed-out names) kept on the stall as its note. The rows
+are in `src/market/directory.ts`; `tests/directory.test.mjs` checks them
+against the directory's own summary table.
+
+A stall ID is its **section code** and the number painted on the layout, so
+stall 1 is `KS-001` and stall 105 is `FS-105`:
+
+| Section | Code | Stalls | Vacant | Monthly rent |
+| --- | --- | --- | --- | --- |
+| Kakanin | KS | 12 | 2 | ₱1,000 |
+| Dried Fish/Eggs | DS | 24 | 10 | ₱1,000 |
+| Fruits/Duma | FD | 12 | 0 | ₱1,000 |
+| Vegetable | VS | 53 | 5 | ₱1,000 |
+| Fish | FS | 45 | 8 | ₱1,000 |
+| Meat - Chicken | CS | 22 | 4 | ₱1,500 (charged as meat) |
+| Meat - Carabeef/Beef & Pork | MS | 26 | 2 | ₱1,500 |
+
+The codes live in one place, `SECTION_LIST` in `src/market/directory.ts`.
+
+- **Tenant records** are one per stall a vendor holds (156 in all), at the
+  section's Section 43 rate. The directory has no phone numbers, permits or
+  inspection dates, so those start blank / *Not Recorded*.
+- **Not counted as vacancies:** stalls 207–212 (an open area with no name on
+  the layout) are listed as Available with that note, and stall 95, the
+  PNP/Guard Station, is held but has no tenant record and pays no rent.
+- **New stalls** take their section's code and the next free number
+  (`KS-213`…). Typing just the number (`74`) adds the prefix; a prefix from
+  another section is refused.
+- **Moving a stall to another section** renumbers it under that section's
+  code (`KS-074` → `FS-074`); its tenant record, applications and utility
+  bills follow it, and the logbook notes the old number.
+- **Tenant IDs are not shown.** Tenant Records, its print-out, the detail and
+  edit forms, dialogs and logbook entries identify a tenant by name and stall.
+  The internal `TEN-` key still exists so bills and rent payments stay
+  attached to the right person.
+
+**Upgrading an existing installation.** The first start of this version
+finds records from before the directory (no directory edition in `meta`).
+It first saves a copy of the whole database to `backups\market-records-before-stall-directory-<date>.db`
+in the data folder (in a browser, under the `pmrms-state-before-stall-directory`
+key), then replaces the stall register and tenant records with the
+directory's and writes a logbook entry saying where the copy is.
+Applications, bills, violations, the logbook, the office board and
+verification slips are kept. New tenant records are numbered after the
+installation's last one, so an old bill never points at a different person.
+If the copy cannot be made, nothing is changed and it is tried again at the
+next start. It runs once; restoring an older backup afterwards is respected.
 
 ## Current scope
 
@@ -202,7 +310,8 @@ Nothing reaches the printer without a preview. **Print Receipt** on a bill opens
 
 The Violations module is the register of citations issued to tenants.
 
-- **Record Violation** captures the party cited, the offence, demerit points, the date, and notes. The tenant field suggests tenants on record but stays free text, since a stall or an applicant may also be cited; the offence field suggests the `VIOLATION_ISSUES` list in `src/App.tsx`.
+- **Record Violation** captures the party cited, the offence, demerit points, the date, and notes. The tenant field suggests tenants on record but stays free text, since a stall or an applicant may also be cited.
+- The offence is chosen from the office's **Market Violations dropdown list** — `VIOLATION_GROUPS` in `src/App.tsx`: Section 22 prohibited acts (22-i … 22-xi), Section 23 duties not followed (23-a … 23-i), and *Other* (no health certificate / yearly medical exam). The code is shown beside the offence in the register, the detail sheet (as its ordinance reference), the printed list and the CSV export. *Not on this list — describe it* allows a free-text offence; citations recorded before the list keep their wording.
 - Every citation starts **Open**. Resolving and reopening are done in the **edit form**, not from the row: Status sits at the top of the form beside the violation ID — set it to *Resolved* to close the citation (the resolution date is stamped on save) or back to *Open* to reopen it (the resolution date is cleared), so a reopened citation never shows a stale resolution date.
 - Rows sort open-first, then newest, and **Open Points by Tenant** ranks who is carrying the most unresolved demerit points.
 - Adding, resolving, reopening, and deleting all write an Incident entry to the Logbook. Violations also feed the Analytics summary panel, the notification list, and all exports and backups.
@@ -268,6 +377,21 @@ in the database (`id_counters`), so deleting the newest record does not
 hand its ID to the next one created — which would otherwise let an old utility
 bill attach itself to an unrelated new tenant. **Settings → Reset to Defaults**
 clears the counters along with the data.
+## Quality (ISO/IEC 25010)
+
+How the system answers the product-quality characteristics of ISO/IEC 25010:
+
+| Characteristic | What the system does |
+| --- | --- |
+| **Functional suitability** | Register, sections, stall IDs and rates follow the office's own directory and Section 43 schedule; violations follow Sections 22–23; automated tests check the transcription against the source summary. |
+| **Performance efficiency** | Local SQLite in WAL mode, writes batched and diffed; sign-in hashing tuned to ~0.1 s on a modern PC. |
+| **Compatibility** | Runs as a Windows desktop app or in any current browser; backups are plain JSON, the database plain SQLite readable by standard tools. |
+| **Interaction capability (usability)** | Same visual language on the sign-in page as the rest of the system; labelled fields, keyboard operation, visible focus, live password-rule checklist, Caps Lock warning, show-password toggle, plain-language errors, and a layout that works at phone width. |
+| **Reliability** | Transactional saves; a full database copy before the directory update, which is skipped (not half-done) if the copy fails; start-up runs once; restoring and resetting never touch the sign-in accounts. |
+| **Security** | Per-person accounts; salted PBKDF2 password hashes; lockout with back-off; recovery code for administrators; forced change of temporary passwords; idle and manual screen lock; role-based limits on destructive actions; every sign-in, failure and account change logged with who did it; no network access from the app. |
+| **Maintainability** | Directory data, account logic and sign-in screens are separate modules with their own tests; section codes, violation list and lock timings are each defined in one place. |
+| **Flexibility (portability)** | Installer or portable `.exe`; the data folder (or one `.db` file) moves the whole system to another computer. |
+
 ## Interactive market mapping
 
 The dashboard includes aerial-to-indoor navigation, a stall directory, and a local authenticated layout editor. See [MARKET-MAP.md](MARKET-MAP.md) for setup, privacy, database storage, publication, verification and tests.

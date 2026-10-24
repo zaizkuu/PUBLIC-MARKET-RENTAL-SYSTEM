@@ -270,3 +270,28 @@
 .market-enter-building small { display:block; margin-top:4px; color:#62758f; font-size:11px; }
 .market-enter-building:hover { background:#f5f8ff; border-color:#89a9dc; box-shadow:0 5px 22px #233b6333; }
 @media(max-width:760px) { .market-enter-building { left:10px; bottom:25px; padding:10px; gap:8px; } .market-enter-building strong { font-size:12px; } .market-enter-building small { font-size:10px; } }
+
+/* ---- Proposed layout: the register's sections set out in the two mapped blocks ---- */
+.proposal-plan { padding:20px; display:grid; gap:16px; }
+.proposal-caption { margin:0; font-size:10px; font-weight:650; letter-spacing:1.2px; text-transform:uppercase; color:#92a1b4; }
+.proposal-blocks { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+.proposal-block { border:2px dashed #b7c4d2; border-radius:10px; padding:14px; display:grid; gap:12px; align-content:start; }
+.proposal-block header, .proposal-stalls header { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.proposal-block header strong, .proposal-stalls header strong { font-size:13px; color:#304c69; }
+.proposal-block header span, .proposal-stalls header span { font-size:11px; color:#7a8ea4; }
+.proposal-sections { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+.proposal-section { display:grid; gap:6px; justify-items:start; text-align:left; padding:12px; border:1px solid #dbe3ec; border-top:4px solid; border-radius:8px; background:var(--color-surface,#fff); color:inherit; }
+.proposal-section:hover { background:#f4f8fc; }
+.proposal-section[aria-pressed="true"] { box-shadow:0 0 0 2px #347acd; }
+.proposal-section:focus-visible { outline:3px solid #347acd; outline-offset:2px; }
+.proposal-code { color:#fff; font-size:11px; font-weight:700; letter-spacing:.5px; padding:2px 7px; border-radius:4px; }
+.proposal-name { font-size:13px; font-weight:650; color:#304c69; }
+.proposal-count { font-size:11px; color:#7a8ea4; }
+.proposal-stalls { border:1px solid #dbe3ec; border-radius:10px; padding:14px; display:grid; gap:10px; }
+.proposal-stalls ul { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:6px; }
+.proposal-stall { font-size:11px; font-weight:600; padding:4px 8px; border-radius:5px; border:1px solid currentColor; background:#fff; }
+.proposal-footer { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; font-size:11px; color:#7a8ea4; }
+.proposal-footer .market-primary { width:auto; }
+:root[data-theme="dark"] .proposal-section:hover { background:var(--color-surface-hover); }
+:root[data-theme="dark"] .proposal-name, :root[data-theme="dark"] .proposal-block header strong, :root[data-theme="dark"] .proposal-stalls header strong { color:var(--color-text); }
+:root[data-theme="dark"] .proposal-stall { background:var(--color-surface); }
