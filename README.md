@@ -260,6 +260,14 @@ the Market Supervisor with everyone else; **Edit → Reports To** moves it.
   fall back to `localStorage` — the interface behaves identically
 - Dashboard, stall management, tenant records, applicants, utility billing, violations, analytics, logbook, settings, and support modules
 
+## Tables
+
+Every register — stalls, tenants, applicants, bills, violations, the logbook
+and Market Officers — pages with arrows (first, previous, next, last) around
+"Page 3 of 20", and **Rows per page** shows 10, 25, 50, 100 or all of them at
+once. Each table remembers its own choice on this computer, and changing it
+keeps the first row that was on screen in view.
+
 ## Monthly rent
 
 Rent is recorded a month at a time from the Tenant Records register — tick the
@@ -310,7 +318,7 @@ application history, and the resulting tenant keeps an `applicantId` back-link.
 The Utility Billing module computes electricity and water charges per stall:
 
 - Pick **Electricity** or **Water** — the rate and unit (kWh / cu.m) switch to that utility's preset and stay editable per bill. There is no fixed or service charge: a bill is consumption × rate and nothing else.
-- Choose the **stall number**; the tenant's name and the electric meter's serial number fill in from the tenant record. **Billed To** stays editable, for a bill made out to a stallkeeper or under a new name — the bill still belongs to the stall's tenancy. The meter box offers every serial from the calibration sheets.
+- Choose the **stall number** by typing part of it or of the tenant's name — "ks 2" or "redona" narrows the 194 stalls to KS-2 — then Enter or a click; the arrow keys move through the matches and Escape puts back the stall already chosen. The tenant's name and the electric meter's serial number fill in from the tenant record. **Billed To** stays editable, for a bill made out to a stallkeeper or under a new name — the bill still belongs to the stall's tenancy. The meter box offers every serial from the calibration sheets.
 - Set the **period covered** with a From and a To date — a bill is read to the day, so a stall that opened mid-month or a meter read early is billed for exactly the days it covers. **Cover all of &lt;month&gt;** fills in the whole month in one click. The day count and the month the bill is filed under are shown under the To date.
 - The **due date** defaults to 15 days after the period ends and moves with the end date until you set one yourself; any date can be set, and a date before the period ends is pointed out rather than refused.
 - Bills are still grouped and de-duplicated by the **month the period ends in**, so "a second electricity bill for this stall this month" is still caught.

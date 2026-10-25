@@ -1771,9 +1771,10 @@ ul, ol {
 
 .pagination {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 8px 16px;
   padding: 16px;
   background: var(--color-bg);
   border-top: 1px solid var(--color-border-light);
@@ -1805,29 +1806,42 @@ ul, ol {
   color: var(--color-text);
 }
 
-.page-btn.active {
-  background: var(--color-primary);
-  color: white;
-  font-weight: 600;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
-}
-
 .page-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.page-btn-nav {
-  padding: 0 14px;
-  font-weight: 500;
+/* First, previous, next and last — arrows rather than a run of page numbers. */
+.page-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.page-dots {
-  padding: 0 4px;
-  color: var(--color-text-tertiary);
+.page-btn-arrow {
+  width: 34px;
+  padding: 0;
 }
 
-/* Stands in for the numbered buttons on a compact pagination bar. */
+.page-btn-arrow .material-symbols-outlined {
+  font-size: 22px;
+}
+
+/* How many rows the table shows at once. */
+.page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(15px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.page-size-select {
+  min-width: 78px;
+}
+
+/* Where the table is: "Page 3 of 20", between the arrows. */
 .page-position {
   padding: 0 10px;
   font-size: calc(15px * var(--font-scale, 1));
@@ -4703,10 +4717,6 @@ ul, ol {
 }
 
 /* ---- Pagination follows the same navy ---- */
-.page-btn.active {
-  background: var(--btn-primary-bg);
-  border-color: var(--btn-primary-bg);
-}
 .page-btn:active:not(:disabled) {
   background: var(--btn-primary-bg-active);
   border-color: var(--btn-primary-bg-active);
@@ -6761,4 +6771,87 @@ ul, ol {
   border-color: transparent;
   background: var(--color-danger-bg);
   color: var(--color-danger);
+}
+
+/* ============================================================
+   A long list that can be typed into
+   ============================================================ */
+
+.search-select {
+  position: relative;
+}
+
+.search-select .search-select-input {
+  padding-left: 40px;
+  padding-right: 36px;
+  text-overflow: ellipsis;
+}
+
+.search-select-icon,
+.search-select-caret {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.search-select-icon {
+  left: 12px;
+}
+
+.search-select-caret {
+  right: 10px;
+}
+
+.search-select-list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.search-select-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: calc(15px * var(--font-scale, 1));
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.search-select-option.active {
+  background: var(--color-primary-bg);
+}
+
+.search-select-option.chosen {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.search-select-hint {
+  flex-shrink: 0;
+  font-size: calc(14px * var(--font-scale, 1));
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+
+.search-select-empty {
+  padding: 12px;
+  font-size: calc(15px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
 }

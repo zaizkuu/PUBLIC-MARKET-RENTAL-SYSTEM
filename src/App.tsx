@@ -1,7 +1,7 @@
 import { backupRecords } from './backup';
 import MarketMap from './MarketMap';
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
   loadStored, persist, replaceAll, clearStored, keepCopyBefore, loadAccounts, saveAccounts,
   usingDatabase, backendName, databaseStats, backupDatabase, checkIntegrity,
@@ -1272,17 +1272,41 @@ function sectionOccupancyColumns(stalls: Stall[]): GraphColumn[] {
 
 function paginate<T>(items: T[], page: number, perPage = ITEMS_PER_PAGE) {
   const total = items.length;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-  const safePage = Math.min(page, totalPages);
-  const start = (safePage - 1) * perPage;
+  /* 0 asks for every row on one page. */
+  const size = perPage > 0 ? perPage : Math.max(1, total);
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * size;
   return {
-    items: items.slice(start, start + perPage),
+    items: items.slice(start, start + size),
     totalPages,
     total,
     start: total > 0 ? start + 1 : 0,
-    end: Math.min(start + perPage, total),
+    end: Math.min(start + size, total),
     page: safePage,
+    perPage,
   };
+}
+
+/* Rows a table can show at once; 0 shows them all. */
+const PAGE_SIZES = [10, 25, 50, 100, 0];
+const pageSizeKey = (table: string) => `pmrms-rows-per-page-${table}`;
+
+/* How many rows a table shows at once. A setting of this computer, like the
+   appearance, so it lives in local storage, and each table keeps its own. */
+function usePageSize(table: string): [number, (rows: number) => void] {
+  const [rows, setRows] = useState(() => {
+    try {
+      const stored = localStorage.getItem(pageSizeKey(table));
+      const value = stored === null ? NaN : Number(stored);
+      return PAGE_SIZES.includes(value) ? value : ITEMS_PER_PAGE;
+    } catch { return ITEMS_PER_PAGE; }
+  });
+  const choose = (next: number) => {
+    setRows(next);
+    try { localStorage.setItem(pageSizeKey(table), String(next)); } catch { /* kept for this session only */ }
+  };
+  return [rows, choose];
 }
 
 /* ---------- Utility billing helpers ---------- */
@@ -2831,6 +2855,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('stalls');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -2846,7 +2871,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
     });
   }, [stalls, sectionFilter, statusFilter, search]);
 
-  const paged = paginate(filtered, page);
+  const paged = paginate(filtered, page, perPage);
 
   return (
     <>
@@ -2900,7 +2925,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
             </tbody>
           </table>
         </div>
-        <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
       </div>
     </>
   );
@@ -2919,6 +2944,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
   );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('applicants');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -2928,7 +2954,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
     return true;
   }), [applicants, statusFilter, search]);
 
-  const paged = paginate(filtered, page);
+  const paged = paginate(filtered, page, perPage);
 
   return (
     <>
@@ -3000,7 +3026,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
             </tbody>
           </table>
         </div>
-        <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
       </div>
     </>
   );
@@ -3042,6 +3068,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
      month; the picker is how a payment is entered against an earlier one. */
   const [period, setPeriod] = useState(currentPeriod);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('tenants');
 
   const activeCount = tenants.filter(t => t.status === 'Active').length;
   const expiringCount = tenants.filter(t => t.status === 'Expiring Soon').length;
@@ -3065,7 +3092,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
     /* In the directory's numbering, whenever a tenant was added. */
   }).sort((a, b) => compareStallNumbers(a.stallId, b.stallId)), [tenants, sectionFilter, statusFilter, rentFilter, period, search]);
 
-  const paged = paginate(filtered, page);
+  const paged = paginate(filtered, page, perPage);
 
   return (
     <>
@@ -3159,7 +3186,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
             </tbody>
           </table>
         </div>
-        <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
       </div>
     </>
   );
@@ -3188,6 +3215,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('utilities');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -3202,7 +3230,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
     return true;
   }), [bills, typeFilter, statusFilter, search]);
 
-  const paged = paginate(filtered, page);
+  const paged = paginate(filtered, page, perPage);
 
   /* Bills ticked for a batch print, held by id so the set survives paging and
      refiltering. Ids that fall out of the records entirely are dropped when
@@ -3352,7 +3380,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
             </tbody>
           </table>
         </div>
-        <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
       </div>
     </>
   );
@@ -3404,6 +3432,10 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   }, [stalls, tenants]);
 
   const tenantForStall = useCallback((sid: string) => tenants.find((t) => t.stallId === sid), [tenants]);
+  const stallChoices = useMemo(() => stallOptions.map((sid) => {
+    const t = tenantForStall(sid);
+    return { value: sid, label: `${sid} — ${t ? t.name : 'vacant'}`, hint: stalls.find((st) => st.id === sid)?.section };
+  }), [stallOptions, tenantForStall, stalls]);
 
   const selectedTenant = tenants.find((t) => t.id === tenantId);
   const section = useMemo(() => {
@@ -3549,14 +3581,8 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
               and carries the meter and the last reading with it. A separate
               tenant field only invited the two to disagree. */}
           <div className="form-group">
-            <label className="form-label">Stall Number *</label>
-            <select className="form-select" value={stallId} onChange={(e) => applyStall(e.target.value)}>
-              <option value="">Select stall…</option>
-              {stallOptions.map((sid) => {
-                const t = tenantForStall(sid);
-                return <option key={sid} value={sid}>{sid}{t ? ` — ${t.name}` : ' — vacant'}</option>;
-              })}
-            </select>
+            <label className="form-label" htmlFor="bill-stall">Stall Number *</label>
+            <SearchSelect id="bill-stall" value={stallId} options={stallChoices} onChange={applyStall} placeholder="Type a stall number or tenant name" />
           </div>
 
           <div className="form-group">
@@ -3697,6 +3723,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
   );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('violations');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -3717,7 +3744,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
     [filtered],
   );
 
-  const paged = paginate(ordered, page);
+  const paged = paginate(ordered, page, perPage);
 
   const openList = useMemo(() => violations.filter((v) => v.status === 'Open'), [violations]);
   const openPoints = useMemo(() => openList.reduce((s, v) => s + v.points, 0), [openList]);
@@ -3808,7 +3835,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
             </tbody>
           </table>
         </div>
-        <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
       </div>
     </>
   );
@@ -3930,9 +3957,11 @@ function ViolationForm({ violation, existingIds, tenants, violations, onSubmit, 
       </div>
       <div className="form-group">
         <label className="form-label" htmlFor="violation-offence">Offence</label>
-        <select id="violation-offence" className="form-select" value={offenceChoice} onChange={(e) => setOffenceChoice(e.target.value)} aria-describedby="violation-offence-hint">
-          <option value="">{offenceLabel(counted)} — counted from the register</option>
-          {OFFENCES.map((n) => <option key={n} value={n}>{offenceLabel(n)}</option>)}
+        {/* One option per offence, the counted one marked. Choosing it goes
+            back to following the register, so a change of party or violation
+            recounts; choosing another holds that offence. */}
+        <select id="violation-offence" className="form-select" value={String(offence)} onChange={(e) => setOffenceChoice(Number(e.target.value) === counted ? '' : e.target.value)} aria-describedby="violation-offence-hint">
+          {OFFENCES.map((n) => <option key={n} value={n}>{offenceLabel(n)}{n === counted ? ' — counted from the register' : ''}</option>)}
         </select>
         <span id="violation-offence-hint" className="form-hint">
           {tenant.trim() && issue
@@ -4433,6 +4462,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
   const [typeFilter, setTypeFilter] = useState('');
   const [dayFilter, setDayFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('logbook');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -4453,7 +4483,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
     [filtered],
   );
 
-  const paged = paginate(ordered, page);
+  const paged = paginate(ordered, page, perPage);
 
   return (
     <>
@@ -4488,7 +4518,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
           ))}
           {paged.items.length === 0 && <div className="empty-state"><span className="material-symbols-outlined">menu_book</span>No log entries found.</div>}
         </div>
-        <PaginationBar compact info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
       </div>
     </>
   );
@@ -6313,22 +6343,129 @@ function StackedBarGraph({ columns, series, format = (n: number) => String(Math.
 /* `compact` drops the numbered buttons for a plain "Page 3 of 40" between
    Previous and Next — a register that grows without limit, like the logbook,
    would otherwise put a growing row of page numbers under every screen. */
-function PaginationBar({ info, page, totalPages, onPage, compact }: { info: string; page: number; totalPages: number; onPage: (p: number) => void; compact?: boolean }) {
-  const pages: (number | 'dots')[] = [];
-  if (!compact) {
-    for (let i = 1; i <= totalPages; i++) {
-      if (i <= 3 || i > totalPages - 1 || Math.abs(i - page) <= 1) pages.push(i);
-      else if (pages[pages.length - 1] !== 'dots') pages.push('dots');
+type SearchOption = { value: string; label: string; hint?: string };
+
+/* Text reduced to what a search compares: no accents, case or punctuation. */
+const searchKey = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/* A long list that can be typed into instead of scrolled. The box shows what
+   is chosen; typing narrows the list to the entries in which every word typed
+   starts a word — "ks 2", "KS-2", "narcisa" and "redona" all find
+   "KS-2 — Narcisa Redona" — with an entry typed in full put first. Arrow keys
+   move through the matches and Enter takes one; Escape, or leaving the box,
+   puts back what was chosen. */
+function SearchSelect({ id, value, options, onChange, placeholder }: {
+  id?: string; value: string; options: SearchOption[]; onChange: (value: string) => void; placeholder?: string;
+}) {
+  const listId = useId();
+  const listRef = useRef<HTMLUListElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const chosen = options.find((o) => o.value === value);
+
+  const matches = useMemo(() => {
+    const typed = searchKey(query);
+    if (!typed) return options;
+    const words = typed.split(' ');
+    const found = options.filter((o) => {
+      const keyWords = searchKey(`${o.label} ${o.hint ?? ''}`).split(' ');
+      return words.every((w) => keyWords.some((k) => k.startsWith(w)));
+    });
+    return [...found.filter((o) => searchKey(o.value) === typed), ...found.filter((o) => searchKey(o.value) !== typed)];
+  }, [options, query]);
+
+  useEffect(() => {
+    if (open) listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [open, active]);
+
+  const show = () => {
+    if (open) return;
+    setQuery('');
+    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    setOpen(true);
+  };
+  const close = () => { setOpen(false); setQuery(''); };
+  const pick = (option: SearchOption) => { onChange(option.value); close(); };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) { show(); return; }
+      setActive((i) => Math.max(0, Math.min(matches.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))));
+    } else if (e.key === 'Enter' && open && matches[active]) {
+      e.preventDefault();
+      pick(matches[active]);
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      e.stopPropagation(); // closes the list, not the form it sits in
+      close();
     }
-  }
+  };
+
+  return (
+    <div className="search-select">
+      <span className="material-symbols-outlined search-select-icon" aria-hidden="true">search</span>
+      <input
+        id={id} className="form-input search-select-input" role="combobox" aria-expanded={open} aria-controls={listId}
+        aria-autocomplete="list" aria-activedescendant={open && matches[active] ? `${listId}-${active}` : undefined}
+        autoComplete="off" spellCheck={false}
+        value={open ? query : chosen?.label ?? ''} placeholder={chosen?.label ?? placeholder}
+        onFocus={show} onClick={show} onBlur={close} onKeyDown={onKeyDown}
+        onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
+      />
+      <span className="material-symbols-outlined search-select-caret" aria-hidden="true">expand_more</span>
+      {open && (matches.length > 0 ? (
+        <ul id={listId} ref={listRef} role="listbox" className="search-select-list">
+          {matches.map((o, i) => (
+            <li
+              key={o.value} id={`${listId}-${i}`} data-index={i} role="option" aria-selected={o.value === value}
+              className={`search-select-option${i === active ? ' active' : ''}${o.value === value ? ' chosen' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); pick(o); }} onMouseEnter={() => setActive(i)}
+            >
+              <span>{o.label}</span>{o.hint && <span className="search-select-hint">{o.hint}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div id={listId} className="search-select-list search-select-empty" role="status">Nothing matches “{query.trim()}”.</div>
+      ))}
+    </div>
+  );
+}
+
+type PageInfo = { page: number; totalPages: number; total: number; start: number; end: number; perPage: number };
+
+function PaginationBar({ paged, onPage, onPerPage }: { paged: PageInfo; onPage: (p: number) => void; onPerPage?: (rows: number) => void }) {
+  const { page, totalPages } = paged;
+  /* A new page size keeps the first row that was on screen in view. */
+  const choose = (rows: number) => {
+    onPage(rows > 0 && paged.start > 0 ? Math.floor((paged.start - 1) / rows) + 1 : 1);
+    onPerPage?.(rows);
+  };
+  const arrow = (icon: string, label: string, target: number, disabled: boolean) => (
+    <button type="button" className="page-btn page-btn-arrow" title={label} aria-label={label} disabled={disabled} onClick={() => onPage(target)}>
+      <span className="material-symbols-outlined" aria-hidden="true">{icon}</span>
+    </button>
+  );
   return (
     <div className="pagination">
-      <span className="pagination-info">{info}</span>
-      <button className="page-btn page-btn-nav" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
-      {compact
-        ? <span className="page-position">Page {page} of {totalPages}</span>
-        : pages.map((p, i) => p === 'dots' ? <span className="page-dots" key={`d${i}`}>…</span> : <button key={p} className={`page-btn${p === page ? ' active' : ''}`} onClick={() => onPage(p)}>{p}</button>)}
-      <button className="page-btn page-btn-nav" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>Next</button>
+      <span className="pagination-info">Showing {paged.start}-{paged.end} of {paged.total}</span>
+      {onPerPage && (
+        <label className="page-size">
+          Rows per page
+          <select className="filter-select page-size-select" value={paged.perPage} onChange={(e) => choose(Number(e.target.value))}>
+            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n > 0 ? n : 'All'}</option>)}
+          </select>
+        </label>
+      )}
+      <nav className="page-nav" aria-label="Pages">
+        {arrow('first_page', 'First page', 1, page <= 1)}
+        {arrow('chevron_left', 'Previous page', page - 1, page <= 1)}
+        <span className="page-position" aria-live="polite">Page {page} of {totalPages}</span>
+        {arrow('chevron_right', 'Next page', page + 1, page >= totalPages)}
+        {arrow('last_page', 'Last page', totalPages, page >= totalPages)}
+      </nav>
     </div>
   );
 }
@@ -6735,6 +6872,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
   const [view, setView] = useState<'board' | 'directory'>('board');
   const [officeFilter, setOfficeFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = usePageSize('officers');
 
   useEffect(() => { setPage(1); }, [search, officeFilter]);
   /* A search is a search of the whole office, so it opens the directory — the
@@ -6757,7 +6895,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
     return true;
   }), [ordered, officeFilter, search]);
 
-  const paged = paginate(filtered, page);
+  const paged = paginate(filtered, page, perPage);
 
   const printList = () => onPrintList(
     officeFilter ? `Market Officers — ${officeFilter}` : 'Market Officers',
@@ -6863,7 +7001,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
                 </tbody>
               </table>
             </div>
-            <PaginationBar info={`Showing ${paged.start}-${paged.end} of ${paged.total}`} page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+            <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
           </>
         )}
       </div>
