@@ -210,6 +210,15 @@ The codes live in one place, `SECTION_LIST` in `src/market/directory.ts`.
   edit forms, dialogs and logbook entries identify a tenant by name and stall.
   The internal `TEN-` key still exists so bills and rent payments stay
   attached to the right person.
+- **Names as the register writes them.** Tenant Records — the table, its
+  print-out and the tenant's record — lists each tenant as SURNAME, GIVEN
+  NAMES in capitals (`REDONA, NARCISA`). The directory writes some names given
+  name first and others surname first, so each of its 138 names is set out by
+  hand in [src/market/registerNames.ts](src/market/registerNames.ts), with the
+  surname taken from the calibration sheets where they name the person; the
+  spelling is the directory's. The stored name is unchanged, so billing,
+  meters and offence counts match as before. A name typed later uses its
+  comma, and the Add Tenant form shows how it will be listed.
 
 **Upgrading an existing installation: the old data is removed.** The
 directory is the office's latest record of the market, so the first start of

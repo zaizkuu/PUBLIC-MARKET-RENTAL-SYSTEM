@@ -20,6 +20,7 @@ import {
 } from './market/directory';
 import { electricMetersByStall, meterSuggestions } from './market/meters';
 import { OFFICE_ORDER_STAFF, ROSTER_EDITION, SUPERVISOR, missingStaff, nameKey, placeStaff } from './market/officeOrders';
+import { registerName } from './market/registerNames';
 import type { OfficeOrderSeat } from './market/officeOrders';
 
 /* ============================================================
@@ -3054,7 +3055,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
     filtered.map((t) => {
       const payment = rentPaymentFor(t, period);
       return [
-        t.name, t.stallId, t.section, money(t.rent), rentStatusOf(t, period),
+        registerName(t.name), t.stallId, t.section, money(t.rent), rentStatusOf(t, period),
         payment ? money(payment.amount) : '—',
         payment && payment.discount > 0 ? `−${money(payment.discount)}` : '—',
         t.status,
@@ -3087,7 +3088,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
       if (rentFilter === 'Unpaid' && rent === 'Paid') return false;
       if (rentFilter === 'Overdue' && rent !== 'Overdue') return false;
     }
-    if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.section.toLowerCase().includes(q) && !t.keepers.some((k) => k.name.toLowerCase().includes(q))) return false; }
+    if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !registerName(t.name).toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.section.toLowerCase().includes(q) && !t.keepers.some((k) => k.name.toLowerCase().includes(q))) return false; }
     return true;
     /* In the directory's numbering, whenever a tenant was added. */
   }).sort((a, b) => compareStallNumbers(a.stallId, b.stallId)), [tenants, sectionFilter, statusFilter, rentFilter, period, search]);
@@ -3157,7 +3158,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
                   : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''}${quote.early ? ` · pays ${money(quote.payable)} today with the ${EARLY_RENT_DISCOUNT_PCT}% early discount` : ''} — tick once collected`;
                 return (
                   <tr key={t.id}>
-                    <td className="no-wrap"><strong>{t.name}</strong></td>
+                    <td className="no-wrap"><strong>{registerName(t.name)}</strong></td>
                     <td className="no-wrap">{t.stallId}</td>
                     <td className="no-wrap">{t.section}</td>
                     <td>{money(t.rent)}</td>
@@ -5354,7 +5355,7 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   return (
     <div className="form-grid">
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Tenant Name *</label><input className="form-input" placeholder="Full name of the stallholder" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} /></div>
+        <div className="form-group"><label className="form-label" htmlFor="tenant-name">Tenant Name *</label><input id="tenant-name" className="form-input" placeholder="Surname, Given names" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} aria-describedby="tenant-name-hint" /><span id="tenant-name-hint" className="form-hint">{name.trim() ? `Tenant Records will list this as ${registerName(name)}.` : 'Write the surname first, then a comma — e.g. Redona, Narcisa.'}</span></div>
         <div className="form-group">
           <label className="form-label">Mobile Number</label>
           <PhoneInput value={phone} onChange={(v) => { setPhone(v); setError(''); }} />
@@ -5803,13 +5804,13 @@ function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { t
 
   return (<>
     <RecordSheet
-      title={tenant.name}
+      title={registerName(tenant.name)}
       subtitle={`${tenant.stallId && tenant.stallId !== '—' ? `Stall ${tenant.stallId} \u00b7 ` : ''}${tenant.section}${tenant.applicantId ? ` \u00b7 From Application ${tenant.applicantId}` : ''}`}
       badge={<TenantStatusBadge status={tenant.status} />}
     >
       <RecordSection title="Tenant Particulars" icon="badge">
         <div className="record-grid">
-          <RecordRow label="Full Name" value={tenant.name} />
+          <RecordRow label="Full Name" value={registerName(tenant.name)} />
           <RecordRow label="Contact Number" value={formatPhone(tenant.phone)} />
           <RecordRow label="Barangay" value={tenant.barangay} />
           <RecordRow label="Stall Assignment" value={tenant.stallId} />
