@@ -6662,7 +6662,7 @@ function officerLabel(officer?: Officer) {
 }
 
 /* What a seat with nobody above it is called wherever "Reports To" is shown. */
-const HEAD_OF_OFFICE = 'Head of the Market Office';
+const HEAD_OF_OFFICE = 'Head of the Office';
 
 function reportsToLabel(officers: Officer[], officer: Officer) {
   return officer.reportsTo ? officerLabel(officers.find((x) => x.id === officer.reportsTo)) : HEAD_OF_OFFICE;

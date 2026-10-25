@@ -229,7 +229,7 @@ nothing is changed and it is tried again at the next start. It runs once per
 directory edition; a backup restored afterwards is respected.
 
 **Market Officers.** The Officers page's chart is called Market Officers, and
-the seat at the top of it is shown as **Head of the Market Office**. Besides
+the seat at the top of it is shown as **Head of the Office**. Besides
 the office's own roster it holds the seven staff the Municipal Mayor's office
 orders of October 2026 assigned to the market office, each under Engr. Luz M.
 Maderazo — Market Supervisor III, with the date the order took effect
