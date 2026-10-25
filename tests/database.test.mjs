@@ -18,6 +18,7 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.open(file);
     db.save({
       state: {
+        officers: [{ id: 'OFC-001', name: 'Test Officer', position: 'Clerk', photo: 'data:image/jpeg;base64,dGVzdA==' }],
         stalls: [{ id: 'KS-1', section: 'Kakanin', tenant: 'Norida Lerios', status: 'Occupied', permit: 'Not Recorded', lastInspection: '-', note: '' }],
         logs: [
           { id: 'LOG-001', date: '2026-10-24', time: '08:00 AM', type: 'Security', details: 'Signed in.', recordedBy: 'Engr. Luz M. Maderazo' },
@@ -36,6 +37,7 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
 
     db.open(file);
     const loaded = db.load();
+    assert.equal(loaded.state.officers[0].photo, 'data:image/jpeg;base64,dGVzdA==');
     assert.equal(loaded.dataset, 'market-stall-directory-2026-10');
     assert.equal(loaded.roster, 'office-orders-2026-10');
     assert.equal(loaded.state.stalls[0].id, 'KS-1');
@@ -56,7 +58,7 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.replaceAll({ state: { stalls: [] }, idCounters: {} });
     db.clearAll();
     assert.equal(db.loadAccounts().length, 1);
-    assert.equal(db.stats().schemaVersion, 5);
+    assert.equal(db.stats().schemaVersion, 6);
 
     // The snapshot taken before the directory update is a complete, readable copy.
     const copy = join(folder, 'before.db');

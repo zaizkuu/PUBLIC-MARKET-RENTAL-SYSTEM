@@ -134,6 +134,7 @@ type OfficerStatus = 'Active' | 'On Leave' | 'Vacant';
 
 type Officer = {
   id: string;
+  photo?: string;
   name: string;
   position: string;
   office: string;
@@ -294,7 +295,7 @@ type ActivityItem = {
    Constants
    ============================================================ */
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 15;
 const MAX_ACTIVITIES = 50;
 /* The seven sections of the Market Stall Directory, with their stall-ID codes
    (Kakanin is KS, and so on) — see src/market/directory.ts. */
@@ -879,6 +880,7 @@ function normalizeOfficer(raw: Officer): Officer {
   const status = OFFICER_STATUSES.includes(loose.status as OfficerStatus) ? (loose.status as OfficerStatus) : 'Active';
   return {
     id: str(loose.id),
+    photo: typeof loose.photo === 'string' && loose.photo.length < 200000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(loose.photo) ? loose.photo : '',
     name,
     position: str(loose.position),
     office: str(loose.office),
@@ -1317,27 +1319,6 @@ function paginate<T>(items: T[], page: number, perPage = ITEMS_PER_PAGE) {
     page: safePage,
     perPage,
   };
-}
-
-/* Rows a table can show at once; 0 shows them all. */
-const PAGE_SIZES = [10, 25, 50, 100, 0];
-const pageSizeKey = (table: string) => `pmrms-rows-per-page-${table}`;
-
-/* How many rows a table shows at once. A setting of this computer, like the
-   appearance, so it lives in local storage, and each table keeps its own. */
-function usePageSize(table: string): [number, (rows: number) => void] {
-  const [rows, setRows] = useState(() => {
-    try {
-      const stored = localStorage.getItem(pageSizeKey(table));
-      const value = stored === null ? NaN : Number(stored);
-      return PAGE_SIZES.includes(value) ? value : ITEMS_PER_PAGE;
-    } catch { return ITEMS_PER_PAGE; }
-  });
-  const choose = (next: number) => {
-    setRows(next);
-    try { localStorage.setItem(pageSizeKey(table), String(next)); } catch { /* kept for this session only */ }
-  };
-  return [rows, choose];
 }
 
 /* ---------- Utility billing helpers ---------- */
@@ -2930,7 +2911,6 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = usePageSize('stalls');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -2946,7 +2926,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
     });
   }, [stalls, sectionFilter, statusFilter, search]);
 
-  const paged = paginate(filtered, page, perPage);
+  const paged = paginate(filtered, page);
 
   return (
     <>
@@ -3000,7 +2980,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
             </tbody>
           </table>
         </div>
-        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
+        <PaginationBar paged={paged} onPage={setPage} />
       </div>
     </>
   );
@@ -3019,7 +2999,6 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
   );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = usePageSize('applicants');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -3029,7 +3008,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
     return true;
   }), [applicants, statusFilter, search]);
 
-  const paged = paginate(filtered, page, perPage);
+  const paged = paginate(filtered, page);
 
   return (
     <>
@@ -3101,7 +3080,7 @@ function ApplicantManagementPage({ applicants, pendingApplicants, incompleteAppl
             </tbody>
           </table>
         </div>
-        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
+        <PaginationBar paged={paged} onPage={setPage} />
       </div>
     </>
   );
@@ -3143,7 +3122,6 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
      month; the picker is how a payment is entered against an earlier one. */
   const [period, setPeriod] = useState(currentPeriod);
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = usePageSize('tenants');
 
   const activeCount = tenants.filter(t => t.status === 'Active').length;
   const expiringCount = tenants.filter(t => t.status === 'Expiring Soon').length;
@@ -3167,7 +3145,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
     /* In the directory's numbering, whenever a tenant was added. */
   }).sort((a, b) => compareStallNumbers(a.stallId, b.stallId)), [tenants, sectionFilter, statusFilter, rentFilter, period, search]);
 
-  const paged = paginate(filtered, page, perPage);
+  const paged = paginate(filtered, page);
 
   return (
     <>
@@ -3261,7 +3239,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
             </tbody>
           </table>
         </div>
-        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
+        <PaginationBar paged={paged} onPage={setPage} />
       </div>
     </>
   );
@@ -3290,7 +3268,6 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = usePageSize('utilities');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -3305,7 +3282,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
     return true;
   }), [bills, typeFilter, statusFilter, search]);
 
-  const paged = paginate(filtered, page, perPage);
+  const paged = paginate(filtered, page);
 
   /* Bills ticked for a batch print, held by id so the set survives paging and
      refiltering. Ids that fall out of the records entirely are dropped when
@@ -3455,7 +3432,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
             </tbody>
           </table>
         </div>
-        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
+        <PaginationBar paged={paged} onPage={setPage} />
       </div>
     </>
   );
@@ -3798,7 +3775,6 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
   );
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = usePageSize('violations');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -3819,7 +3795,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
     [filtered],
   );
 
-  const paged = paginate(ordered, page, perPage);
+  const paged = paginate(ordered, page);
 
   const openList = useMemo(() => violations.filter((v) => v.status === 'Open'), [violations]);
   const openPoints = useMemo(() => openList.reduce((s, v) => s + v.points, 0), [openList]);
@@ -3910,7 +3886,7 @@ function ViolationsPage({ violations, search, onAdd, onView, onEdit, onDelete, o
             </tbody>
           </table>
         </div>
-        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
+        <PaginationBar paged={paged} onPage={setPage} />
       </div>
     </>
   );
@@ -4553,7 +4529,6 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
   const [typeFilter, setTypeFilter] = useState('');
   const [dayFilter, setDayFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = usePageSize('logbook');
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -4574,7 +4549,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
     [filtered],
   );
 
-  const paged = paginate(ordered, page, perPage);
+  const paged = paginate(ordered, page);
 
   return (
     <>
@@ -4613,7 +4588,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
           ))}
           {paged.items.length === 0 && <div className="empty-state"><span className="material-symbols-outlined">menu_book</span>No log entries found.</div>}
         </div>
-        <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
+        <PaginationBar paged={paged} onPage={setPage} />
       </div>
     </>
   );
@@ -6570,13 +6545,8 @@ function SearchSelect({ id, value, options, onChange, placeholder }: {
 
 type PageInfo = { page: number; totalPages: number; total: number; start: number; end: number; perPage: number };
 
-function PaginationBar({ paged, onPage, onPerPage }: { paged: PageInfo; onPage: (p: number) => void; onPerPage?: (rows: number) => void }) {
+function PaginationBar({ paged, onPage }: { paged: PageInfo; onPage: (p: number) => void }) {
   const { page, totalPages } = paged;
-  /* A new page size keeps the first row that was on screen in view. */
-  const choose = (rows: number) => {
-    onPage(rows > 0 && paged.start > 0 ? Math.floor((paged.start - 1) / rows) + 1 : 1);
-    onPerPage?.(rows);
-  };
   const arrow = (icon: string, label: string, target: number, disabled: boolean) => (
     <button type="button" className="page-btn page-btn-arrow" title={label} aria-label={label} disabled={disabled} onClick={() => onPage(target)}>
       <span className="material-symbols-outlined" aria-hidden="true">{icon}</span>
@@ -6585,18 +6555,9 @@ function PaginationBar({ paged, onPage, onPerPage }: { paged: PageInfo; onPage: 
   return (
     <div className="pagination">
       <span className="pagination-info">Showing {paged.start}-{paged.end} of {paged.total}</span>
-      {onPerPage && (
-        <label className="page-size">
-          Rows per page
-          <select className="filter-select page-size-select" value={paged.perPage} onChange={(e) => choose(Number(e.target.value))}>
-            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n > 0 ? n : 'All'}</option>)}
-          </select>
-        </label>
-      )}
       <nav className="page-nav" aria-label="Pages">
         {arrow('first_page', 'First page', 1, page <= 1)}
         {arrow('chevron_left', 'Previous page', page - 1, page <= 1)}
-        <span className="page-position" aria-live="polite">Page {page} of {totalPages}</span>
         {arrow('chevron_right', 'Next page', page + 1, page >= totalPages)}
         {arrow('last_page', 'Last page', totalPages, page >= totalPages)}
       </nav>
@@ -7006,7 +6967,6 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
   const [view, setView] = useState<'board' | 'directory'>('board');
   const [officeFilter, setOfficeFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = usePageSize('officers');
 
   useEffect(() => { setPage(1); }, [search, officeFilter]);
   /* A search is a search of the whole office, so it opens the directory — the
@@ -7029,7 +6989,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
     return true;
   }), [ordered, officeFilter, search]);
 
-  const paged = paginate(filtered, page, perPage);
+  const paged = paginate(filtered, page);
 
   const printList = () => onPrintList(
     officeFilter ? `Market Officers — ${officeFilter}` : 'Market Officers',
@@ -7110,7 +7070,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
                     <tr key={o.id}>
                       <td>
                         <div className="applicant-cell">
-                          <div className={`avatar-initials ${o.name ? getAvatarColor(i) : 'vacant'}`}>{o.name ? getInitials(o.name) : '—'}</div>
+                          <OfficerAvatar officer={o} color={getAvatarColor(i)} />
                           <div className="applicant-info">
                             <div className="name">{o.name || <span className="seat-vacant">Vacant seat</span>}</div>
                             <div className="phone">{o.position}</div>
@@ -7135,7 +7095,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
                 </tbody>
               </table>
             </div>
-            <PaginationBar paged={paged} onPage={setPage} onPerPage={setPerPage} />
+            <PaginationBar paged={paged} onPage={setPage} />
           </>
         )}
       </div>
@@ -7147,6 +7107,12 @@ function OfficerStatusBadge({ officer }: { officer: Officer }) {
   if (!officer.name || officer.status === 'Vacant') return <span className="badge badge-abandoned">Vacant</span>;
   if (officer.status === 'On Leave') return <span className="badge badge-expiring">On Leave</span>;
   return <span className="badge badge-active">Active</span>;
+}
+
+function OfficerAvatar({ officer, color = '' }: { officer: Pick<Officer, 'name' | 'photo'>; color?: string }) {
+  return <span className={`avatar-initials officer-avatar ${color}`}>
+    {officer.photo ? <img src={officer.photo} alt={`${officer.name || 'Officer'} profile`} /> : officer.name ? getInitials(officer.name) : '—'}
+  </span>;
 }
 
 /* The chart itself. Drawn from `reportsTo` rather than from any fixed idea of
@@ -7161,7 +7127,11 @@ function OrgBoard({ officers, onView, onEdit }: { officers: Officer[]; onView: (
 
   return (
     <div className="org-board">
-      <div className="org-board-scroll">
+      <div className="org-board-heading">
+        <div><span className="org-eyebrow">TANAUAN PUBLIC MARKET</span><h3>Our market office</h3><p>The people serving our market, connected by their reporting roles.</p></div>
+        <span className="org-board-count"><span className="material-symbols-outlined" aria-hidden="true">groups</span>{officers.length} office seats</span>
+      </div>
+      <div className="org-board-scroll" tabIndex={0} role="region" aria-label="Organizational chart. Scroll to explore all reporting branches.">
         <ul className="org-level org-level-root">
           {heads.map((officer) => (
             <OrgNode key={officer.id} officer={officer} officers={officers} onView={onView} onEdit={onEdit} seen={new Set()} />
@@ -7181,12 +7151,15 @@ function OrgNode({ officer, officers, onView, onEdit, seen }: { officer: Officer
   below.add(officer.id);
   const reports = reportsOf(officers, officer.id).filter((o) => !below.has(o.id));
   const vacant = !officer.name || officer.status === 'Vacant';
+  const head = seen.size === 0;
+  const leafReports = reports.length > 0 && reports.every((o) => reportsOf(officers, o.id).length === 0);
 
   return (
     <li className="org-node">
-      <div className={`org-card${vacant ? ' vacant' : ''}`}>
+      <div className={`org-card${head ? ' org-card-head' : ''}${vacant ? ' vacant' : ''}`}>
+        {head && <div className="org-head-label"><span className="material-symbols-outlined" aria-hidden="true">account_balance</span>{HEAD_OF_OFFICE}</div>}
         <button type="button" className="org-card-main" onClick={() => onView(officer)} title={`View ${officer.position}`}>
-          <span className={`avatar-initials ${vacant ? 'vacant' : getAvatarColor(officer.position.length)}`}>{vacant ? '—' : getInitials(officer.name)}</span>
+          <OfficerAvatar officer={officer} color={vacant ? 'vacant' : getAvatarColor(officer.position.length)} />
           <span className="org-card-text">
             <span className="org-card-name">{officer.name || 'Vacant seat'}</span>
             <span className="org-card-position">{officer.position}</span>
@@ -7194,14 +7167,15 @@ function OrgNode({ officer, officers, onView, onEdit, seen }: { officer: Officer
           </span>
         </button>
         <div className="org-card-foot">
-          {officer.status === 'On Leave' && <span className="org-card-tag leave">On leave</span>}
+          <OfficerStatusBadge officer={officer} />
+          {reports.length > 0 && <span className="org-reports-count">{reports.length} direct {reports.length === 1 ? 'report' : 'reports'}</span>}
           <button type="button" className="row-icon-btn edit org-card-edit" title={`Edit ${officer.position}`} aria-label={`Edit ${officer.position}`} onClick={() => onEdit(officer)}>
             <span className="material-symbols-outlined">edit</span>
           </button>
         </div>
       </div>
       {reports.length > 0 && (
-        <ul className="org-level">
+        <ul className={`org-level${leafReports ? ' org-level-team' : ''}`} aria-label={`Direct reports to ${officer.name || officer.position}`}>
           {reports.map((child) => (
             <OrgNode key={child.id} officer={child} officers={officers} onView={onView} onEdit={onEdit} seen={below} />
           ))}
@@ -7221,6 +7195,7 @@ function OfficerDetailView({ officer, officers, onEdit, onClose }: { officer: Of
       subtitle={`${officer.position}${officer.office ? ` · ${officer.office}` : ''} · ${officer.id}`}
       badge={<OfficerStatusBadge officer={officer} />}
     >
+      <div className="officer-profile-photo"><OfficerAvatar officer={officer} /><button className="btn-outline" onClick={onEdit}>{officer.photo ? 'Change photo' : 'Add photo'}</button></div>
       <RecordSection title="The Seat" icon="badge">
         <div className="record-grid">
           <RecordRow label="Position" value={officer.position} />
@@ -7272,7 +7247,34 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
   const [email, setEmail] = useState(officer?.email ?? '');
   const [status, setStatus] = useState<OfficerStatus>(officer?.status ?? 'Active');
   const [appointed, setAppointed] = useState(officer?.appointed ?? '');
+  const [photo, setPhoto] = useState(officer?.photo ?? '');
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
+
+  const uploadPhoto = async (file?: File) => {
+    if (!file) return;
+    setError('');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Choose a JPG, PNG, or WebP photo.'); return; }
+    if (file.size > 5 * 1024 * 1024) { setError('Choose a photo smaller than 5 MB.'); return; }
+    setPhotoBusy(true);
+    const url = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Image processing unavailable');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 256, 256);
+      const side = Math.min(image.naturalWidth, image.naturalHeight);
+      ctx.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+      setPhoto(canvas.toDataURL('image/jpeg', 0.82));
+    } catch { setError('This photo could not be opened. Please choose another image.'); }
+    finally { URL.revokeObjectURL(url); setPhotoBusy(false); }
+  };
 
   /* Vacancy is a property of the seat, not a state the holder is in: naming
      somebody fills the seat, clearing the name empties it again. A seat that
@@ -7311,11 +7313,23 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
       /* A seat with nobody in it is vacant whatever the picker says. */
       status: trimmedName ? heldStatus : 'Vacant',
       appointed,
+      photo: trimmedName ? photo : '',
     });
   };
 
   return (
     <>
+      <div className="officer-photo-editor">
+        <OfficerAvatar officer={{ name, photo }} />
+        <div><strong>Profile photo</strong><p>JPG, PNG, or WebP, up to 5 MB. Photos are cropped to a square.</p>
+          <div className="officer-photo-actions">
+            <input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Officer profile photo" hidden onChange={(e) => { void uploadPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+            <button type="button" className="btn-outline" disabled={photoBusy} onClick={() => photoInput.current?.click()}>{photoBusy ? 'Preparing photo…' : photo ? 'Change photo' : 'Upload photo'}</button>
+            {photo && <button type="button" className="btn-outline" disabled={photoBusy} onClick={() => setPhoto('')}>Remove photo</button>}
+          </div>
+          <p>Saved when you {editing ? 'save changes' : 'add the officer'}.</p>
+        </div>
+      </div>
       <div className="form-grid">
         <div className="form-row">
           <div className="form-group">
@@ -7374,7 +7388,7 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
 
       <div className="modal-footer">
         <button className="btn-outline" onClick={onCancel}>Cancel</button>
-        <button className="btn-primary" onClick={submit}><span className="material-symbols-outlined">save</span>{editing ? 'Save Changes' : 'Add Officer'}</button>
+        <button className="btn-primary" disabled={photoBusy} onClick={submit}><span className="material-symbols-outlined">save</span>{editing ? 'Save Changes' : 'Add Officer'}</button>
       </div>
     </>
   );

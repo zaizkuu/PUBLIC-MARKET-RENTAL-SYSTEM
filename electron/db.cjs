@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS officers (
   email     TEXT NOT NULL DEFAULT '',
   status    TEXT NOT NULL DEFAULT 'Vacant',
   appointed TEXT NOT NULL DEFAULT '',
+  photo     TEXT NOT NULL DEFAULT '',
   seat      INTEGER NOT NULL DEFAULT 0
 );
 
@@ -247,7 +248,7 @@ const TABLES = {
   violations: ['id', 'tenant', 'issue', 'status', 'points', 'offence', 'dateRecorded', 'dateResolved', 'notes'],
   logs: ['id', 'date', 'time', 'type', 'details', 'recordedBy', 'visitorCount', 'visitors'],
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
-  officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed'],
+  officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed', 'photo'],
 };
 
 /* The state key above maps to a differently named table in two cases. */
@@ -291,6 +292,7 @@ function open(file) {
    IF NOT EXISTS brings in whole new tables on its own; a new column on an old
    table has to be added here or the record silently loses the field. */
 const ADDED_COLUMNS = [
+  ['officers', 'photo', "TEXT NOT NULL DEFAULT ''"],
   ['stalls', 'permit', "TEXT NOT NULL DEFAULT 'Not Recorded'"],
   ['stalls', 'note', "TEXT NOT NULL DEFAULT ''"],
   ['tenants', 'rentDueDay', 'INTEGER NOT NULL DEFAULT 5'],
