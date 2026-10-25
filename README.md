@@ -277,6 +277,18 @@ and Market Officers — pages with arrows (first, previous, next, last) around
 once. Each table remembers its own choice on this computer, and changing it
 keeps the first row that was on screen in view.
 
+## Logbook visitations
+
+A **Visitation** entry records who came to the office: the **Number of
+Visitors** (1 to 100), a name box for each of them — written Surname, Given
+names, and left blank for anyone who gave no name — and the purpose of the
+visit. The logbook shows it as "3 visitors: DELA CRUZ, JUAN; Maria Santos;
+1 not named"; searching finds a visitor by name; the printed list and the CSV
+export carry the count and the names; and the Analytics report totals the
+visitors across every visitation. The database keeps the count and the names
+(one per line) in the `logs` table, added to an existing database when it
+next opens.
+
 ## Analytics report as a PDF
 
 **Export as PDF** on the Analytics page saves the Market Operations Analytics

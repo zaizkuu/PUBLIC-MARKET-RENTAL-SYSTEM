@@ -19,7 +19,10 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.save({
       state: {
         stalls: [{ id: 'KS-1', section: 'Kakanin', tenant: 'Norida Lerios', status: 'Occupied', permit: 'Not Recorded', lastInspection: '-', note: '' }],
-        logs: [{ id: 'LOG-001', date: '2026-10-24', time: '08:00 AM', type: 'Security', details: 'Signed in.', recordedBy: 'Engr. Luz M. Maderazo' }],
+        logs: [
+          { id: 'LOG-001', date: '2026-10-24', time: '08:00 AM', type: 'Security', details: 'Signed in.', recordedBy: 'Engr. Luz M. Maderazo' },
+          { id: 'LOG-002', date: '2026-10-24', time: '09:30 AM', type: 'Visitation', details: 'Treasurer\'s Office review.', recordedBy: 'Felmar Pica', visitorCount: 3, visitors: ['DELA CRUZ, JUAN', ' Maria  Santos ', ''] },
+        ],
         violations: [{ id: 'VIO-001', tenant: 'Norida Lerios', issue: 'Selling outside assigned area', status: 'Reprimanded', points: 1, offence: 2, dateRecorded: '2026-10-20', dateResolved: '2026-10-24', notes: '' }],
       },
       idCounters: { LOG: 1 },
@@ -37,6 +40,10 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     assert.equal(loaded.roster, 'office-orders-2026-10');
     assert.equal(loaded.state.stalls[0].id, 'KS-1');
     assert.equal(loaded.state.logs[0].recordedBy, 'Engr. Luz M. Maderazo');
+    // A visitation keeps its count and its names — a name with a comma of its own included.
+    assert.equal(loaded.state.logs[1].visitorCount, 3);
+    assert.deepEqual(loaded.state.logs[1].visitors, ['DELA CRUZ, JUAN', 'Maria Santos']);
+    assert.deepEqual(loaded.state.logs[0].visitors, []);
     assert.equal(loaded.state.violations[0].offence, 2);
     assert.equal(loaded.state.violations[0].status, 'Reprimanded');
     const [account] = db.loadAccounts();
@@ -49,7 +56,7 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.replaceAll({ state: { stalls: [] }, idCounters: {} });
     db.clearAll();
     assert.equal(db.loadAccounts().length, 1);
-    assert.equal(db.stats().schemaVersion, 4);
+    assert.equal(db.stats().schemaVersion, 5);
 
     // The snapshot taken before the directory update is a complete, readable copy.
     const copy = join(folder, 'before.db');

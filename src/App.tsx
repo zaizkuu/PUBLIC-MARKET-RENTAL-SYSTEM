@@ -275,6 +275,10 @@ type LogEntry = {
   /* Who was signed in when the entry was made. Blank on entries from before
      the system had sign-in, and on failed sign-ins, where nobody was. */
   recordedBy?: string;
+  /* A visitation: how many people came to the office, and the names of those
+     who gave one — there may be fewer names than visitors. 0 and [] otherwise. */
+  visitorCount?: number;
+  visitors?: string[];
 };
 
 type ActivityItem = {
@@ -305,6 +309,22 @@ const KEEPER_RELATIONS = ['Self (tenant tends the stall)', 'Spouse', 'Child', 'P
 /* 'Security' holds sign-ins, sign-outs, locks and account changes — the trail
    of who had the records open, written by the system itself. */
 const LOG_TYPES = ['Inspection', 'Visitation', 'Incident', 'Maintenance', 'Collection', 'Announcement', 'Security'];
+
+/* The most visitors one visitation entry takes — a name box is shown for each. */
+const MAX_VISITORS = 100;
+
+/* Who came on a visitation, in a line: "3 visitors: DELA CRUZ, JUAN; Maria
+   Santos; 1 not named". Names are set apart with semicolons, since a name
+   written surname first has a comma of its own. '' for any other entry. */
+function visitorSummary(log: LogEntry): string {
+  const count = log.visitorCount ?? 0;
+  if (log.type !== 'Visitation' || count <= 0) return '';
+  const names = log.visitors ?? [];
+  const unnamed = Math.max(0, count - names.length);
+  const label = `${count} visitor${count === 1 ? '' : 's'}`;
+  if (names.length === 0) return `${label}, not named`;
+  return `${label}: ${[...names, ...(unnamed > 0 ? [`${unnamed} not named`] : [])].join('; ')}`;
+}
 /* The offences a stallholder can be cited for, as the office's "Market
    Violations — Dropdown List": short labels for the prohibited acts of
    Section 22 and the duties of Section 23, each with the section and item it
@@ -948,7 +968,17 @@ function mergeState(input: unknown): AppState {
     applicants: pick('applicants').map(normalizeApplicant),
     tenants: pick('tenants').map(normalizeTenant),
     officers: linkOfficers(pick('officers').map(normalizeOfficer)),
-    logs: pick('logs').map((l) => ({ ...l, date: typeof l?.date === 'string' ? l.date : '', recordedBy: typeof l?.recordedBy === 'string' ? l.recordedBy : '' })),
+    logs: pick('logs').map((l) => {
+      const raw = (l ?? {}) as unknown as Record<string, unknown>;
+      const visitors: unknown[] = Array.isArray(raw.visitors) ? raw.visitors : typeof raw.visitors === 'string' ? raw.visitors.split('\n') : [];
+      return {
+        ...l,
+        date: typeof l?.date === 'string' ? l.date : '',
+        recordedBy: typeof l?.recordedBy === 'string' ? l.recordedBy : '',
+        visitorCount: Math.max(0, Math.floor(Number(raw.visitorCount) || 0)),
+        visitors: visitors.map((n) => String(n).trim()).filter(Boolean),
+      };
+    }),
     activities: pick('activities').slice(0, MAX_ACTIVITIES),
     stalls: pick('stalls').map(normalizeStall),
     violations: pick('violations').map((v) => ({
@@ -2576,7 +2606,7 @@ function App({ boot }: { boot: BootData }) {
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
           {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Offence','Points','Status','Date Recorded','Date Reprimanded','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} exporting={!!reportJob} onExport={() => setReportJob({ at: new Date() })} onNavigate={setActive} />}
-          {active === 'logbook' && <LogbookPage canDelete={isAdmin} onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details','Recorded By'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, l.recordedBy || '—']), 'logbook.csv'); showToast('Log exported'); }} />}
+          {active === 'logbook' && <LogbookPage canDelete={isAdmin} onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details','Visitors','Visitor Names','Recorded By'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, l.type === 'Visitation' && l.visitorCount ? String(l.visitorCount) : '—', (l.visitors ?? []).join('; ') || '—', l.recordedBy || '—']), 'logbook.csv'); showToast('Log exported'); }} />}
           {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, reportsToLabel(state.officers, o), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-officers.csv'); showToast('Market Officers exported'); }} />}
           {active === 'settings' && <SettingsPage isAdmin={isAdmin} accountPanel={<AccountSettings accounts={accounts} current={user} idleMinutes={idleMinutes} onIdleMinutes={chooseIdleMinutes} onChange={changeAccounts} />} automaticBackup={automaticBackup} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage canRestore={isAdmin} state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
@@ -4289,6 +4319,8 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
     () => LOG_TYPES.map((type) => ({ type, count: state.logs.filter((l) => l.type === type).length })),
     [state.logs],
   );
+  const visits = useMemo(() => state.logs.filter((l) => l.type === 'Visitation'), [state.logs]);
+  const visitorTotal = visits.reduce((s, l) => s + (l.visitorCount ?? 0), 0);
 
   const occupancyRate = ratio(occupiedCount, totalStalls);
   const collectionRate = ratio(collectedTotal, billedTotal);
@@ -4490,6 +4522,9 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
           <tfoot><tr><td>Total entries</td><td className="num">{state.logs.length}</td><td className="share">{state.logs.length > 0 ? '100.0%' : '—'}</td></tr></tfoot>
           </table>
         </div>
+        <p className="report-note">{visits.length === 0
+          ? 'No visitation has been logged.'
+          : `${visitorTotal} visitor${visitorTotal === 1 ? '' : 's'} came to the office across ${visits.length} visitation entr${visits.length === 1 ? 'y' : 'ies'}.`}</p>
       </ReportSection>
 
       <footer className="report-footer">
@@ -4512,8 +4547,8 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
   const printList = () => onPrintList(
     'Logbook',
     `${typeFilter || 'All entry types'}${dayFilter ? ` · ${formatIsoDate(dayFilter)}` : ''}${search ? ` · matching “${search}”` : ''}`,
-    ['Date', 'Time', 'Type', 'Details', 'Recorded By'],
-    ordered.map((l) => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, l.recordedBy || '—']),
+    ['Date', 'Time', 'Type', 'Details', 'Visitors', 'Recorded By'],
+    ordered.map((l) => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, visitorSummary(l) || '—', l.recordedBy || '—']),
   );
   const [typeFilter, setTypeFilter] = useState('');
   const [dayFilter, setDayFilter] = useState('');
@@ -4530,7 +4565,7 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
   const filtered = useMemo(() => logs.filter((l) => {
     if (typeFilter && l.type !== typeFilter) return false;
     if (dayFilter && l.date !== dayFilter) return false;
-    if (search) { const q = search.toLowerCase(); if (!l.details.toLowerCase().includes(q) && !l.type.toLowerCase().includes(q)) return false; }
+    if (search) { const q = search.toLowerCase(); if (!l.details.toLowerCase().includes(q) && !l.type.toLowerCase().includes(q) && !(l.visitors ?? []).some((n) => n.toLowerCase().includes(q))) return false; }
     return true;
   }), [logs, typeFilter, dayFilter, search]);
 
@@ -4565,7 +4600,11 @@ function LogbookPage({ logs, search, onAdd, onDelete, onExport, onPrintList, can
               <span className="log-date">{log.date ? formatIsoDate(log.date) : '—'}</span>
               <span className="log-time">{log.time}</span>
               <span className="log-type">{log.type}</span>
-              <span className="log-details">{log.details}{log.recordedBy && <span className="log-by">Recorded by {log.recordedBy}</span>}</span>
+              <span className="log-details">
+                {log.details}
+                {visitorSummary(log) && <span className="log-visitors"><span className="material-symbols-outlined" aria-hidden="true">groups</span>{visitorSummary(log)}</span>}
+                {log.recordedBy && <span className="log-by">Recorded by {log.recordedBy}</span>}
+              </span>
               {/* The logbook is the audit trail, so only an administrator may strike an entry from it. */}
               {canDelete
                 ? <button type="button" className="row-icon-btn danger" title="Delete log entry" aria-label="Delete log entry" onClick={() => onDelete(log)}><span className="material-symbols-outlined">delete</span></button>
@@ -5460,16 +5499,55 @@ function AddLogForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]
   const [type, setType] = useState(LOG_TYPES[0]);
   const [details, setDetails] = useState('');
   const [error, setError] = useState('');
+  /* A visitation: how many came, and a name box for each. Names typed into
+     boxes beyond a count that is then lowered are kept, in case it goes back up. */
+  const [visitorCount, setVisitorCount] = useState('1');
+  const [names, setNames] = useState<string[]>([]);
+  const visitation = type === 'Visitation';
+  const count = Number(visitorCount);
+  const countOk = Number.isInteger(count) && count >= 1 && count <= MAX_VISITORS;
+  const nameRows = Array.from({ length: countOk ? count : Math.min(Math.max(1, Math.floor(count) || 1), MAX_VISITORS) }, (_, i) => names[i] ?? '');
+  const setName = (i: number, value: string) => setNames((prev) => {
+    const next = [...prev];
+    while (next.length <= i) next.push('');
+    next[i] = value;
+    return next;
+  });
 
   const handleSubmit = () => {
-    if (!details.trim()) { setError('Enter the details of this log entry.'); return; }
-    onSubmit({ id: nextId('LOG', existingIds), date: todayIso(), time: nowTimeStr(), type, details: details.trim() });
+    if (visitation && !countOk) { setError(`Enter how many people visited — a whole number from 1 to ${MAX_VISITORS}.`); return; }
+    if (!details.trim()) { setError(visitation ? 'Enter who visited and why — the office or organisation and the purpose of the visit.' : 'Enter the details of this log entry.'); return; }
+    onSubmit({
+      id: nextId('LOG', existingIds), date: todayIso(), time: nowTimeStr(), type, details: details.trim(),
+      visitorCount: visitation ? count : 0,
+      visitors: visitation ? nameRows.map((n) => n.replace(/\s+/g, ' ').trim()).filter(Boolean) : [],
+    });
   };
 
   return (
     <div className="form-grid">
-      <div className="form-group"><label className="form-label">Entry Type</label><select className="form-select" value={type} onChange={(e) => setType(e.target.value)}>{LOG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-      <div className="form-group"><label className="form-label">Details *</label><textarea className="form-textarea" placeholder="Describe the event or activity..." value={details} onChange={(e) => { setDetails(e.target.value); setError(''); }} /></div>
+      <div className="form-group"><label className="form-label" htmlFor="log-type">Entry Type</label><select id="log-type" className="form-select" value={type} onChange={(e) => { setType(e.target.value); setError(''); }}>{LOG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+      {visitation && (
+        <>
+          <div className="form-group">
+            <label className="form-label" htmlFor="log-visitor-count">Number of Visitors *</label>
+            <input id="log-visitor-count" className="form-input" type="number" inputMode="numeric" min={1} max={MAX_VISITORS} step={1} value={visitorCount}
+              onChange={(e) => { setVisitorCount(e.target.value); setError(''); }} aria-describedby="log-visitor-count-hint" />
+            <span id="log-visitor-count-hint" className="form-hint">How many people came to the office, from 1 to {MAX_VISITORS}. A name box appears for each.</span>
+          </div>
+          <fieldset className="form-group visitor-names">
+            <legend className="form-label">Names of Visitors</legend>
+            <div className="visitor-name-list">
+              {nameRows.map((name, i) => (
+                <input key={i} className="form-input" value={name} placeholder={`Visitor ${i + 1}`} aria-label={`Name of visitor ${i + 1}`}
+                  onChange={(e) => { setName(i, e.target.value); setError(''); }} />
+              ))}
+            </div>
+            <span className="form-hint">Write each as Surname, Given names. Leave a box blank if that visitor gave no name; the entry still counts them.</span>
+          </fieldset>
+        </>
+      )}
+      <div className="form-group"><label className="form-label" htmlFor="log-details">{visitation ? 'Purpose of the Visit *' : 'Details *'}</label><textarea id="log-details" className="form-textarea" placeholder={visitation ? 'Office or organisation, and what the visit was about…' : 'Describe the event or activity...'} value={details} onChange={(e) => { setDetails(e.target.value); setError(''); }} /></div>
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
       <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}><button className="btn-outline" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={handleSubmit}>Add Entry</button></div>
     </div>

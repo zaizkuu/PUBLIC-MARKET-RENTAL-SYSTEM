@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -245,7 +245,7 @@ const TABLES = {
     'meterNumber', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
     'dateIssued', 'dueDate', 'notes'],
   violations: ['id', 'tenant', 'issue', 'status', 'points', 'offence', 'dateRecorded', 'dateResolved', 'notes'],
-  logs: ['id', 'date', 'time', 'type', 'details', 'recordedBy'],
+  logs: ['id', 'date', 'time', 'type', 'details', 'recordedBy', 'visitorCount', 'visitors'],
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
   officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed'],
 };
@@ -299,6 +299,9 @@ const ADDED_COLUMNS = [
   ['utility_bills', 'meterNumber', "TEXT NOT NULL DEFAULT ''"],
   ['logs', 'recordedBy', "TEXT NOT NULL DEFAULT ''"],
   ['violations', 'offence', 'INTEGER NOT NULL DEFAULT 1'],
+  // A visitation entry: how many came, and the names given, one per line.
+  ['logs', 'visitorCount', 'INTEGER NOT NULL DEFAULT 0'],
+  ['logs', 'visitors', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 function addMissingColumns() {
@@ -394,6 +397,12 @@ function readAll() {
 
   state.violations = state.violations.map((v) => ({ ...v, points: Number(v.points) || 0, offence: Number(v.offence) || 1 }));
 
+  state.logs = state.logs.map((l) => ({
+    ...l,
+    visitorCount: Number(l.visitorCount) || 0,
+    visitors: l.visitors ? String(l.visitors).split('\n').filter(Boolean) : [],
+  }));
+
   const slipItems = db.prepare('SELECT * FROM verification_items ORDER BY controlNo, position').all();
   state.verifications = db.prepare(
     `SELECT controlNo, purpose, issuedTo, section, stallNo, others, dateIssued, validUntil, issuedBy
@@ -471,6 +480,11 @@ function bindable(record, columns, position, orderColumn = 'position') {
   if (record && record.meters && typeof record.meters === 'object') {
     record = { ...record, meterElectricity: record.meters.Electricity || '', meterWater: record.meters.Water || '' };
   }
+  // A visitation's names are a list; the column holds one per line, since a
+  // name written surname first carries a comma of its own.
+  if (record && Array.isArray(record.visitors)) {
+    record = { ...record, visitors: record.visitors.map((n) => String(n).replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n') };
+  }
   for (const column of columns) {
     const value = record[column];
     if (value === null || value === undefined) {
@@ -484,7 +498,7 @@ function bindable(record, columns, position, orderColumn = 'position') {
     }
   }
   // Numeric columns must not arrive as text, or comparisons in SQL misbehave.
-  for (const column of ['rent', 'points', 'offence', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount']) {
+  for (const column of ['rent', 'points', 'offence', 'visitorCount', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount']) {
     if (column in row) row[column] = Number(row[column]) || 0;
   }
   return row;
