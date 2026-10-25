@@ -169,6 +169,32 @@ function registerDatabaseHandlers() {
     await db.backupTo(filePath);
     return { canceled: false, filePath };
   });
+
+  /* The analytics report as a PDF. The renderer has already laid the report
+     out for print (A4, set by its own stylesheet); this asks where to keep it,
+     prints the window straight to that file with page numbers in the footer,
+     and opens it — no printer, no print dialog, nothing leaves the computer. */
+  handle('report:save-pdf', async (suggestedName) => {
+    const name = path.basename(String(suggestedName || '')).replace(/[^\w .()-]/g, '') || 'Market Analytics Report.pdf';
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save the analytics report as a PDF',
+      defaultPath: path.join(app.getPath('documents'), name.endsWith('.pdf') ? name : `${name}.pdf`),
+      filters: [{ name: 'PDF document', extensions: ['pdf'] }],
+    });
+    if (canceled || !filePath) return { canceled: true };
+    const pdf = await mainWindow.webContents.printToPDF({
+      preferCSSPageSize: true,
+      printBackground: true,
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate: '<div style="width:100%;margin:0 11mm;display:flex;justify-content:space-between;font-family:Inter,Arial,sans-serif;font-size:7.5pt;color:#6b7280;">'
+        + '<span>Tanauan Public Market · Market Office · Market Operations Analytics Report</span>'
+        + '<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>',
+    });
+    await fs.promises.writeFile(filePath, pdf);
+    const openError = await shell.openPath(filePath);
+    return { canceled: false, filePath, opened: !openError };
+  });
 }
 
 /**

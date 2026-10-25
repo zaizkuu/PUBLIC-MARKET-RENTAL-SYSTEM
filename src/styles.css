@@ -2018,7 +2018,8 @@ ul, ol {
   gap: 14px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--color-border);
-  background: linear-gradient(180deg, #fbfcfe 0%, var(--color-surface) 100%);
+  /* From the theme's own tokens, so dark mode gets a dark heading band. */
+  background: linear-gradient(180deg, var(--color-surface-hover) 0%, var(--color-surface) 100%);
 }
 
 .report-index {
@@ -6854,4 +6855,130 @@ ul, ol {
   padding: 12px;
   font-size: calc(15px * var(--font-scale, 1));
   color: var(--color-text-secondary);
+}
+
+/* ============================================================
+   The analytics report as a PDF
+   ============================================================
+
+   A second copy of the report, laid out only for print and saved as a PDF
+   (see the report export in App.tsx). It is always the light theme — a
+   dark page does not present or print — so the colours the dark theme
+   changes are pinned back to their light values here. */
+
+.report-print-area {
+  color-scheme: light;
+  --font-scale: 1;
+  --color-bg: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f9fafb;
+  --color-border: #e5e7eb;
+  --color-border-light: #f0f1f3;
+  --color-text: #1a1f36;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-bg: rgba(37, 99, 235, 0.08);
+  --color-success: #16a34a;
+  --color-success-bg: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fee2e2;
+  --color-info: #2563eb;
+  --color-info-bg: #dbeafe;
+  color: var(--color-text);
+  background: #ffffff;
+}
+
+@media print {
+  @page report {
+    size: A4 portrait;
+    margin: 12mm 11mm 16mm;
+  }
+
+  .report-print-area {
+    page: report;
+  }
+
+  /* White paper whatever the theme: the dark theme paints the page itself, and
+     that would show below the report on its last page. */
+  html:has(> body.printing),
+  body.printing {
+    background: #ffffff !important;
+  }
+
+  .report-print-area * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* A row of figures stays one row across the page, however many it holds. */
+  .report-print-area .report-figures {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  /* Side-by-side panels stack on paper, each the full width of the page, so
+     no table is squeezed into half of it. */
+  .report-print-area .report-split,
+  .report-print-area .report-split.table-wide {
+    grid-template-columns: 1fr;
+    gap: 0;
+    background: transparent;
+  }
+
+  .report-print-area .report-split > .report-panel + .report-panel {
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .report-print-area .report {
+    max-width: none;
+    gap: 12px;
+  }
+
+  /* Buttons do nothing on paper. */
+  .report-print-area .report-actions,
+  .report-print-area .report-section-action {
+    display: none !important;
+  }
+
+  .report-print-area .report-masthead,
+  .report-print-area .report-section,
+  .report-print-area .report-footer {
+    box-shadow: none;
+  }
+
+  /* A section may run onto the next page, but its heading stays with what
+     follows it, and no figure, chart, table row or note is cut in two. */
+  .report-print-area .report-section-head {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .report-print-area .report-masthead,
+  .report-print-area .report-figure,
+  .report-print-area .report-panel,
+  .report-print-area .report-table tr,
+  .report-print-area .report-note,
+  .report-print-area .report-footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-print-area .report-table thead {
+    display: table-header-group;
+  }
+
+  /* A total is printed once, under the last row — repeated at the foot of
+     every page it would read as the end of the table. */
+  .report-print-area .report-table tfoot {
+    display: table-row-group;
+  }
+
+  .report-print-area .report-table-wrap {
+    overflow: visible;
+  }
 }

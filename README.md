@@ -277,6 +277,21 @@ and Market Officers — pages with arrows (first, previous, next, last) around
 once. Each table remembers its own choice on this computer, and changing it
 keeps the first row that was on screen in view.
 
+## Analytics report as a PDF
+
+**Export as PDF** on the Analytics page saves the Market Operations Analytics
+Report as an A4 PDF ready to present: the seal and reference number, who
+prepared it, the seven numbered sections with their charts and tables, and
+"Page 1 of 5" in the footer. It is always laid out in the light theme, without
+the sidebar or buttons, and no chart, table row or section heading is cut
+across a page.
+
+- In the desktop app a Save dialog opens (Documents, "Market Analytics Report
+  <date>.pdf"); the PDF is written straight there and opened. No printer is
+  needed and nothing leaves the computer.
+- In a browser the print window opens with the report laid out — choose
+  **Save as PDF** as the printer.
+
 ## Monthly rent
 
 Rent is recorded a month at a time from the Tenant Records register — tick the

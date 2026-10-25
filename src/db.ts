@@ -33,6 +33,7 @@ type Bridge = {
   stats: () => Promise<BridgeResult<DatabaseStats>>;
   integrityCheck: () => Promise<BridgeResult<{ ok: boolean; result: string }>>;
   backup: () => Promise<BridgeResult<{ canceled: boolean; filePath?: string }>>;
+  saveReportPdf?: (fileName: string) => Promise<BridgeResult<{ canceled: boolean; filePath?: string; opened?: boolean }>>;
   revealFolder: () => Promise<BridgeResult<string>>;
   snapshot?: (label: string) => Promise<BridgeResult<string>>;
   loadAccounts?: () => Promise<BridgeResult<unknown[]>>;
@@ -227,6 +228,14 @@ export async function backupDatabase(): Promise<{ canceled: boolean; filePath?: 
   const db = bridge();
   if (!db) return null;
   return unwrap(db.backup());
+}
+
+/** Saves the page as laid out for print to a PDF the operator chooses, and
+    opens it. Null in a browser, which has no way to write the file itself. */
+export async function saveReportPdf(fileName: string): Promise<{ canceled: boolean; filePath?: string; opened?: boolean } | null> {
+  const db = bridge();
+  if (!db?.saveReportPdf) return null;
+  return unwrap(db.saveReportPdf(fileName));
 }
 
 /**

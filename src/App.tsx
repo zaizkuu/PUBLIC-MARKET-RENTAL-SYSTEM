@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
   loadStored, persist, replaceAll, clearStored, keepCopyBefore, loadAccounts, saveAccounts,
-  usingDatabase, backendName, databaseStats, backupDatabase, checkIntegrity,
+  usingDatabase, backendName, databaseStats, backupDatabase, checkIntegrity, saveReportPdf,
   revealDataFolder, formatBytes,
 } from './db';
 import type { LoadResult } from './db';
@@ -1743,6 +1743,8 @@ function App({ boot }: { boot: BootData }) {
   const [printRequest, setPrintRequest] = useState<PrintRequest | null>(null);
   const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string } | null>(null);
   const [registerJob, setRegisterJob] = useState<RegisterJob | null>(null);
+  /* The analytics report laid out for a PDF, stamped when Export was pressed. */
+  const [reportJob, setReportJob] = useState<{ at: Date } | null>(null);
 
   /* Verification slips run the same two steps. `verifyRequest` carries the
      stall the slip was started from, when it was started from one. */
@@ -1885,6 +1887,43 @@ function App({ boot }: { boot: BootData }) {
       document.body.classList.remove('printing');
     };
   }, [registerJob]);
+
+  /* The analytics report as a PDF. Lay the report out for print, then in the
+     desktop app ask where to save it and write the PDF straight there; in a
+     browser, open the print window with "Save as PDF" as the way to keep it. */
+  useEffect(() => {
+    if (!reportJob) return;
+    let dropped = false;
+    document.body.classList.add('printing');
+    const finish = () => setReportJob(null);
+    const fileName = `Market Analytics Report ${isoDate(reportJob.at)}.pdf`;
+    const laidOut = new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    void (async () => {
+      await laidOut;
+      await document.fonts?.ready;
+      if (dropped) return;
+      try {
+        const saved = await saveReportPdf(fileName);
+        if (dropped) return;
+        if (saved === null) {
+          window.addEventListener('afterprint', finish, { once: true });
+          showToast('Choose “Save as PDF” as the printer to keep the report as a PDF.', 6000);
+          window.print();
+          return;
+        }
+        if (!saved.canceled) showToast(`Report saved to ${saved.filePath}${saved.opened ? ' and opened' : ''}.`, 6000);
+        finish();
+      } catch (error) {
+        showToast(`The report could not be saved as a PDF${error instanceof Error ? `: ${error.message}` : ''}.`, 6000);
+        finish();
+      }
+    })();
+    return () => {
+      dropped = true;
+      window.removeEventListener('afterprint', finish);
+      document.body.classList.remove('printing');
+    };
+  }, [reportJob, showToast]);
 
   /* Every change to the records is written straight back to storage. The short
      delay collapses a burst of edits into one write; the guard makes sure a
@@ -2425,10 +2464,6 @@ function App({ boot }: { boot: BootData }) {
 
   const handleLogout = () => { setMenuOpen(false); setModal({ type: 'confirm-logout' }); };
 
-  const downloadReport = () => {
-    downloadJSON({ generatedAt: new Date().toISOString(), summary: { tenants: state.tenants.length, applicants: state.applicants.length, stalls: state.stalls.length, officers: state.officers.length }, data: state }, 'civic-market-core-report.json');
-    showToast('Report downloaded');
-  };
 
   if (!user) {
     return (
@@ -2540,7 +2575,7 @@ function App({ boot }: { boot: BootData }) {
           {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
           {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Offence','Points','Status','Date Recorded','Date Reprimanded','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
-          {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
+          {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} exporting={!!reportJob} onExport={() => setReportJob({ at: new Date() })} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage canDelete={isAdmin} onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details','Recorded By'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, l.recordedBy || '—']), 'logbook.csv'); showToast('Log exported'); }} />}
           {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, reportsToLabel(state.officers, o), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-officers.csv'); showToast('Market Officers exported'); }} />}
           {active === 'settings' && <SettingsPage isAdmin={isAdmin} accountPanel={<AccountSettings accounts={accounts} current={user} idleMinutes={idleMinutes} onIdleMinutes={chooseIdleMinutes} onChange={changeAccounts} />} automaticBackup={automaticBackup} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
@@ -2620,6 +2655,15 @@ function App({ boot }: { boot: BootData }) {
       {printRequest && <PrintPreviewDialog signedIn={user.name} request={printRequest} billsOnRecord={state.utilities} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
       {printJob && <div className="print-area"><ReceiptSheets receipts={printJob.receipts} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
       {registerJob && <div className="print-area"><RegisterSheet job={registerJob} /></div>}
+      {reportJob && (
+        <div className="print-area report-print-area">
+          <AnalyticsPage
+            state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount}
+            generatedAt={reportJob.at} preparedBy={`${user.name} — ${user.position}`} printable
+            onExport={() => {}} onNavigate={() => {}}
+          />
+        </div>
+      )}
       {verifyRequest && (
         <VerificationPrintDialog
           signedIn={user.name}
@@ -4155,10 +4199,16 @@ function ReportShare({ value, tone }: { value: number; tone?: string }) {
   );
 }
 
-function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount, onExport, onNavigate }: { state: AppState; occupiedCount: number; availableCount: number; maintenanceCount: number; onExport: () => void; onNavigate: (k: ModuleKey) => void }) {
-  /* Stamped once when the report is opened — every figure below is read from
-     the records as they stood at that moment. */
-  const [generatedAt] = useState(() => new Date());
+function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount, onExport, onNavigate, exporting, printable, preparedBy, generatedAt: exportedAt }: {
+  state: AppState; occupiedCount: number; availableCount: number; maintenanceCount: number; onExport: () => void; onNavigate: (k: ModuleKey) => void;
+  /* Set while a PDF of this report is being made. */
+  exporting?: boolean;
+  /* The copy laid out for the PDF: no buttons, who prepared it, and when. */
+  printable?: boolean; preparedBy?: string; generatedAt?: Date;
+}) {
+  /* Stamped once when the report is opened (or exported) — every figure below
+     is read from the records as they stood at that moment. */
+  const [generatedAt] = useState(() => exportedAt ?? new Date());
   const totalStalls = state.stalls.length;
 
   const sections = useMemo(
@@ -4262,10 +4312,15 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
           <span className="report-office">Municipality of Tanauan, Leyte &middot; Market Office</span>
           <h2 className="report-title">Market Operations Analytics Report</h2>
           <span className="report-meta">Reference {reference} &middot; Compiled from live records as of {stamp}</span>
+          {preparedBy && <span className="report-meta">Prepared by {preparedBy}</span>}
         </div>
-        <div className="report-actions">
-          <button className="btn-primary" onClick={onExport}><span className="material-symbols-outlined">download</span>Export Report</button>
-        </div>
+        {!printable && (
+          <div className="report-actions">
+            <button className="btn-primary" onClick={onExport} disabled={exporting}>
+              <span className="material-symbols-outlined">{exporting ? 'hourglass_top' : 'picture_as_pdf'}</span>{exporting ? 'Preparing PDF…' : 'Export as PDF'}
+            </button>
+          </div>
+        )}
       </header>
 
       <ReportSection index="I" title="Executive Summary" summary="Headline indicators for the market as currently recorded.">
@@ -4440,9 +4495,9 @@ function AnalyticsPage({ state, occupiedCount, availableCount, maintenanceCount,
       <footer className="report-footer">
         <span className="material-symbols-outlined">verified</span>
         <p>
-          This report is compiled automatically from the records held on this workstation and is
-          unsigned. Export it for filing, or have it certified by the Market Supervisor before it is
-          used outside the office.
+          {printable
+            ? `This report was compiled automatically from the records held on this workstation on ${stamp}. It is unsigned until certified by the Market Supervisor.`
+            : 'This report is compiled automatically from the records held on this workstation and is unsigned. Export it as a PDF for filing or presenting, and have it certified by the Market Supervisor before it is used outside the office.'}
         </p>
       </footer>
     </div>
