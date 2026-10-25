@@ -422,13 +422,15 @@ function readIdCounters() {
 }
 
 /** Everything the renderer needs at start-up, in one trip. `dataset` names
-    the edition of the stall directory the records were last brought up to. */
+    the edition of the stall directory the records were last brought up to,
+    `roster` the office-order roster last added to the board. */
 function load() {
   return {
     state: readAll(),
     idCounters: readIdCounters(),
     savedAt: readMeta('saved_at'),
     dataset: readMeta('dataset'),
+    roster: readMeta('roster'),
     file: dbFile,
   };
 }
@@ -533,6 +535,7 @@ function save(payload) {
 
     // Written with the records it describes, so the two can never disagree.
     if (payload && typeof payload.dataset === 'string') writeMeta('dataset', payload.dataset);
+    if (payload && typeof payload.roster === 'string') writeMeta('roster', payload.roster);
   });
 
   write();

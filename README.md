@@ -135,7 +135,8 @@ Tables: `stalls`, `tenants`, `stallkeepers`, `applicants`,
 `applicant_requirements`, `utility_bills`, `violations`, `logs`, `activities`,
 `officers`, `verifications`, `rent_payments`, plus `id_counters`, the sign-in
 `accounts`, and a `meta` key/value table holding the schema version, last save
-time, and the stall-directory edition the records are at. Stallkeepers and applicant requirements are child rows keyed to
+time, the stall-directory edition the records are at, and the office-order
+roster last added to Market Officers. Stallkeepers and applicant requirements are child rows keyed to
 their parent and removed with it, rather than JSON packed into a column, so they
 can be queried and counted like anything else.
 
@@ -214,8 +215,9 @@ The codes live in one place, `SECTION_LIST` in `src/market/directory.ts`.
 directory is the office's latest record of the market, so the first start of
 this version clears everything recorded before it — stalls, tenants,
 applications, utility bills, violations, verification slips, the logbook and
-the activity feed — and starts again from the directory alone. Only the
-office board is kept, and the sign-in accounts, which are stored apart.
+the activity feed — and starts again from the directory alone. Only Market
+Officers, the office's own roster, is kept, and the sign-in accounts, which are
+stored apart.
 
 Nothing is lost for good: before clearing anything it saves a copy of the
 whole database to
@@ -225,6 +227,29 @@ the data folder (in a browser, under the
 logbook entry left says where that copy is. If the copy cannot be made,
 nothing is changed and it is tried again at the next start. It runs once per
 directory edition; a backup restored afterwards is respected.
+
+**Market Officers.** The Officers page's chart is called Market Officers, and
+the seat at the top of it is shown as **Head of the Market Office**. Besides
+the office's own roster it holds the seven staff the Municipal Mayor's office
+orders of October 2026 assigned to the market office, each under Engr. Luz M.
+Maderazo — Market Supervisor III, with the date the order took effect
+([src/market/officeOrders.ts](src/market/officeOrders.ts)):
+
+| Office Order (s. 2026) | Name | Post |
+| --- | --- | --- |
+| No. 226, 5 Oct | Dominico G. Tobilla | Market Operations Manager (additional function) |
+| No. 226, 6 Oct | Andres A. Redoña | Clerk II |
+| No. 227, 6 Oct | Ariel N. Almarines | Contract of Service |
+| No. 228, 6 Oct | Margarito E. Gempis Jr. | Contract of Service |
+| No. 229, 6 Oct | Julius V. Fabre | Contract of Service |
+| No. 231, 6 Oct | Jojit C. Bajas | Contract of Service |
+| No. 232, 6 Oct | Rexly C. Cumpio | Contract of Service |
+
+A new installation starts with them. An existing one adds them once, at the
+next start, with a logbook entry naming each person and order: anyone already
+on the chart by name is left as they are, and a seat the office removes later
+is not put back. Tobilla's order names no supervisor, so his seat sits under
+the Market Supervisor with everyone else; **Edit → Reports To** moves it.
 
 ## Current scope
 

@@ -20,13 +20,13 @@
 
 export type IdCounters = Record<string, number>;
 
-type SavePayload = { state: unknown; idCounters: IdCounters; dataset?: string };
+type SavePayload = { state: unknown; idCounters: IdCounters; dataset?: string; roster?: string };
 
 type BridgeResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 type Bridge = {
   available: true;
-  load: () => Promise<BridgeResult<{ state: Record<string, unknown[]>; idCounters: IdCounters; savedAt: string; dataset?: string; file: string }>>;
+  load: () => Promise<BridgeResult<{ state: Record<string, unknown[]>; idCounters: IdCounters; savedAt: string; dataset?: string; roster?: string; file: string }>>;
   save: (payload: SavePayload) => Promise<BridgeResult<{ savedAt: string; file: string }>>;
   replaceAll: (payload: SavePayload) => Promise<BridgeResult<{ savedAt: string; file: string }>>;
   clear: () => Promise<BridgeResult<true>>;
@@ -65,6 +65,7 @@ const stateKey = 'pmrms-state-v3';
 const savedAtKey = 'pmrms-saved-at';
 const idCounterKey = 'pmrms-id-counters';
 const datasetKey = 'pmrms-dataset';
+const rosterKey = 'pmrms-roster';
 const accountsKey = 'pmrms-accounts';
 const snapshotKey = (label: string) => `pmrms-state-before-${label}`;
 
@@ -89,6 +90,8 @@ export type LoadResult = {
   imported: boolean;
   /** The stall-directory edition the records were last brought up to ('' if none). */
   dataset: string;
+  /** The office-order roster last added to the board ('' if none). */
+  roster: string;
 };
 
 function readLocal(): LoadResult {
@@ -96,17 +99,19 @@ function readLocal(): LoadResult {
   let counters: IdCounters = {};
   let savedAt = '';
   let dataset = '';
+  let roster = '';
   try {
     const stored = localStorage.getItem(stateKey);
     if (stored) raw = JSON.parse(stored);
     savedAt = localStorage.getItem(savedAtKey) ?? '';
     dataset = localStorage.getItem(datasetKey) ?? '';
+    roster = localStorage.getItem(rosterKey) ?? '';
   } catch { /* unreadable or unavailable — start from the defaults */ }
   try {
     const stored = JSON.parse(localStorage.getItem(idCounterKey) ?? '{}');
     if (stored && typeof stored === 'object') counters = stored as IdCounters;
   } catch { /* counters fall back to max(existing id) */ }
-  return { raw, idCounters: counters, savedAt, problem: '', imported: false, dataset };
+  return { raw, idCounters: counters, savedAt, problem: '', imported: false, dataset, roster };
 }
 
 /* Records held by a version of the app that ran before the database existed.
@@ -136,12 +141,12 @@ export async function loadStored(): Promise<LoadResult> {
       // over — or a genuinely new installation, which starts from the defaults.
       const legacy = legacyRecords();
       if (legacy.raw) {
-        return { raw: legacy.raw, idCounters: legacy.idCounters, savedAt: '', problem: '', imported: true, dataset: '' };
+        return { raw: legacy.raw, idCounters: legacy.idCounters, savedAt: '', problem: '', imported: true, dataset: '', roster: '' };
       }
-      return { raw: null, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false, dataset: '' };
+      return { raw: null, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false, dataset: '', roster: '' };
     }
 
-    return { raw: lists, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false, dataset: loaded.dataset ?? '' };
+    return { raw: lists, idCounters: loaded.idCounters ?? {}, savedAt: loaded.savedAt ?? '', problem: '', imported: false, dataset: loaded.dataset ?? '', roster: loaded.roster ?? '' };
   } catch (error) {
     // The records exist but could not be read. Report it and let the caller
     // hold back every save, so a display built from defaults is never written
@@ -153,25 +158,28 @@ export async function loadStored(): Promise<LoadResult> {
       problem: error instanceof Error ? error.message : String(error),
       imported: false,
       dataset: '',
+      roster: '',
     };
   }
 }
 
 /* ---------- Writing ---------- */
 
-/** Files the current records, and the directory edition they are at.
-    Resolves with the time they were saved. */
-export async function persist(state: unknown, idCounters: IdCounters, dataset?: string): Promise<string> {
+/** Files the current records, and the directory edition and office-order
+    roster they are at — each left as stored when not given. Resolves with the
+    time they were saved. */
+export async function persist(state: unknown, idCounters: IdCounters, dataset?: string, roster?: string): Promise<string> {
   const db = bridge();
   if (!db) {
     localStorage.setItem(stateKey, JSON.stringify(state));
     localStorage.setItem(idCounterKey, JSON.stringify(idCounters));
     if (typeof dataset === 'string') localStorage.setItem(datasetKey, dataset);
+    if (typeof roster === 'string') localStorage.setItem(rosterKey, roster);
     const stamp = new Date().toISOString();
     localStorage.setItem(savedAtKey, stamp);
     return stamp;
   }
-  const { savedAt } = await unwrap(db.save({ state, idCounters, dataset }));
+  const { savedAt } = await unwrap(db.save({ state, idCounters, dataset, roster }));
   return savedAt;
 }
 

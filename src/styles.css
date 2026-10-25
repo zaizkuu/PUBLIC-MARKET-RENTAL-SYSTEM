@@ -6072,8 +6072,15 @@ ul, ol {
   padding: 0;
 }
 
+/* As wide as the chart and never narrower than the panel. A centred row that
+   is wider than its scroller spills past both edges, and a scroller can only
+   reach the right-hand one — the first seats would be cut off for good. Sized
+   to its content the row starts at the left edge, and still sits centred when
+   the chart fits. */
 .org-level-root {
   align-items: flex-start;
+  width: max-content;
+  min-width: 100%;
 }
 
 .org-node {

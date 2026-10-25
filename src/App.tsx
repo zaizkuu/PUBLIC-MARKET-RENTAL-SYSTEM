@@ -19,6 +19,8 @@ import {
   parseStallId, renumberForSection, nextStallNumber, stallIdFor, compareStallNumbers, DIRECTORY_EDITION,
 } from './market/directory';
 import { electricMetersByStall, meterSuggestions } from './market/meters';
+import { OFFICE_ORDER_STAFF, ROSTER_EDITION, SUPERVISOR, missingStaff, nameKey, placeStaff } from './market/officeOrders';
+import type { OfficeOrderSeat } from './market/officeOrders';
 
 /* ============================================================
    Types
@@ -123,7 +125,7 @@ type ModalType =
 
 /* ---------- The market office's own people ----------
 
-   An officer is a seat on the organizational board, not a user account. The
+   An officer is a seat on the Market Officers board, not a user account. The
    board is drawn from `reportsTo`, which holds another officer's id, so the
    office arranges its own hierarchy rather than the app assuming one. A seat
    with no name on it is a vacancy the board still has to show. */
@@ -661,10 +663,11 @@ const initialState = {
      it is vacant, because the post exists whether or not anybody holds it. */
   /* The market office as it actually stands, from the office's own roster:
      the supervisor, two officers in charge of market operation, a clerk,
-     three collectors and nine sweepers. The roster names no reporting line
-     below the supervisor, so everyone is seated under her rather than
-     inventing a hierarchy the office has not set. */
-  officers: [
+     three collectors and nine sweepers — and, since October 2026, the seven
+     staff the Mayor's office orders assigned to it (src/market/officeOrders.ts).
+     The roster names no reporting line below the supervisor, so everyone is
+     seated under her rather than inventing a hierarchy the office has not set. */
+  officers: withOfficeOrderStaff([
     { id: 'OFC-001', name: 'Engr. Luz M. Maderazo', position: 'Market Supervisor III', office: 'Market Office', reportsTo: '', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
     { id: 'OFC-002', name: 'Manuel G. Mercado', position: 'In Charge — Market Operation', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
     { id: 'OFC-003', name: 'Felmar Pica', position: 'In Charge — Market Operation', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
@@ -681,7 +684,7 @@ const initialState = {
     { id: 'OFC-014', name: 'Carmelo Villero', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
     { id: 'OFC-015', name: 'Junel Guiron', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
     { id: 'OFC-016', name: 'Bonifacio Lopez', position: 'Sweeper', office: 'Market Office', reportsTo: 'OFC-001', phone: '', email: '', status: 'Active' as OfficerStatus, appointed: '' },
-  ] satisfies Officer[],
+  ], OFFICE_ORDER_STAFF, OFFICE_ORDER_STAFF.map((_, i) => `OFC-${String(17 + i).padStart(3, '0')}`)),
 
   utilities: [] as UtilityBill[],
 
@@ -917,6 +920,23 @@ function linkOfficers(list: Officer[]): Officer[] {
   }
 
   return board;
+}
+
+/* Seats the staff named in the Mayor's office orders on a board, under the
+   Market Supervisor the orders place them with — found by name, then by post,
+   then the head of the board — each slotted in beside the posts like it.
+   `ids` gives each seat its officer id, in the order of `seats`. */
+function withOfficeOrderStaff(board: Officer[], seats: OfficeOrderSeat[], ids: string[]): Officer[] {
+  const supervisor = board.find((o) => nameKey(o.name) === nameKey(SUPERVISOR.name))
+    ?? board.find((o) => o.position === SUPERVISOR.position && o.name)
+    ?? board.find((o) => !o.reportsTo);
+  return placeStaff(board, seats.map((seat, i) => ({
+    after: seat.after,
+    seat: {
+      id: ids[i], name: seat.name, position: seat.position, office: 'Market Office', reportsTo: supervisor?.id ?? '',
+      phone: '', email: '', status: 'Active' as OfficerStatus, appointed: seat.appointed,
+    },
+  })));
 }
 
 function mergeState(input: unknown): AppState {
@@ -2332,10 +2352,10 @@ function App({ boot }: { boot: BootData }) {
     setState((p) => ({
       ...p,
       officers: linkOfficers([...p.officers, officer]),
-      activities: withActivity(p.activities, 'account_tree', 'blue', officer.position, ` was added to the market office board${officer.name ? ` — ${officer.name}` : ' as a vacant seat'}.`),
-      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}) added to the office board${officer.name ? `: ${officer.name}` : ' as a vacant seat'}.`)],
+      activities: withActivity(p.activities, 'account_tree', 'blue', officer.position, ` was added to Market Officers${officer.name ? ` — ${officer.name}` : ' as a vacant seat'}.`),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}) added to Market Officers${officer.name ? `: ${officer.name}` : ' as a vacant seat'}.`)],
     }));
-    showToast(officer.name ? `${officer.name} added to the board` : `${officer.position} added as a vacant seat`);
+    showToast(officer.name ? `${officer.name} added to Market Officers` : `${officer.position} added as a vacant seat`);
     closeModal();
   };
 
@@ -2349,7 +2369,7 @@ function App({ boot }: { boot: BootData }) {
         : `'s details were updated.`),
       logs: [...p.logs, makeLog(p.logs, 'Announcement', previous && previous.name !== updated.name
         ? `${updated.position} (${updated.id}) changed from ${previous.name || 'vacant'} to ${updated.name || 'vacant'}.`
-        : `${updated.position} (${updated.id}) was updated on the office board.`)],
+        : `${updated.position} (${updated.id}) was updated in Market Officers.`)],
     }));
     showToast(`${updated.position} updated`);
     closeModal();
@@ -2368,10 +2388,10 @@ function App({ boot }: { boot: BootData }) {
           .filter((o) => o.id !== officer.id)
           .map((o) => (o.reportsTo === officer.id ? { ...o, reportsTo: reassignTo } : o)),
       ),
-      activities: withActivity(p.activities, 'account_tree', 'red', officer.position, ' was removed from the office board.'),
-      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}${officer.name ? ` — ${officer.name}` : ''}) removed from the office board.${reports.length > 0 ? ` ${reports.length} seat${reports.length === 1 ? '' : 's'} reassigned.` : ''}`)],
+      activities: withActivity(p.activities, 'account_tree', 'red', officer.position, ' was removed from Market Officers.'),
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `${officer.position} (${officer.id}${officer.name ? ` — ${officer.name}` : ''}) removed from Market Officers.${reports.length > 0 ? ` ${reports.length} seat${reports.length === 1 ? '' : 's'} reassigned.` : ''}`)],
     }));
-    showToast(`${officer.position} removed from the board`);
+    showToast(`${officer.position} removed from Market Officers`);
     closeModal();
   };
 
@@ -2497,7 +2517,7 @@ function App({ boot }: { boot: BootData }) {
           {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Offence','Points','Status','Date Recorded','Date Reprimanded','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} onExport={downloadReport} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage canDelete={isAdmin} onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details','Recorded By'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, l.recordedBy || '—']), 'logbook.csv'); showToast('Log exported'); }} />}
-          {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, officerLabel(state.officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-office-board.csv'); showToast('Office board exported'); }} />}
+          {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, reportsToLabel(state.officers, o), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-officers.csv'); showToast('Market Officers exported'); }} />}
           {active === 'settings' && <SettingsPage isAdmin={isAdmin} accountPanel={<AccountSettings accounts={accounts} current={user} idleMinutes={idleMinutes} onIdleMinutes={chooseIdleMinutes} onChange={changeAccounts} />} automaticBackup={automaticBackup} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage canRestore={isAdmin} state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
@@ -2508,7 +2528,7 @@ function App({ boot }: { boot: BootData }) {
       {modal.type === 'add-tenant' && <Modal title="Add New Tenant" wide onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
       {modal.type === 'assign-stall' && <Modal title="Assign Stall & Create Tenant" wide onClose={closeModal}><AssignStallForm applicant={modal.data as Applicant} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onSkip={closeModal} /></Modal>}
       {modal.type === 'add-log' && <Modal title="Add Log Entry" onClose={closeModal}><AddLogForm existingIds={state.logs.map(l => l.id)} onSubmit={addLog} onCancel={closeModal} /></Modal>}
-      {modal.type === 'add-officer' && <Modal title="Add Officer" subtitle="A seat on the market office board." wide onClose={closeModal}><OfficerForm officers={state.officers} onSubmit={addOfficer} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-officer' && <Modal title="Add Officer" subtitle="A seat in Market Officers." wide onClose={closeModal}><OfficerForm officers={state.officers} onSubmit={addOfficer} onCancel={closeModal} /></Modal>}
       {modal.type === 'edit-officer' && <Modal title="Edit Officer" subtitle="Update the seat, who holds it, and where it sits on the board." wide onClose={closeModal}><OfficerForm officers={state.officers} officer={liveOfficer(modal.data as Officer)} onSubmit={updateOfficer} onCancel={closeModal} /></Modal>}
       {modal.type === 'view-officer' && <Modal title="Officer Details" sheet onClose={closeModal}><OfficerDetailView officer={liveOfficer(modal.data as Officer)} officers={state.officers} onEdit={() => setModal({ type: 'edit-officer', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'add-violation' && <Modal title="Record a Violation" wide onClose={closeModal}><ViolationForm existingIds={state.violations.map(v => v.id)} violations={state.violations} tenants={state.tenants} onSubmit={addViolation} onCancel={closeModal} /></Modal>}
@@ -2556,8 +2576,8 @@ function App({ boot }: { boot: BootData }) {
         const officer = modal.data as Officer;
         const reports = state.officers.filter((o) => o.reportsTo === officer.id);
         const superior = state.officers.find((o) => o.id === officer.reportsTo);
-        return <ConfirmDialog icon="person_remove" iconStyle="danger" title={`Remove ${officer.name || officer.position} from the board?`}
-          description={`${officer.position} (${officer.id}) will be removed from the market office board.${reports.length > 0 ? ` The ${reports.length} seat${reports.length === 1 ? '' : 's'} reporting to it will be moved under ${superior ? `${superior.position}` : 'the head of the board'}.` : ''} This cannot be undone.`}
+        return <ConfirmDialog icon="person_remove" iconStyle="danger" title={`Remove ${officer.name || officer.position} from Market Officers?`}
+          description={`${officer.position} (${officer.id}) will be removed from Market Officers.${reports.length > 0 ? ` The ${reports.length} seat${reports.length === 1 ? '' : 's'} reporting to it will be moved ${superior ? `under ${superior.position}` : `to the top, as ${HEAD_OF_OFFICE}`}.` : ''} This cannot be undone.`}
           confirmLabel="Remove Officer" confirmDanger onConfirm={() => deleteOfficer(officer)} onCancel={closeModal} />;
       })()}
       {modal.type === 'confirm-delete-log' && (() => {
@@ -4695,7 +4715,7 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport, automatic
           icon="upload_file"
           iconStyle="warning"
           title="Import and replace all records?"
-          description={`"${pending.fileName}" holds ${countOf(pending.data)} records — ${pending.data.tenants.length} tenants, ${pending.data.stalls.length} stalls, ${pending.data.applicants.length} applicants, ${pending.data.utilities.length} utility bills, ${pending.data.violations.length} violations, ${pending.data.logs.length} logbook entries, and ${pending.data.officers.length} seats on the office board. Importing replaces the ${countOf(state)} records on this workstation. This cannot be undone.`}
+          description={`"${pending.fileName}" holds ${countOf(pending.data)} records — ${pending.data.tenants.length} tenants, ${pending.data.stalls.length} stalls, ${pending.data.applicants.length} applicants, ${pending.data.utilities.length} utility bills, ${pending.data.violations.length} violations, ${pending.data.logs.length} logbook entries, and ${pending.data.officers.length} seats in Market Officers. Importing replaces the ${countOf(state)} records on this workstation. This cannot be undone.`}
           confirmLabel="Import and Replace"
           onConfirm={() => { onImport(pending.data); setPending(null); }}
           onCancel={() => setPending(null)}
@@ -6630,7 +6650,7 @@ function RentLedger({ tenant }: { tenant: Tenant }) {
 
 
 /* ============================================================
-   Officers — the market office board
+   Officers — the Market Officers board
    ============================================================ */
 
 /* How an officer reads anywhere they are named as somebody else's superior
@@ -6639,6 +6659,13 @@ function RentLedger({ tenant }: { tenant: Tenant }) {
 function officerLabel(officer?: Officer) {
   if (!officer) return '—';
   return officer.name ? `${officer.name} — ${officer.position}` : `${officer.position} (vacant)`;
+}
+
+/* What a seat with nobody above it is called wherever "Reports To" is shown. */
+const HEAD_OF_OFFICE = 'Head of the Market Office';
+
+function reportsToLabel(officers: Officer[], officer: Officer) {
+  return officer.reportsTo ? officerLabel(officers.find((x) => x.id === officer.reportsTo)) : HEAD_OF_OFFICE;
 }
 
 /* Every seat that reports to `parentId`, in the order the board holds them.
@@ -6733,10 +6760,10 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
   const paged = paginate(filtered, page);
 
   const printList = () => onPrintList(
-    officeFilter || 'Market Office Board',
-    `Organizational board${search ? ` · matching “${search}”` : ''} · ${filled.length} of ${officers.length} seat${officers.length === 1 ? '' : 's'} filled`,
+    officeFilter ? `Market Officers — ${officeFilter}` : 'Market Officers',
+    `Tanauan Public Market${search ? ` · matching “${search}”` : ''} · ${filled.length} of ${officers.length} seat${officers.length === 1 ? '' : 's'} filled`,
     ['Officer ID', 'Position', 'Name', 'Office', 'Reports To', 'Status', 'Contact'],
-    filtered.map((o) => [o.id, o.position, o.name || 'Vacant', o.office || '—', officerLabel(officers.find((x) => x.id === o.reportsTo)), o.status, formatPhone(o.phone) || '—']),
+    filtered.map((o) => [o.id, o.position, o.name || 'Vacant', o.office || '—', reportsToLabel(officers, o), o.status, formatPhone(o.phone) || '—']),
   );
 
   return (
@@ -6782,7 +6809,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
         <div className="filter-row">
           <div className="view-toggle" role="tablist" aria-label="How to show the board">
             <button type="button" role="tab" aria-selected={view === 'board'} className={`view-toggle-btn${view === 'board' ? ' active' : ''}`} onClick={() => setView('board')}>
-              <span className="material-symbols-outlined">account_tree</span>Organizational Board
+              <span className="material-symbols-outlined">account_tree</span>Market Officers
             </button>
             <button type="button" role="tab" aria-selected={view === 'directory'} className={`view-toggle-btn${view === 'directory' ? ' active' : ''}`} onClick={() => setView('directory')}>
               <span className="material-symbols-outlined">grid_view</span>Directory
@@ -6819,7 +6846,7 @@ function OfficersPage({ officers, search, onAdd, onView, onEdit, onDelete, onPri
                         </div>
                       </td>
                       <td>{o.office || '—'}</td>
-                      <td>{o.reportsTo ? officerLabel(officers.find((x) => x.id === o.reportsTo)) : <span className="seat-vacant">Head of the board</span>}</td>
+                      <td>{o.reportsTo ? reportsToLabel(officers, o) : <span className="seat-vacant">{HEAD_OF_OFFICE}</span>}</td>
                       <td className="no-wrap">{formatPhone(o.phone) || '—'}</td>
                       <td className="no-wrap">{o.appointed ? formatIsoDate(o.appointed) : '—'}</td>
                       <td><OfficerStatusBadge officer={o} /></td>
@@ -6940,7 +6967,7 @@ function OfficerDetailView({ officer, officers, onEdit, onClose }: { officer: Of
 
       <RecordSection title="Place on the Board" icon="account_tree">
         <div className="record-grid">
-          <RecordRow label="Reports To" value={superior ? officerLabel(superior) : ''} />
+          <RecordRow label="Reports To" value={superior ? officerLabel(superior) : HEAD_OF_OFFICE} />
           <RecordRow label="Seats Reporting In" value={reports.length > 0 ? String(reports.length) : ''} />
         </div>
         {reports.length > 0 && (
@@ -7049,7 +7076,7 @@ function OfficerForm({ officers, officer, onSubmit, onCancel }: { officers: Offi
           <div className="form-group">
             <label className="form-label">Reports To</label>
             <select className="form-select" value={reportsTo} onChange={(e) => setReportsTo(e.target.value)}>
-              <option value="">— Head of the board —</option>
+              <option value="">{`— ${HEAD_OF_OFFICE} —`}</option>
               {superiors.map((o) => <option key={o.id} value={o.id}>{' '.repeat(officerDepth(officers, o) * 3)}{officerLabel(o)}</option>)}
             </select>
           </div>
@@ -7746,7 +7773,7 @@ async function readAccounts(): Promise<{ accounts: Account[]; accountsProblem: s
    is tried again at the next start. */
 async function startUp(): Promise<BootData> {
   const loaded: LoadResult = await loadStored().catch((error: unknown) => ({
-    raw: null, idCounters: {}, savedAt: '', imported: false, dataset: '',
+    raw: null, idCounters: {}, savedAt: '', imported: false, dataset: '', roster: '',
     problem: error instanceof Error ? error.message : 'The records could not be read.',
   }));
   seedIdCounters(loaded.idCounters);
@@ -7767,6 +7794,29 @@ async function startUp(): Promise<BootData> {
     } catch (error) {
       seedIdCounters(loaded.idCounters);
       notice = `The records were not updated to the Market Stall Directory, because a safety copy of the current records could not be made first (${error instanceof Error ? error.message : 'unknown error'}). Nothing was changed; it will be tried again at the next start.`;
+    }
+  }
+  /* A board kept from before the Mayor's office orders gets their staff once.
+     Anyone already on it by name stays as the office left them, and the
+     roster is marked done with the records, so a seat the office removes
+     later is not put back. A new installation already has them. */
+  if (!loaded.problem && loaded.raw && loaded.roster !== ROSTER_EDITION) {
+    const counters = { ...currentIdCounters() };
+    try {
+      const seats = missingStaff(state.officers.map((o) => o.name));
+      const next = seats.length === 0 ? state : {
+        ...state,
+        officers: linkOfficers(withOfficeOrderStaff(state.officers, seats, claimIds('OFC', state.officers.map((o) => o.id), seats.length))),
+        logs: [...state.logs, {
+          id: nextId('LOG', state.logs.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type: 'Announcement', recordedBy: 'System update',
+          details: `Added to Market Officers from the Mayor's office orders, under ${SUPERVISOR.name} — ${SUPERVISOR.position}: ${seats.map((s) => `${s.name}, ${s.position} (${s.order})`).join('; ')}.`,
+        }],
+      };
+      await persist(next, currentIdCounters(), dataset, ROSTER_EDITION);
+      state = next;
+      if (seats.length > 0) notice = [notice, `${seats.length} staff assigned by the Mayor's office orders of October 2026 were added to Market Officers.`].filter(Boolean).join(' ');
+    } catch {
+      seedIdCounters(counters); // Nothing was saved; it is tried again at the next start.
     }
   }
   return {

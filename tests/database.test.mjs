@@ -24,13 +24,17 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
       },
       idCounters: { LOG: 1 },
       dataset: 'market-stall-directory-2026-10',
+      roster: 'office-orders-2026-10',
     });
+    // A later save that names neither marker leaves both as they were.
+    db.save({ state: {}, idCounters: {} });
     db.saveAccounts([{ id: 'ACC-001', name: 'Engr. Luz M. Maderazo', role: 'Administrator', passwordHash: 'h', passwordSalt: 's', passwordIterations: 600000, mustChangePassword: true, failedAttempts: 2 }]);
     db.close();
 
     db.open(file);
     const loaded = db.load();
     assert.equal(loaded.dataset, 'market-stall-directory-2026-10');
+    assert.equal(loaded.roster, 'office-orders-2026-10');
     assert.equal(loaded.state.stalls[0].id, 'KS-1');
     assert.equal(loaded.state.logs[0].recordedBy, 'Engr. Luz M. Maderazo');
     assert.equal(loaded.state.violations[0].offence, 2);
