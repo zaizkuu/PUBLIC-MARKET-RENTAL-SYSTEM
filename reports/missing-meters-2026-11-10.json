@@ -1,0 +1,93 @@
+{
+  "total": 156,
+  "missing": [
+    {
+      "number": 173,
+      "stallId": "DS-173",
+      "name": "Florita Soriano",
+      "section": "Dried Fish/Eggs",
+      "rent": 1000,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    },
+    {
+      "number": 62,
+      "stallId": "MS-62",
+      "name": "Leodegario Gerilla",
+      "section": "Meat - Carabeef/Beef & Pork",
+      "rent": 1500,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    },
+    {
+      "number": 93,
+      "stallId": "VS-93",
+      "name": "Telemban Esmeralda",
+      "section": "Vegetable",
+      "rent": 1000,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    },
+    {
+      "number": 170,
+      "stallId": "VS-170",
+      "name": "Salcedo Sofia Mae",
+      "section": "Vegetable",
+      "rent": 1000,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    },
+    {
+      "number": 182,
+      "stallId": "VS-182",
+      "name": "Salcedo Shaine Marie",
+      "section": "Vegetable",
+      "rent": 1000,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    },
+    {
+      "number": 200,
+      "stallId": "VS-200",
+      "name": "Boco Ria",
+      "section": "Vegetable",
+      "rent": 1000,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    },
+    {
+      "number": 201,
+      "stallId": "VS-201",
+      "name": "Dangco Jamel Rose",
+      "section": "Vegetable",
+      "rent": 1000,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    },
+    {
+      "number": 202,
+      "stallId": "VS-202",
+      "name": "Catan Rosario",
+      "section": "Vegetable",
+      "rent": 1000,
+      "meters": {
+        "Electricity": "",
+        "Water": ""
+      }
+    }
+  ]
+}

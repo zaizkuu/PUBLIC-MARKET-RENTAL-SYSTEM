@@ -5,6 +5,6 @@ export type StallRecord = { id:string; section:string; status:string; businessNa
 export type Node = { id:string; name:string; x:number; y:number; entrance:boolean; verified:boolean };
 export type SiteLabel = { recordId:string; x:number; y:number; verified:boolean };
 export type Layout = { market:{name:string; address:string; aerial:string; latitude:number|null; longitude:number|null}; revision:number; directoryManaged?:boolean; statuses?:string[]; obstacles?:Rect[]; siteLabels?:SiteLabel[]; verified:boolean; sections:Section[]; stalls:MapUnit[]; records:StallRecord[]; nodes:Node[]; edges:[string,string][] };
-export type ExistingStall = { id:string; section:string; status:string };
+export type ExistingStall = { id:string; section:string; status:string; tenant?:string };
 export type Session = { authenticated:boolean; setupRequired:boolean; username?:string; role?:string; csrf?:string };
 export const STATUSES = ['Occupied','Available','Maintenance','Temporarily Closed','Closed','Abandoned'] as const;

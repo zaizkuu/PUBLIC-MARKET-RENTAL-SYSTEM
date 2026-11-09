@@ -1,5 +1,7 @@
 import { backupRecords } from './backup';
-import MarketMap from './MarketMap';
+import { approvalTarget } from './applicantLink';
+import { PHOTO_METERS, fillHandwrittenMeters } from './market/handwrittenMeters';
+import MarketMap from './market/PhotoFloorPlan';
 import { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
@@ -650,7 +652,7 @@ function monthlyRentForSection(section: string, stalls: Stall[]): number {
 function directoryTenants(): Tenant[] {
   const { tenancies } = buildDirectory();
   const electric = electricMetersByStall(tenancies.map((t) => [t.stallId, t.name]));
-  return tenancies.map((t) => ({
+  return fillHandwrittenMeters(tenancies.map((t) => ({
     id: `TEN-${String(t.number).padStart(3, '0')}`,
     name: t.name,
     phone: '',
@@ -663,12 +665,12 @@ function directoryTenants(): Tenant[] {
     meters: { Electricity: electric.get(t.stallId)?.[3] ?? '', Water: '' },
     rentDueDay: DEFAULT_RENT_DUE_DAY,
     rentPayments: {},
-  }));
+  })));
 }
 
 /* Every serial on the calibration sheets, offered in the meter number boxes
    so a meter not yet on a tenant record can be picked by number or name. */
-const ELECTRIC_METER_OPTIONS = meterSuggestions();
+const ELECTRIC_METER_OPTIONS = [...meterSuggestions(), ...PHOTO_METERS.map(([stall, name, serial]) => ({ serial, label: `${name} · ${stall} · supplied meter sheet` }))];
 
 function ElectricMeterOptions({ id }: { id: string }) {
   return <datalist id={id}>{ELECTRIC_METER_OPTIONS.map((m) => <option key={`${m.serial}-${m.label}`} value={m.serial}>{m.label}</option>)}</datalist>;
@@ -2125,9 +2127,14 @@ function App({ boot }: { boot: BootData }) {
   const addLog = (l: LogEntry) => { setState((p) => ({ ...p, logs: [...p.logs, { ...l, recordedBy: userRef.current?.name ?? '' }] })); showToast('Log entry added'); closeModal(); };
 
   const addTenant = (t: Tenant) => {
+    if (state.tenants.some(existing => existing.stallId === t.stallId || (t.applicantId && existing.applicantId === t.applicantId)) || !state.stalls.some(s => s.id === t.stallId && s.status === 'Available')) {
+      showToast('This applicant or stall already has a tenant. Choose an available stall.');
+      return;
+    }
     setState((p) => ({
       ...p,
       tenants: [...p.tenants, t],
+      applicants: p.applicants.map(a => a.id === t.applicantId ? { ...a, stallId: t.stallId } : a),
       stalls: p.stalls.map((s) => (s.id === t.stallId ? { ...s, tenant: t.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection } : s)),
       activities: withActivity(p.activities, 'groups', 'blue', t.name, ` added as tenant at stall ${t.stallId}.`),
     }));
@@ -2227,17 +2234,26 @@ function App({ boot }: { boot: BootData }) {
     showToast(`${type} meter ${trimmed} saved to ${tenant.name}`);
   };
 
-  const updateApplicant = (updated: Applicant, opts: SaveOpts = {}, snapshot?: Applicant, promptAssign?: boolean) => {
+  const updateApplicant = (updated: Applicant, opts: SaveOpts = {}, snapshot?: Applicant, _promptAssign?: boolean) => {
     const { log = true, close = true } = opts;
     // `snapshot` is the record as it stood when the form opened, so a second
     // save in the same session still logs against its true starting point.
     const previous = snapshot ?? state.applicants.find((a) => a.id === updated.id);
     const statusChanged = !!previous && previous.status !== updated.status;
     const permitted = stallGainingPermit(state.stalls, updated);
+    const target = approvalTarget(updated, state.stalls, state.tenants);
+    const newTenant: Tenant | undefined = target.stall ? {
+      id: nextId('TEN', state.tenants.map(t => t.id)), applicantId: updated.id,
+      name: updated.name, phone: updated.phone, stallId: target.stall.id,
+      section: target.stall.section, rent: monthlyRentForStall(target.stall.id) || monthlyRentForSection(target.stall.section, state.stalls),
+      status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' },
+      rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {},
+    } : undefined;
     setState((p) => ({
       ...p,
       applicants: p.applicants.map((a) => (a.id === updated.id ? updated : a)),
-      stalls: applyPermitFromApplicant(p.stalls, updated),
+      tenants: newTenant ? [...p.tenants, newTenant] : p.tenants,
+      stalls: applyPermitFromApplicant(p.stalls, updated).map(s => newTenant?.stallId === s.id ? { ...s, tenant: newTenant.name, status: 'Occupied' as StallStatus } : s),
       ...(log
         ? {
             activities: withActivity(p.activities, 'person_add', updated.status === 'Approved' ? 'green' : updated.status === 'Rejected' ? 'red' : 'amber', updated.name, statusChanged ? `'s application was marked ${updated.status}.` : `'s application details were updated.`),
@@ -2250,7 +2266,8 @@ function App({ boot }: { boot: BootData }) {
         : {}),
     }));
     if (log) showToast(permitted ? `${updated.name} updated — stall ${permitted.id} is now With BP` : statusChanged ? `${updated.name} marked as ${updated.status}` : `${updated.name} updated`);
-    if (promptAssign) setModal({ type: 'assign-stall', data: updated });
+    if (newTenant) showToast(`${updated.name} approved and added as tenant at ${newTenant.stallId}. Map and dashboard updated.`);
+    if (target.needsStall) setModal({ type: 'assign-stall', data: updated });
     else if (close) closeModal();
   };
 
@@ -2906,7 +2923,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
     sectionFilter || 'All Sections',
     `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
     ['Stall ID', 'Section', 'Tenant', 'Status', 'Permit'],
-    filtered.map((s) => [s.id, s.section, s.tenant, s.status, s.permit === 'Not Recorded' ? '—' : s.permit]),
+    filtered.map((s) => [s.id, s.section, registerName(s.tenant), s.status, s.permit === 'Not Recorded' ? '—' : s.permit]),
   );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -2920,7 +2937,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
       if (statusFilter && s.status !== statusFilter) return false;
       if (search) {
         const q = search.toLowerCase();
-        if (!s.id.toLowerCase().includes(q) && !s.tenant.toLowerCase().includes(q) && !s.section.toLowerCase().includes(q)) return false;
+        if (!s.id.toLowerCase().includes(q) && !s.tenant.toLowerCase().includes(q) && !registerName(s.tenant).toLowerCase().includes(q) && !s.section.toLowerCase().includes(q)) return false;
       }
       return true;
     });
@@ -2975,7 +2992,7 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
         <div className="table-wrap">
           <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Permit</th><th>Last Inspection</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{s.tenant}</td><td><StatusBadge status={s.status} /></td><td><PermitBadge permit={s.permit} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn" title="Issue verification slip" aria-label="Issue verification slip" onClick={() => onVerify(s)}><span className="material-symbols-outlined">fact_check</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
+              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{registerName(s.tenant)}</td><td><StatusBadge status={s.status} /></td><td><PermitBadge permit={s.permit} /></td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn" title="Issue verification slip" aria-label="Issue verification slip" onClick={() => onVerify(s)}><span className="material-symbols-outlined">fact_check</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
               {paged.items.length === 0 && <tr><td colSpan={7}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
             </tbody>
           </table>
@@ -8103,6 +8120,25 @@ async function startUp(): Promise<BootData> {
       if (seats.length > 0) notice = [notice, `${seats.length} staff assigned by the Mayor's office orders of October 2026 were added to Market Officers.`].filter(Boolean).join(' ');
     } catch {
       seedIdCounters(counters); // Nothing was saved; it is tried again at the next start.
+    }
+  }
+  const meterImportMarker = 'Electricity meter photo 2026-11-10 revision 5';
+  if (!loaded.problem && !state.logs.some(l => l.details.startsWith(meterImportMarker))) {
+    const tenants = fillHandwrittenMeters(state.tenants);
+    const added = tenants.filter((t, i) => t !== state.tenants[i]);
+    if (added.length > 0) {
+      try {
+        await keepCopyBefore('photo-meters-2026-11-10-revision-5', state);
+        const next = { ...state, tenants, logs: [...state.logs, {
+          id: nextId('LOG', state.logs.map(l => l.id)), date: todayIso(), time: nowTimeStr(), type: 'Announcement' as const,
+          recordedBy: 'System update', details: `${meterImportMarker}: added ${added.map(t => `${t.stallId} = ${t.meters.Electricity}`).join('; ')}. Existing meter numbers preserved.`,
+        }] };
+        await persist(next, currentIdCounters(), dataset, ROSTER_EDITION);
+        state = next;
+        notice = [notice, `Added electricity meters from the supplied photo to ${added.length} tenant records.`].filter(Boolean).join(' ');
+      } catch {
+        notice = [notice, 'Meter photo import could not be saved; it will retry next time the system opens.'].filter(Boolean).join(' ');
+      }
     }
   }
   return {
