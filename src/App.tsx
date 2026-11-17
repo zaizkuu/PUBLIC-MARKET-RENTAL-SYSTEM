@@ -23,6 +23,7 @@ import {
 import { electricMetersByStall, meterSuggestions } from './market/meters';
 import { OFFICE_ORDER_STAFF, ROSTER_EDITION, SUPERVISOR, missingStaff, nameKey, placeStaff } from './market/officeOrders';
 import { registerName } from './market/registerNames';
+import { SECOND_FLOOR_IMPORT, SECOND_FLOOR_AS_OF, missingSecondFloor } from './market/secondFloor';
 import type { OfficeOrderSeat } from './market/officeOrders';
 
 /* ============================================================
@@ -63,8 +64,10 @@ type UtilityType = 'Electricity' | 'Water';
 type BillStatus = 'Unpaid' | 'Paid';
 
 /* Rent standing for one month. 'Overdue' is not a state anyone sets — it is
-   what 'Unpaid' becomes once the due date has passed. */
-type RentStatus = 'Paid' | 'Unpaid' | 'Overdue';
+   what 'Unpaid' becomes once the due date has passed. 'No Rent Set' is a
+   tenancy whose monthly rent is ₱0 — the 2nd floor until the office confirms
+   its rate — so it owes nothing and is never counted as unpaid. */
+type RentStatus = 'Paid' | 'Unpaid' | 'Overdue' | 'No Rent Set';
 
 /* One receipt on a sheet. `label` names which copy it is when the same bill is
    printed more than once (tenant's, office's); it is blank when a sheet is
@@ -1411,6 +1414,7 @@ function rentQuoteToday(tenant: Tenant, period: string) {
    to be run, clicked or rolled over for the register to go red. */
 function rentStatusOf(tenant: Tenant, period: string): RentStatus {
   if (rentPaymentFor(tenant, period)) return 'Paid';
+  if (!(tenant.rent > 0)) return 'No Rent Set';
   return rentDueIso(tenant, period) < todayIso() ? 'Overdue' : 'Unpaid';
 }
 
@@ -1454,7 +1458,7 @@ function rentRollFor(tenants: Tenant[], period: string) {
        as still partly outstanding. */
     outstanding: tenants.filter((t) => rentStatusOf(t, period) !== 'Paid').reduce((s, t) => s + t.rent, 0),
     paidCount: paid.length,
-    unpaidCount: tenants.length - paid.length,
+    unpaidCount: tenants.filter((t) => { const s = rentStatusOf(t, period); return s === 'Unpaid' || s === 'Overdue'; }).length,
     overdueCount: tenants.filter((t) => rentStatusOf(t, period) === 'Overdue').length,
   };
 }
@@ -3154,7 +3158,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
       const rent = rentStatusOf(t, period);
       // "Unpaid" covers everything not settled, overdue months included.
       if (rentFilter === 'Paid' && rent !== 'Paid') return false;
-      if (rentFilter === 'Unpaid' && rent === 'Paid') return false;
+      if (rentFilter === 'Unpaid' && rent !== 'Unpaid' && rent !== 'Overdue') return false;
       if (rentFilter === 'Overdue' && rent !== 'Overdue') return false;
     }
     if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !registerName(t.name).toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.section.toLowerCase().includes(q) && !t.keepers.some((k) => k.name.toLowerCase().includes(q))) return false; }
@@ -3222,7 +3226,9 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
                 const payment = rentPaymentFor(t, period);
                 const late = rentDaysLate(t, period);
                 const quote = rentQuoteToday(t, period);
-                const rentTitle = paid
+                const noRent = rentStatus === 'No Rent Set';
+                const rentTitle = noRent ? `No monthly rent is set for ${t.stallId} — set one on the tenant record to start billing`
+                  : paid
                   ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'}${payment && payment.discount > 0 ? ` — ${money(payment.amount)} after a ${money(payment.discount)} early-payment discount` : ''} — tick to undo`
                   : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''}${quote.early ? ` · pays ${money(quote.payable)} today with the ${EARLY_RENT_DISCOUNT_PCT}% early discount` : ''} — tick once collected`;
                 return (
@@ -3233,7 +3239,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
                     <td>{money(t.rent)}</td>
                     <td>
                       <label className="rent-toggle" title={rentTitle}>
-                        <input type="checkbox" checked={paid} onChange={(e) => onSetRentPaid(t.id, period, e.target.checked)} aria-label={`Rent paid for ${formatPeriod(period)} by ${t.name}`} />
+                        <input type="checkbox" checked={paid} disabled={noRent} onChange={(e) => onSetRentPaid(t.id, period, e.target.checked)} aria-label={`Rent paid for ${formatPeriod(period)} by ${t.name}`} />
                         <RentStatusBadge status={rentStatus} />
                       </label>
                       {paid && payment && payment.discount > 0 && (
@@ -5108,7 +5114,7 @@ function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string
   /* A new stall takes its section's code and the next number on the layout,
      unless the officer types the number painted on it. */
   const code = sectionInfo(section)?.code ?? 'ST';
-  const suggestedId = stallIdFor(code, nextStallNumber(existingIds));
+  const suggestedId = stallIdFor(code, nextStallNumber(existingIds, sectionInfo(section)?.floor ?? 1));
 
   const handleSubmit = () => {
     if (HELD_STATUSES.includes(status) && !tenant.trim()) {
@@ -5993,7 +5999,7 @@ function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { t
     <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued to ${tenant.name} yet.`} />
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
-      <button className="btn-outline" onClick={() => onSetRentPaid(tenant.id, period, !paid)}>
+      <button className="btn-outline" disabled={rentStatus === 'No Rent Set'} title={rentStatus === 'No Rent Set' ? 'No monthly rent is set for this stall yet' : undefined} onClick={() => onSetRentPaid(tenant.id, period, !paid)}>
         <span className="material-symbols-outlined">{paid ? 'undo' : 'payments'}</span>
         {paid ? `Undo ${formatPeriodShort(period)} Rent` : `Record ${formatPeriodShort(period)} Rent Paid`}
       </button>
@@ -6846,7 +6852,7 @@ function MarketClock() {
 }
 
 function RentStatusBadge({ status }: { status: RentStatus }) {
-  const cls = status === 'Paid' ? 'badge-paid' : status === 'Overdue' ? 'badge-overdue' : 'badge-unpaid';
+  const cls = status === 'Paid' ? 'badge-paid' : status === 'Overdue' ? 'badge-overdue' : status === 'No Rent Set' ? 'badge-abandoned' : 'badge-unpaid';
   return <span className={`badge ${cls}`}>{status}</span>;
 }
 
@@ -8103,6 +8109,8 @@ async function startUp(): Promise<BootData> {
      Anyone already on it by name stays as the office left them, and the
      roster is marked done with the records, so a seat the office removes
      later is not put back. A new installation already has them. */
+  /* Which roster edition the saved records carry; later saves pass it on. */
+  let roster = loaded.raw ? loaded.roster : ROSTER_EDITION;
   if (!loaded.problem && loaded.raw && loaded.roster !== ROSTER_EDITION) {
     const counters = { ...currentIdCounters() };
     try {
@@ -8117,6 +8125,7 @@ async function startUp(): Promise<BootData> {
       };
       await persist(next, currentIdCounters(), dataset, ROSTER_EDITION);
       state = next;
+      roster = ROSTER_EDITION;
       if (seats.length > 0) notice = [notice, `${seats.length} staff assigned by the Mayor's office orders of October 2026 were added to Market Officers.`].filter(Boolean).join(' ');
     } catch {
       seedIdCounters(counters); // Nothing was saved; it is tried again at the next start.
@@ -8139,6 +8148,36 @@ async function startUp(): Promise<BootData> {
       } catch {
         notice = [notice, 'Meter photo import could not be saved; it will retry next time the system opens.'].filter(Boolean).join(' ');
       }
+    }
+  }
+  /* The 2nd floor vendor list, added once (src/market/secondFloor.ts): its
+     stalls after the ground floor's, and a tenant record for each vendor
+     numbered after the last one. Anything the records already hold by stall
+     ID is left as the office has it, and the logbook entry marks the list
+     done, so a 2nd-floor stall the office later removes is not put back. */
+  if (!loaded.problem && !state.logs.some((l) => l.details.startsWith(SECOND_FLOOR_IMPORT))) {
+    const counters = { ...currentIdCounters() };
+    try {
+      const { stalls, tenancies } = missingSecondFloor(state.stalls.map((s) => s.id), state.tenants.map((t) => t.stallId));
+      const ids = claimIds('TEN', state.tenants.map((t) => t.id), tenancies.length);
+      const tenants: Tenant[] = tenancies.map((t, i) => ({
+        id: ids[i], name: t.name, phone: '', barangay: '', stallId: t.stallId, section: t.section,
+        rent: rateForStallId(t.stallId), status: 'Active', keepers: [], meters: { Electricity: '', Water: '' },
+        rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {},
+      }));
+      const copyAt = loaded.raw && (stalls.length > 0 || tenants.length > 0) ? await keepCopyBefore('second-floor-vendors-2026-09-30', state) : '';
+      const details = stalls.length > 0 || tenants.length > 0
+        ? `${SECOND_FLOOR_IMPORT}: added ${stalls.length} stalls and ${tenants.length} tenant records to the 2nd Floor section (the list has no PS-51). No rent is billed for them until the office sets the 2nd-floor rate.${copyAt ? ` The records as they stood were saved to ${copyAt}.` : ''}`
+        : `${SECOND_FLOOR_IMPORT}: every stall on it was already in the records; nothing was added.`;
+      const next: AppState = { ...state, stalls: [...state.stalls, ...stalls], tenants: [...state.tenants, ...tenants], logs: [...state.logs, {
+        id: nextId('LOG', state.logs.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type: 'Announcement' as const, recordedBy: 'System update', details,
+      }] };
+      await persist(next, currentIdCounters(), dataset, roster);
+      state = next;
+      if (tenants.length > 0) notice = [notice, `Added the 2nd floor vendor list (as of ${SECOND_FLOOR_AS_OF}): ${stalls.length} stalls and ${tenants.length} tenants. Their rent is ₱0 until the office sets the 2nd-floor rate.`].filter(Boolean).join(' ');
+    } catch {
+      seedIdCounters(counters); // Nothing was saved; it is tried again at the next start.
+      notice = [notice, 'The 2nd floor vendor list could not be saved; it will be tried again the next time the system opens.'].filter(Boolean).join(' ');
     }
   }
   return {

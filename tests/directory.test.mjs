@@ -16,14 +16,17 @@ const PDF_SUMMARY = {
   'Meat - Carabeef/Beef & Pork': { stalls: 26, vacant: 2 },
 };
 
+/* The directory covers the ground floor; the 2nd floor has its own list. */
+const GROUND_FLOOR = SECTION_LIST.filter((s) => (s.floor ?? 1) === 1);
+
 test('the transcription matches the directory summary, section by section', () => {
   assert.equal(DIRECTORY_ROWS.length, 194, 'Total stalls listed: 194');
-  for (const section of SECTION_LIST) {
+  for (const section of GROUND_FLOOR) {
     const rows = DIRECTORY_ROWS.filter(([, , code]) => code === section.code);
     assert.equal(rows.length, PDF_SUMMARY[section.name].stalls, `${section.name} stalls`);
     assert.equal(rows.filter(([, vendor]) => vendor === VACANT).length, PDF_SUMMARY[section.name].vacant, `${section.name} vacancies`);
   }
-  assert.deepEqual(SECTION_LIST.map((s) => s.name), Object.keys(PDF_SUMMARY));
+  assert.deepEqual(GROUND_FLOOR.map((s) => s.name), Object.keys(PDF_SUMMARY));
 });
 
 test('every stall number appears once and every section code is distinct', () => {
@@ -73,4 +76,10 @@ test('typed stall IDs are read against the chosen section', () => {
   assert.equal(rateForStallId('KK-01'), 1000, 'legacy prefixes still quote');
   assert.deepEqual(['KS-10', 'KS-2', 'FS-105', 'KS-1'].sort(compareStallIds), ['FS-105', 'KS-1', 'KS-2', 'KS-10']);
   assert.deepEqual(['FS-105', 'DS-5', 'KS-74', 'KS-1', '—'].sort(compareStallNumbers), ['KS-1', 'DS-5', 'KS-74', 'FS-105', '—']);
+  // Each floor numbers from 1: the 2nd floor follows the ground floor, and a new stall continues its own floor.
+  assert.deepEqual(['PS-2', 'KS-1', 'PS-10', 'FS-105', 'PS-1'].sort(compareStallNumbers), ['KS-1', 'FS-105', 'PS-1', 'PS-2', 'PS-10']);
+  assert.equal(nextStallNumber(['KS-1', 'DS-212', 'PS-54'], 1), 213);
+  assert.equal(nextStallNumber(['KS-1', 'DS-212', 'PS-54'], 2), 55);
+  assert.deepEqual(parseStallId('PS-01', '2nd Floor'), { id: 'PS-1' });
+  assert.equal(rateForStallId('PS-1'), 0, 'no 2nd-floor rate until the office confirms one');
 });

@@ -9,7 +9,8 @@
    reordering them would mean guessing which word is the surname.
 
    Stall numbers are the ones painted on the layout, unique across the whole
-   market. A stall's ID is its section code followed by that number exactly as
+   ground floor (the 2nd floor numbers its own from 1 — see secondFloor.ts,
+   which this directory does not include). A stall's ID is its section code followed by that number exactly as
    the directory prints it, so stall 1 in the Kakanin section is KS-1 and
    stall 105 in Fish is FS-105 — found on the sheet by the same number.
 
@@ -26,6 +27,9 @@ export type SectionInfo = {
   rate: number;
   /** Fits a graph axis or a narrow column. */
   short: string;
+  /** 2 for the upstairs sections; the ground floor when left out. Each floor
+      numbers its stalls from 1, so the floor keeps them apart. */
+  floor?: number;
 };
 
 /* In the directory's own order. Change a code here and nothing else needs
@@ -38,7 +42,17 @@ export const SECTION_LIST: SectionInfo[] = [
   { name: 'Fish', code: 'FS', rate: 1000, short: 'Fish' },
   { name: 'Meat - Chicken', code: 'CS', rate: 1500, short: 'Chicken' },
   { name: 'Meat - Carabeef/Beef & Pork', code: 'MS', rate: 1500, short: 'Beef & Pork' },
+  /* The 2nd floor vendor list (src/market/secondFloor.ts) gives no rent and
+     the rate schedule has no 2nd-floor line, so nothing is billed until the
+     office confirms the rate. Setting it here makes new 2nd-floor tenancies
+     quote it; tenant records already added keep the rent stored on them. */
+  { name: '2nd Floor', code: 'PS', rate: 0, short: '2nd Floor', floor: 2 },
 ];
+
+/** The floor a stall is on, read from its prefix: 1 unless its section says otherwise. */
+export function stallFloor(id: string): number {
+  return sectionByCode(id.slice(0, 2))?.floor ?? 1;
+}
 
 export const SECTION_NAMES = SECTION_LIST.map((s) => s.name);
 
@@ -66,8 +80,11 @@ export function compareStallIds(a: string, b: string): number {
 }
 
 /* The directory's own order: by the number on the layout, whatever the
-   section — KS-4, DS-5, DS-6, FD-7… IDs without a number go last. */
+   section — KS-4, DS-5, DS-6, FD-7… — the ground floor first, then the 2nd
+   floor from PS-1. IDs without a number go last. */
 export function compareStallNumbers(a: string, b: string): number {
+  const floors = stallFloor(a) - stallFloor(b);
+  if (floors !== 0) return floors;
   const x = stallNumber(a);
   const y = stallNumber(b);
   if (Number.isFinite(x) && Number.isFinite(y) && x !== y) return x - y;
@@ -81,9 +98,10 @@ export function stallNumber(id: string): number {
   return digits ? parseInt(digits[1], 10) : NaN;
 }
 
-/** The highest stall number in use plus one — what a new stall is numbered. */
-export function nextStallNumber(ids: string[]): number {
-  const numbers = ids.map(stallNumber).filter((n) => Number.isFinite(n));
+/** The highest stall number in use plus one — what a new stall is numbered.
+    Given a floor, only that floor's stalls count, since each floor starts at 1. */
+export function nextStallNumber(ids: string[], floor?: number): number {
+  const numbers = ids.filter((id) => floor === undefined || stallFloor(id) === floor).map(stallNumber).filter((n) => Number.isFinite(n));
   return (numbers.length > 0 ? Math.max(...numbers) : 0) + 1;
 }
 
