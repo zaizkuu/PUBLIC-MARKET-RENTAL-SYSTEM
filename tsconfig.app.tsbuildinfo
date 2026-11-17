@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/db.ts","./src/main.tsx","./src/vite-env.d.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/marketmap.tsx","./src/backup.ts","./src/db.ts","./src/main.tsx","./src/vite-env.d.ts","./src/market/evidencemap.tsx","./src/market/mapeditor.tsx","./src/market/mapviewport.tsx","./src/market/market3d.tsx","./src/market/proposedfloorplan.tsx","./src/market/api.ts","./src/market/domain.d.mts","./src/market/site-plan.d.mts","./src/market/types.ts"],"version":"5.9.3"}

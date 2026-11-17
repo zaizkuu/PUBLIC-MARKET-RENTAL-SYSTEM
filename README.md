@@ -53,7 +53,7 @@ edits as a last resort. Two sidecar files, `market-records.db-wal` and
 when it closes, so copy the folder rather than the single file if the app is
 open.
 
-**Offline.** The dashboard Google Maps overview requires an internet connection. The indoor floor plan and local records work offline. Fonts and icons are vendored
+**Offline.** The dashboard opens to an interactive 3D floor plan built from the saved section and stall geometry. Its renderer and labels are bundled locally, with no Google Maps, Street View, or remote model dependency. A 2D view is available for editing and as an automatic fallback when 3D graphics are unavailable. The desktop app uses the bundled floor plan without contacting a map service. Browser sessions also keep the last published public layout on the device as an offline fallback. Layout administration is available when the local map service is running. Local records, fonts, and icons work offline. Fonts and icons are vendored
 in `public/fonts/`; regenerate them with `scripts/fetch-fonts.mjs` if the
 typefaces ever change. Do not reintroduce the Google Fonts `<link>` tags — with
 no internet the Material Symbols ligatures fail and every icon renders as its
