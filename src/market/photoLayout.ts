@@ -1,11 +1,12 @@
 // Positions transcribed from the six supplied layout photographs.
 // Units are schematic: the photos do not establish measured dimensions or
 // the relative location of the separate fish, meat and produce sheets.
-export type PhotoArea = 'produce' | 'meat' | 'fish-a' | 'fish-b';
+// 'upper' is the 2nd floor, which has its own view and never joins the ground-floor overview.
+export type PhotoArea = 'produce' | 'meat' | 'fish-a' | 'fish-b' | 'upper';
 export type PhotoView = PhotoArea | 'all';
 // Separate sheets shown together for navigation, not a surveyed building footprint.
-export const OVERVIEW_OFFSETS: Record<PhotoArea, number> = { produce: 3, meat: 21, 'fish-a': 32, 'fish-b': 32 };
-export const OVERVIEW_X: Record<PhotoArea, number> = { produce: 0, meat: 0, 'fish-a': 0, 'fish-b': 27 };
+export const OVERVIEW_OFFSETS: Record<PhotoArea, number> = { produce: 3, meat: 21, 'fish-a': 32, 'fish-b': 32, upper: 0 };
+export const OVERVIEW_X: Record<PhotoArea, number> = { produce: 0, meat: 0, 'fish-a': 0, 'fish-b': 27, upper: 0 };
 export function inOverview<T extends {area: PhotoArea; x: number; z: number}>(position: T): T {
   return {...position, x: position.x + OVERVIEW_X[position.area], z: position.z + OVERVIEW_OFFSETS[position.area]};
 }
@@ -46,4 +47,31 @@ export const PHOTO_FEATURES = [
   {area:'fish-b',label:'STAIRS',x:3.8,z:0,w:5.6,d:1.7},
   {area:'fish-b',label:'POWER ROOM',x:-2,z:0,w:1.1,d:5.7},
 ] as const;
-export const PHOTO_COLORS: Record<string,string> = { VS:'#7caa3d', FD:'#a3b739', DS:'#ca8f6d', KS:'#9f8bc1', CS:'#d4ae30', MS:'#c95e67', FS:'#63a9cb' };
+export const PHOTO_COLORS: Record<string,string> = { VS:'#7caa3d', FD:'#a3b739', DS:'#ca8f6d', KS:'#9f8bc1', CS:'#d4ae30', MS:'#c95e67', FS:'#63a9cb', PS:'#3f9a92' };
+export const SECTION_LABELS: Record<string,string> = { VS:'Vegetable', FD:'Fruits/Duma', DS:'Dried fish/Eggs', KS:'Kakanin', CS:'Chicken', MS:'Beef & Pork', FS:'Fish', PS:'2nd Floor' };
+
+// The 2nd floor. Its vendor list (secondFloor.ts) gives stall numbers but no
+// drawing, so the stalls are set out schematically in number order: a wall
+// row, a back-to-back island and a second wall row, with a cross aisle every
+// seven stalls. The list has no PS-51, so neither does the plan.
+export const UPPER_POSITIONS: PhotoPosition[] = [];
+const upperCol = (i: number) => i * 1.9 + Math.floor(i / 7) * 1.3;
+const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+([[range(1, 14), 0], [range(15, 28), 3.6], [range(29, 42), 5.3], [range(43, 54).filter((n) => n !== 51), 8.9]] as [number[], number][])
+  .forEach(([numbers, z]) => numbers.forEach((number, i) => UPPER_POSITIONS.push({ number, area: 'upper', x: upperCol(i), z, w: 1.8, d: 1.7 })));
+
+// Stalls on the layout that are not rented to anyone.
+export const FACILITY_IDS = new Set(['VS-95']);
+
+// Occupancy as the map groups it. "Not operating" covers every status where a
+// stall is held but not trading, or not usable.
+export type StatusFilter = '' | 'Available' | 'Occupied' | 'Inactive';
+export const INACTIVE_STATUSES = ['Temporarily Closed', 'Closed', 'Abandoned', 'Maintenance'];
+export function statusGroup(status: string): Exclude<StatusFilter, ''> {
+  return status === 'Available' ? 'Available' : INACTIVE_STATUSES.includes(status) ? 'Inactive' : 'Occupied';
+}
+export const FILTER_TINTS: Record<Exclude<StatusFilter, ''>, string> = { Available: '#20a675', Occupied: '#397ed6', Inactive: '#d08a1e' };
+export const STATUS_COLORS: Record<string, string> = {
+  Occupied: '#397ed6', Available: '#20a675', 'Temporarily Closed': '#e0a133', Maintenance: '#e07b39', Closed: '#9b6b5c', Abandoned: '#c0504d',
+};
+export const FACILITY_COLOR = '#8296aa';

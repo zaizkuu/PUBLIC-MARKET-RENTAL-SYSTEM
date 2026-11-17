@@ -25,7 +25,7 @@
 .photo-camera button{font:inherit;font-size:10px;font-weight:500;padding:7px 9px;border:1px solid var(--plan-border);border-radius:4px;background:var(--plan-surface);color:var(--plan-ink);cursor:pointer}
 .photo-camera button:hover,.photo-camera button[aria-pressed=true]{background:var(--plan-soft)}
 .photo-camera button:disabled{opacity:.4;cursor:default}
-.photo-canvas,.photo-flat{width:100%;height:340px}
+.photo-canvas,.photo-flat{width:100%;height:440px}
 .photo-canvas{touch-action:none}
 .photo-canvas[hidden]{display:none}
 .photo-canvas canvas{display:block;width:100%;height:100%;cursor:grab}
@@ -57,7 +57,7 @@
 .photo-empty h4{font-size:17px;margin:10px 0}
 .photo-empty p{font-size:12px;color:var(--plan-muted);line-height:1.7;margin:0}
 .photo-footnote{padding:10px 22px;border-top:1px solid var(--plan-border);font-size:10px;line-height:1.6;color:var(--plan-muted);margin:0}
-.photo-loading{height:340px;display:grid;place-items:center;color:var(--plan-muted);font-size:12px}
+.photo-loading{height:440px;display:grid;place-items:center;color:var(--plan-muted);font-size:12px}
 .photo-plan :is(button,select):focus-visible{outline:2px solid #4b96c7;outline-offset:3px}
 .photo-scene:fullscreen{background:var(--plan-stage);overflow:auto;width:100vw;height:100vh}
 .photo-scene:fullscreen .photo-canvas,.photo-scene:fullscreen .photo-flat{height:calc(100vh - 150px)}
@@ -73,3 +73,41 @@
 :root[data-theme="dark"] .photo-flat g[aria-pressed=true] rect{stroke:#ffe083}
 @media(max-width:850px){.photo-workspace{grid-template-columns:minmax(0,1fr)}.photo-details{border-left:0;border-top:1px solid var(--plan-border);max-height:290px;padding:16px}.photo-empty{padding:0;display:grid;grid-template-columns:30px 1fr;gap:4px 10px;text-align:left;align-items:center}.photo-empty>.material-symbols-outlined{grid-row:span 2}.photo-empty h4,.photo-empty p{margin:0}}
 @media(max-width:550px){.photo-heading{padding:14px 16px}.photo-heading h3{font-size:20px}.photo-filters{padding:12px 16px;gap:12px}.photo-section-select{width:100%}.photo-section-select select{width:100%;min-width:0}.photo-status-filter button{padding:7px 9px}.photo-canvas,.photo-flat{height:280px}.photo-camera{gap:4px;padding:8px}.photo-camera button{padding:6px 7px}.photo-footnote{padding:10px 16px}.photo-filter-summary{padding:8px 16px}}
+
+/* ---------- Floors, search, colour mode and the fuller details panel ---------- */
+.photo-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.photo-search{position:relative;flex:0 1 330px;min-width:220px;display:flex;align-items:center;gap:6px;height:38px;padding:0 10px;border:1px solid var(--plan-border);border-radius:6px;background:var(--plan-surface)}
+.photo-search:focus-within{border-color:#4b96c7;box-shadow:0 0 0 3px #4b96c722}
+.photo-search>.material-symbols-outlined{font-size:18px;color:var(--plan-muted)}
+.photo-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:12px;color:var(--plan-ink)}
+.photo-search-results{position:absolute;z-index:5;top:calc(100% + 4px);left:0;right:0;margin:0;padding:4px;list-style:none;background:var(--plan-surface);border:1px solid var(--plan-border);border-radius:6px;box-shadow:0 10px 28px #17324d24;max-height:320px;overflow:auto}
+.photo-search-results button{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;width:100%;padding:7px 8px;border:0;border-radius:4px;background:transparent;text-align:left;font:inherit;color:var(--plan-ink);cursor:pointer}
+.photo-search-results button:hover,.photo-search-results button:focus-visible{background:var(--plan-soft)}
+.photo-search-results strong{font-size:12px;grid-row:span 2;align-self:center;min-width:52px}
+.photo-search-results span{font-size:12px;overflow-wrap:anywhere}
+.photo-search-results small{font-size:10px;color:var(--plan-muted)}
+.photo-search-empty{padding:9px 8px;font-size:11px;color:var(--plan-muted)}
+.photo-floor-switch,.photo-color-by{display:flex;flex-direction:column;gap:7px}
+.photo-floor-switch>span,.photo-color-by>span{font-size:10px;font-weight:600;color:var(--plan-muted)}
+.photo-floor-switch>div,.photo-color-by>div{display:flex}
+.photo-floor-switch button,.photo-color-by button{height:36px;padding:8px 12px;border:1px solid var(--plan-border);background:var(--plan-surface);color:var(--plan-muted);font:inherit;font-size:11px;font-weight:600;cursor:pointer}
+.photo-floor-switch button+button,.photo-color-by button+button{border-left:0}
+.photo-floor-switch button:first-child,.photo-color-by button:first-child{border-radius:5px 0 0 5px}
+.photo-floor-switch button:last-child,.photo-color-by button:last-child{border-radius:0 5px 5px 0}
+.photo-floor-switch button b{font-size:10px;font-weight:600;margin-left:4px;padding:2px 5px;border-radius:3px;background:var(--plan-soft)}
+.photo-floor-switch button[aria-pressed=true],.photo-color-by button[aria-pressed=true]{background:var(--plan-active);border-color:var(--plan-active);color:#fff}
+.photo-floor-switch button[aria-pressed=true] b{background:#ffffff2e}
+.photo-floor-note{margin:0;height:36px;display:flex;align-items:center;font-size:12px;font-weight:600;color:var(--plan-ink)}
+.photo-status-filter .inactive i{background:#d08a1e}
+.photo-status-filter .inactive[aria-pressed=true]{background:#fbf0de;color:#8a5a10;border-color:#d9a95a}
+.photo-status-filter .inactive[aria-pressed=true] b{background:#f3dfbd}
+.photo-details-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.photo-close{display:grid;place-items:center;width:26px;height:26px;padding:0;border:1px solid var(--plan-border);border-radius:50%;background:var(--plan-surface);color:var(--plan-muted);cursor:pointer}
+.photo-close .material-symbols-outlined{font-size:16px}
+.photo-close:hover{background:var(--plan-soft);color:var(--plan-ink)}
+.photo-status-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;vertical-align:1px}
+:root[data-theme="dark"] .photo-search-results{box-shadow:0 10px 28px #0008}
+:root[data-theme="dark"] .photo-status-filter .inactive[aria-pressed=true]{background:#4a3818;color:#f6d39a;border-color:#a77a32}
+:root[data-theme="dark"] .photo-status-filter .inactive[aria-pressed=true] b{background:#5c4620}
+@media(max-width:850px){.photo-search{flex:1 1 100%}}
+@media(max-width:550px){.photo-floor-switch,.photo-color-by{width:100%}.photo-floor-switch button,.photo-color-by button{flex:1;padding:8px 6px}.photo-search{min-width:0}}

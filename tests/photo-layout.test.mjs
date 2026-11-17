@@ -33,3 +33,20 @@ test('combined overview keeps all sections separate without changing their inter
   assert.ok(Math.abs((inOverview(a).z-inOverview(b).z)-(a.z-b.z))<.00001);
  }
 });
+test('the 2nd floor places every stall on its vendor list once, without overlaps, in number order',async()=>{
+ const {UPPER_POSITIONS,statusGroup}=await import('../src/market/photoLayout.ts');
+ const {SECOND_FLOOR_ROWS}=await import('../src/market/secondFloor.ts');
+ assert.deepEqual(UPPER_POSITIONS.map(p=>p.number),SECOND_FLOOR_ROWS.map(r=>r.number));
+ assert.ok(UPPER_POSITIONS.every(p=>p.area==='upper'));
+ for(let i=0;i<UPPER_POSITIONS.length;i++)for(let j=i+1;j<UPPER_POSITIONS.length;j++){
+  const a=UPPER_POSITIONS[i],b=UPPER_POSITIONS[j];
+  assert.ok(!(a.x<b.x+b.w-.001&&a.x+a.w>b.x+.001&&a.z<b.z+b.d-.001&&a.z+a.d>b.z+.001),`Overlap: PS-${a.number} and PS-${b.number}`);
+ }
+ const p=n=>UPPER_POSITIONS.find(s=>s.number===n);
+ assert.ok(p(2).x>p(1).x&&p(1).z===p(14).z,'a row runs left to right');
+ assert.ok(PHOTO_POSITIONS.every(s=>s.area!=='upper'),'the ground-floor photo layout is unchanged');
+ assert.equal(statusGroup('Temporarily Closed'),'Inactive');
+ assert.equal(statusGroup('Abandoned'),'Inactive');
+ assert.equal(statusGroup('Available'),'Available');
+ assert.equal(statusGroup('Occupied'),'Occupied');
+});
