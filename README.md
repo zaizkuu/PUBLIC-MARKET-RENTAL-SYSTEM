@@ -109,7 +109,13 @@ printing and the market map. The desktop app enforces it — the main process
 refuses every outgoing network request from the window (`keepOffline()` in
 `electron/main.cjs`), so nothing can quietly start depending on the internet or
 send records anywhere. Links the operator clicks (the Support page's e-mail
-addresses, the map's source references) open in the system browser. Fonts and icons are vendored
+addresses, the map's source references) open in the system browser. The market
+map opens to an interactive 3D floor plan built from the saved section and
+stall geometry, with its renderer and labels bundled locally — no Google Maps,
+Street View or remote model. A 2D view is available for editing and as an
+automatic fallback when 3D graphics are unavailable. Browser sessions keep the
+last published layout on the device as an offline fallback, and layout
+administration is available when the local map service is running. Fonts and icons are vendored
 in `public/fonts/`; regenerate them with `scripts/fetch-fonts.mjs` if the
 typefaces ever change. Do not reintroduce the Google Fonts `<link>` tags — with
 no internet the Material Symbols ligatures fail and every icon renders as its

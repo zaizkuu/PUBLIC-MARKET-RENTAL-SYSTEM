@@ -3,17 +3,18 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { Section } from './types';
 
-type Props={sections:Section[];selectedId?:string;onSelect:(id:string)=>void};
+type Props={sections:Section[];selectedId?:string;onSelect:(id:string)=>void;onFallback?:()=>void};
 const zones:Record<string,{z:number;rows:number[];color:string;label:string}>={
  fish:{z:-6.5,rows:[-8.5,-5.2],color:'#397ec3',label:'A  FISH & MEAT'},
  produce:{z:.1,rows:[-1.9,1.4],color:'#47815a',label:'B  FRUIT & VEGETABLES'},
  kakanin:{z:5,rows:[5],color:'#bd763c',label:'C  KAKANIN'}
 };
-export default function Market3D({sections,selectedId,onSelect}:Props){
+export default function Market3D({sections,selectedId,onSelect,onFallback}:Props){
  const host=useRef<HTMLDivElement>(null),root=useRef<HTMLDivElement>(null);
  const api=useRef<{view:(top?:boolean)=>void;zoom:(factor:number)=>void;select:(id?:string)=>void}>();
  const selectRef=useRef(onSelect);selectRef.current=onSelect;
  const [failed,setFailed]=useState(false),[fullscreen,setFullscreen]=useState(false);
+ useEffect(()=>{if(failed)onFallback?.();},[failed,onFallback]);
  const sectionKey=sections.filter(s=>s.active).map(s=>s.id).join(',');
  useEffect(()=>{
   const el=host.current;if(!el)return;
