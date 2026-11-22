@@ -7410,3 +7410,52 @@ ul, ol {
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
 .violation-flag .material-symbols-outlined { font-size: 13px; }
+
+/* Saving is failing: a banner on every page until a save gets through. */
+.save-problem {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
+  border-left: 4px solid var(--color-danger);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+  color: var(--color-text);
+}
+
+.save-problem > .material-symbols-outlined {
+  font-size: 26px;
+  color: var(--color-danger);
+}
+
+.save-problem-text {
+  flex: 1 1 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: calc(14px * var(--font-scale, 1));
+  line-height: 1.5;
+}
+
+.save-problem-text strong {
+  font-size: calc(15px * var(--font-scale, 1));
+  color: var(--color-danger);
+}
+
+.save-problem-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-problem-actions .btn-outline-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.save-problem-actions .material-symbols-outlined {
+  font-size: 16px;
+}

@@ -1738,6 +1738,29 @@ function useAutomaticBackup(state: AppState, ready: boolean) {
   return { schedule, problem, toggle: () => update({ ...schedule, enabled: !schedule.enabled }) };
 }
 
+/* Shown on every page while saving is failing, and gone the moment a save gets
+   through. Until then, changes exist only on screen, so it says so plainly and
+   offers the two things worth doing: try again, or take a backup now. */
+export function SaveProblemBanner({ problem, lastSaved, onRetry, onBackup }: { problem: string; lastSaved: string; onRetry: () => void; onBackup: () => void }) {
+  const since = lastSaved ? new Date(lastSaved).toLocaleString() : '';
+  return (
+    <div className="save-problem" role="alert">
+      <span className="material-symbols-outlined" aria-hidden="true">sync_problem</span>
+      <div className="save-problem-text">
+        <strong>Changes are not being saved.</strong>
+        <span>
+          {problem} Anything changed {since ? `since ${since}` : 'since the system opened'} is only on this screen until saving works again — keep the system open,
+          and download a full backup before closing it.
+        </span>
+      </div>
+      <div className="save-problem-actions">
+        <button type="button" className="btn-outline-sm" onClick={onRetry}><span className="material-symbols-outlined" aria-hidden="true">refresh</span>Try again</button>
+        <button type="button" className="btn-outline-sm" onClick={onBackup}><span className="material-symbols-outlined" aria-hidden="true">download</span>Back up now</button>
+      </div>
+    </div>
+  );
+}
+
 /* The desktop app's daily copies and the last copy saved off this computer,
    re-read when the window regains focus and every half hour. Null in a
    browser, where there is no database file to copy. */
@@ -1816,6 +1839,10 @@ function App({ boot }: { boot: BootData }) {
 
   const [lastSaved, setLastSaved] = useState<string>(boot.savedAt);
   const storageWarned = useRef(false);
+  /* Why the last save failed, or '' — shown in a banner on every page until a
+     save gets through, so nobody keeps working on records that are not kept. */
+  const [saveProblem, setSaveProblem] = useState('');
+  const [saveAttempt, setSaveAttempt] = useState(0);
 
   /* Printing runs in two steps: `printRequest` is what the preview dialog is
      open on, `printJob` is the sheet already laid out on the page. The sheet is
@@ -2028,20 +2055,21 @@ function App({ boot }: { boot: BootData }) {
         .then((stamp) => {
           if (dropped) return;
           setLastSaved(stamp);
+          setSaveProblem('');
           storageWarned.current = false;
         })
-        .catch(() => {
-          if (dropped || storageWarned.current) return;
+        .catch((error: unknown) => {
+          if (dropped) return;
+          const where = usingDatabase() ? 'the records database' : 'browser storage';
+          setSaveProblem(`The system could not write to ${where}${error instanceof Error && error.message ? ` (${error.message})` : ''}.`);
+          /* The banner stays; the toast only marks the moment it started. */
+          if (storageWarned.current) return;
           storageWarned.current = true;
-          showToast(
-            usingDatabase()
-              ? 'Could not save to the records database — export a backup from Support.'
-              : 'Could not save to browser storage — export a backup from Support.',
-          );
+          showToast(`Could not save to ${where} — see the warning at the top of the page.`, 6000);
         });
     }, 150);
     return () => { dropped = true; clearTimeout(timer); };
-  }, [state, showToast, boot.problem]);
+  }, [state, showToast, boot.problem, saveAttempt]);
 
   /* Said once, to whoever signs in first: records were brought over, cannot
      be read, or were brought up to the stall directory. */
@@ -2716,6 +2744,7 @@ function App({ boot }: { boot: BootData }) {
         </header>
 
         <div className="page-content">
+          {saveProblem && <SaveProblemBanner problem={saveProblem} lastSaved={lastSaved} onRetry={() => setSaveAttempt((n) => n + 1)} onBackup={() => setActive('support')} />}
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
           {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={isAdmin ? (b) => setModal({ type: 'confirm-delete-bill', data: b }) : undefined} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
@@ -8464,7 +8493,9 @@ async function startUp(): Promise<BootData> {
           id: nextId('LOG', state.logs.map(l => l.id)), date: todayIso(), time: nowTimeStr(), type: 'Announcement' as const,
           recordedBy: 'System update', details: `${meterImportMarker}: added ${added.map(t => `${t.stallId} = ${t.meters.Electricity}`).join('; ')}. Existing meter numbers preserved.`,
         }] };
-        await persist(next, currentIdCounters(), dataset, ROSTER_EDITION);
+        /* `roster`, not ROSTER_EDITION: if the staff update above failed, it must
+           still be tried again at the next start rather than marked done here. */
+        await persist(next, currentIdCounters(), dataset, roster);
         state = next;
         notice = [notice, `Added electricity meters from the supplied photo to ${added.length} tenant records.`].filter(Boolean).join(' ');
       } catch {
