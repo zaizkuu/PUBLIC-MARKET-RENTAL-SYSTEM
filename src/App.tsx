@@ -2745,7 +2745,7 @@ function App({ boot }: { boot: BootData }) {
 
         <div className="page-content">
           {saveProblem && <SaveProblemBanner problem={saveProblem} lastSaved={lastSaved} onRetry={() => setSaveAttempt((n) => n + 1)} onBackup={() => setActive('support')} />}
-          {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
+          {active === 'dashboard' && <DashboardPage onViewStall={(id) => { const stall = state.stalls.find((s) => s.id === id); if (stall) setModal({ type: 'view-stall', data: stall }); }} state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
           {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={isAdmin ? (b) => setModal({ type: 'confirm-delete-bill', data: b }) : undefined} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
           {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} ended={state.endedTenancies} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
@@ -2892,7 +2892,7 @@ function App({ boot }: { boot: BootData }) {
    Dashboard Page
    ============================================================ */
 
-function DashboardPage({ state, search, occupiedCount, pendingApplicants, outstandingUtilities, unpaidBillCount, onNavigate }: { state: AppState; search: string; occupiedCount: number; pendingApplicants: number; outstandingUtilities: number; unpaidBillCount: number; onNavigate: (k: ModuleKey) => void }) {
+function DashboardPage({ state, search, occupiedCount, pendingApplicants, outstandingUtilities, unpaidBillCount, onNavigate, onViewStall }: { state: AppState; search: string; occupiedCount: number; pendingApplicants: number; outstandingUtilities: number; unpaidBillCount: number; onNavigate: (k: ModuleKey) => void; onViewStall: (id: string) => void }) {
   const occupancyPct = ratio(occupiedCount, state.stalls.length);
   const activeTenants = state.tenants.filter(t => t.status === 'Active').length;
 
@@ -2976,7 +2976,7 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
 
   return (
     <>
-      <MarketMap existingStalls={state.stalls} />
+      <MarketMap existingStalls={state.stalls} tenants={state.tenants} onViewStall={onViewStall} />
 
       <div className="stats-row">
         <div className="stat-card">

@@ -16,6 +16,18 @@ export function ownerLabel(s: Owned): string {
   return registerName(tenant);
 }
 
+/* The name as it fits on a stall in the map: SURNAME, first initial, or what
+   the stall is when nobody is named on it. */
+export function mapName(s: Owned): string {
+  if (FACILITY_IDS.has(s.id)) return 'GUARD STATION';
+  const full = ownerLabel(s);
+  if (full === 'NO NAME ON SHEET') return 'NO NAME';
+  const comma = full.indexOf(',');
+  if (comma < 0 || full.startsWith('(')) return full;
+  const given = full.slice(comma + 1).trim();
+  return given ? `${full.slice(0, comma)}, ${given[0]}.` : full.slice(0, comma);
+}
+
 /* Whether the sheet draws this position as part of a shared strip rather than
    a partitioned stall (ground floor, dried fish/eggs). */
 export function isSharedStrip(s: { area: PhotoArea; number: number }): boolean {

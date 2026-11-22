@@ -39,9 +39,12 @@ try {
  assert.equal(await page.$$eval('.photo-flat g[role="button"]',els=>els.length),101);
  await page.click('g[aria-label^="VS-159,"]');
  assert.match(await page.$eval('.photo-owner',el=>el.textContent),/VILLERO, CRISANTA/);
- await page.click('::-p-text(3D perspective)');
+ // Back to every section, then out of the 2D plan into the 3D building view.
+ await page.select('select[aria-label="Market section"]','all');
+ await page.click('::-p-text(2D plan)');
  await page.waitForSelector('.photo-canvas canvas');
  assert.equal(await page.$eval('select[aria-label="Market section"]',el=>el.value),'all');
+ assert.ok(await page.$('.photo-controls button[aria-pressed]'),'the control bar is on the plan');
  mkdirSync('reports',{recursive:true});
  await page.screenshot({path:'reports/all-sections-plan.png',fullPage:true});
  await page.click('.photo-status-filter .available');

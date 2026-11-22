@@ -4,13 +4,10 @@
 // 'upper' is the 2nd floor, which has its own view and never joins the ground-floor overview.
 export type PhotoArea = 'produce' | 'meat' | 'fish-a' | 'fish-b' | 'upper';
 export type PhotoView = PhotoArea | 'all';
-// Separate sheets shown together for navigation, not a surveyed building footprint.
-export const OVERVIEW_OFFSETS: Record<PhotoArea, number> = { produce: 3, meat: 21, 'fish-a': 32, 'fish-b': 32, upper: 0 };
-export const OVERVIEW_X: Record<PhotoArea, number> = { produce: 0, meat: 0, 'fish-a': 0, 'fish-b': 27, upper: 0 };
-export function inOverview<T extends {area: PhotoArea; x: number; z: number}>(position: T): T {
-  return {...position, x: position.x + OVERVIEW_X[position.area], z: position.z + OVERVIEW_OFFSETS[position.area]};
-}
-export type PhotoPosition = { number: number; area: PhotoArea; x: number; z: number; w: number; d: number };
+// 'All sections' does not join these sheets together: it follows the office's
+// sketch of the whole floor instead (overviewLayout.ts).
+// `face` is the way a counter opens: 1 (or left out) toward the street, -1 away from it.
+export type PhotoPosition = { number: number; area: PhotoArea; x: number; z: number; w: number; d: number; face?: 1 | -1 };
 export const PHOTO_AREAS: { id: PhotoArea; name: string; caption: string }[] = [
   { id: 'produce', name: 'Vegetable & dry goods', caption: 'Vegetable, fruits/duma, dried fish/eggs and kakanin · photos 1–2' },
   { id: 'meat', name: 'Chicken, beef & pork', caption: 'Two facing rows · photos 3–4' },
