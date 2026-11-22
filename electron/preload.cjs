@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('pmrmsDB', {
   /** Opens a save dialog and copies the database there. */
   backup: () => ipcRenderer.invoke('db:backup'),
 
+  /** The daily copies kept on this computer and the last copy saved elsewhere. */
+  backupStatus: () => ipcRenderer.invoke('db:backup-status'),
+
   /** Asks where to save, then prints the analytics report laid out on screen to a PDF there and opens it. */
   saveReportPdf: (fileName) => ipcRenderer.invoke('report:save-pdf', fileName),
 

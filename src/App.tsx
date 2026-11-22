@@ -7,7 +7,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
   loadStored, persist, replaceAll, clearStored, keepCopyBefore, loadAccounts, saveAccounts,
   usingDatabase, backendName, databaseStats, backupDatabase, checkIntegrity, saveReportPdf,
-  revealDataFolder, formatBytes,
+  revealDataFolder, formatBytes, backupStatus,
 } from './db';
 import type { LoadResult } from './db';
 import LoginScreen from './security/LoginScreen';
@@ -15,7 +15,9 @@ import type { SignInEvent } from './security/LoginScreen';
 import AccountSettings from './security/AccountSettings';
 import { officeAccounts, normalizeAccount, initialsOf } from './security/accounts';
 import type { Account } from './security/accounts';
-import type { DatabaseStats, IdCounters } from './db';
+import type { BackupStatus, DatabaseStats, IdCounters } from './db';
+import { usePaperZoom, PaperSizePicker, PAPER, applyPrintPaper } from './printPreview';
+import type { PaperSize } from './printPreview';
 import {
   SECTION_LIST, SECTION_NAMES, buildDirectory, sectionInfo, rateForStallId,
   parseStallId, renumberForSection, nextStallNumber, stallIdFor, compareStallNumbers, DIRECTORY_EDITION,
@@ -116,6 +118,7 @@ type RegisterJob = {
   columns: string[];
   rows: string[][];
   printedAt: string;
+  paper: PaperSize;
 };
 
 type ModalType =
@@ -210,6 +213,16 @@ type Tenant = {
   /* Day of the month rent falls due, and every month settled so far. */
   rentDueDay: number;
   rentPayments: Record<string, RentPayment>;
+};
+
+/* A tenancy that has ended: the tenant was removed from the records, or their
+   stall was released. It is kept whole, payments included, so a past month's
+   collections never change after the fact and the office can still look up
+   who held a stall and what they paid. */
+type EndedTenancy = Tenant & {
+  endedOn: string;
+  endReason: string;
+  endedBy: string;
 };
 
 type Stall = {
@@ -416,12 +429,7 @@ const RECEIPTS_PER_SHEET = 4;
    The office keeps its own copy of anything a tenant is handed. */
 const RECEIPT_COPY_LABELS = ["Tenant's Copy", 'Market Office Copy', "Treasurer's Copy", 'File Copy'];
 
-/* Print-preview zoom. FIT is the scale at which a whole A4 sheet sits inside
-   the dialog; 1 is the sheet at its true printed size, which is what the
-   Actual size button snaps to for checking small print on a receipt. */
-const FIT_ZOOM = 0.62;
-const MIN_ZOOM = 0.35;
-const MAX_ZOOM = 2;
+/* Print previews are drawn at the size of the real A4 paper — see printPreview.tsx. */
 
 /* Four verification slips to an A4 sheet as well, cut apart into a pad. */
 const SLIPS_PER_SHEET = 4;
@@ -682,6 +690,7 @@ function ElectricMeterOptions({ id }: { id: string }) {
 const initialState = {
   applicants: [] as Applicant[],
   tenants: directoryTenants(),
+  endedTenancies: [] as EndedTenancy[],
   stalls: buildDirectory().stalls as Stall[],
   violations: [] as Violation[],
 
@@ -967,6 +976,11 @@ function withOfficeOrderStaff(board: Officer[], seats: OfficeOrderSeat[], ids: s
   })));
 }
 
+function normalizeEndedTenancy(raw: EndedTenancy): EndedTenancy {
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  return { ...normalizeTenant(raw), endedOn: text(raw?.endedOn), endReason: text(raw?.endReason), endedBy: text(raw?.endedBy) };
+}
+
 function mergeState(input: unknown): AppState {
   const parsed = (input && typeof input === 'object' ? input : {}) as Partial<AppState>;
   const pick = <K extends keyof AppState>(key: K): AppState[K] =>
@@ -974,6 +988,7 @@ function mergeState(input: unknown): AppState {
   return {
     applicants: pick('applicants').map(normalizeApplicant),
     tenants: pick('tenants').map(normalizeTenant),
+    endedTenancies: pick('endedTenancies').map(normalizeEndedTenancy),
     officers: linkOfficers(pick('officers').map(normalizeOfficer)),
     logs: pick('logs').map((l) => {
       const raw = (l ?? {}) as unknown as Record<string, unknown>;
@@ -1440,12 +1455,15 @@ function rentCollectedToDate(tenants: Tenant[]) {
 }
 
 /* Where one month's rent stands across the whole register. `due` is the rent
-   roll — what the market is contracted to earn in a month. */
-function rentRollFor(tenants: Tenant[], period: string) {
+   roll — what the market is contracted to earn in a month. `ended` are
+   tenancies that have since ended: whatever they paid for the month is still
+   cash collected that month, though they no longer count as owing it. */
+function rentRollFor(tenants: Tenant[], period: string, ended: Tenant[] = []) {
   const due = tenants.reduce((s, t) => s + t.rent, 0);
   const paid = tenants.filter((t) => rentStatusOf(t, period) === 'Paid');
-  const collected = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.amount ?? t.rent), 0);
-  const discounted = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.discount ?? 0), 0);
+  const endedPaid = ended.map((t) => rentPaymentFor(t, period)).filter((p): p is RentPayment => !!p);
+  const collected = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.amount ?? t.rent), 0) + endedPaid.reduce((s, p) => s + p.amount, 0);
+  const discounted = paid.reduce((s, t) => s + (rentPaymentFor(t, period)?.discount ?? 0), 0) + endedPaid.reduce((s, p) => s + p.discount, 0);
   return {
     due,
     collected,
@@ -1706,6 +1724,36 @@ function useAutomaticBackup(state: AppState, ready: boolean) {
   return { schedule, problem, toggle: () => update({ ...schedule, enabled: !schedule.enabled }) };
 }
 
+/* The desktop app's daily copies and the last copy saved off this computer,
+   re-read when the window regains focus and every half hour. Null in a
+   browser, where there is no database file to copy. */
+function useBackupStatus() {
+  const [status, setStatus] = useState<BackupStatus | null>(null);
+  const refresh = useCallback(() => { void backupStatus().then(setStatus); }, []);
+  useEffect(() => {
+    refresh();
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 30 * 60_000);
+    return () => { window.removeEventListener('focus', refresh); window.clearInterval(timer); };
+  }, [refresh]);
+  return { status, refresh };
+}
+
+/* How often a copy should leave this computer. A daily copy on the same disk
+   is lost with the disk, so the office is asked monthly for one elsewhere. */
+const COPY_ELSEWHERE_DAYS = 30;
+
+/* Why a copy off this computer is due, or '' when one is recent enough. */
+function copyElsewhereDue(status: BackupStatus | null): string {
+  if (!status) return '';
+  const last = status.lastCopyElsewhere;
+  if (!last?.date) return 'No copy of the records has been saved off this computer yet.';
+  const days = Math.floor((Date.parse(todayIso()) - Date.parse(last.date)) / 86_400_000);
+  if (last.sameDrive) return `The last copy (${formatIsoDate(last.date)}) was saved on the same drive as the records, so it would be lost with them.`;
+  if (days > COPY_ELSEWHERE_DAYS) return `The last copy off this computer was saved ${days} days ago.`;
+  return '';
+}
+
 function AutomaticBackupSettings({ backup }: { backup: ReturnType<typeof useAutomaticBackup> }) {
   return (
     <section className="settings-section full">
@@ -1727,6 +1775,7 @@ function App({ boot }: { boot: BootData }) {
   const [active, setActive] = useState<ModuleKey>('dashboard');
   const [state, setState] = useState<AppState>(boot.state);
   const automaticBackup = useAutomaticBackup(state, !boot.problem);
+  const backups = useBackupStatus();
   const [searchTerm, setSearchTerm] = useState('');
   const [modal, setModal] = useState<{ type: ModalType; data?: unknown }>({ type: null });
   const [toasts, setToasts] = useState<Array<{ id: number; message: string }>>([]);
@@ -1758,15 +1807,19 @@ function App({ boot }: { boot: BootData }) {
      open on, `printJob` is the sheet already laid out on the page. The sheet is
      hidden on screen and is the only thing the print stylesheet lets through. */
   const [printRequest, setPrintRequest] = useState<PrintRequest | null>(null);
-  const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string } | null>(null);
+  const [printJob, setPrintJob] = useState<{ receipts: PrintReceipt[]; printedBy: string; printedAt: string; paper: PaperSize } | null>(null);
+  /* A list has no preview, so it waits here while the officer chooses the paper. */
+  const [registerRequest, setRegisterRequest] = useState<Omit<RegisterJob, 'printedAt' | 'paper'> | null>(null);
   const [registerJob, setRegisterJob] = useState<RegisterJob | null>(null);
-  /* The analytics report laid out for a PDF, stamped when Export was pressed. */
-  const [reportJob, setReportJob] = useState<{ at: Date } | null>(null);
+  /* The analytics report laid out for a PDF, stamped when Export was pressed,
+     once the paper it is laid out on has been chosen. */
+  const [reportRequest, setReportRequest] = useState(false);
+  const [reportJob, setReportJob] = useState<{ at: Date; paper: PaperSize } | null>(null);
 
   /* Verification slips run the same two steps. `verifyRequest` carries the
      stall the slip was started from, when it was started from one. */
   const [verifyRequest, setVerifyRequest] = useState<{ stall?: Stall } | null>(null);
-  const [verifyJob, setVerifyJob] = useState<VerificationSlip[] | null>(null);
+  const [verifyJob, setVerifyJob] = useState<{ slips: VerificationSlip[]; paper: PaperSize } | null>(null);
 
   const requestPrint = (bill: UtilityBill) => setPrintRequest({ bills: [bill], single: true });
   /* A batch of different bills tiled onto sheets — one receipt each, no copy
@@ -1786,6 +1839,7 @@ function App({ boot }: { boot: BootData }) {
      receipt instead of the screen the officer is looking at. */
   useEffect(() => {
     if (!printJob) return;
+    applyPrintPaper(printJob.paper);
     document.body.classList.add('printing');
     const finish = () => setPrintJob(null);
     window.addEventListener('afterprint', finish);
@@ -1802,7 +1856,7 @@ function App({ boot }: { boot: BootData }) {
      record here, under the number it prints with — the bill numbers are
      claimed at this moment and nowhere else, so a preview backed out of files
      nothing. Bills already on record are reprinted, not re-filed. */
-  const confirmPrint = (receipts: PrintReceipt[], printedBy: string) => {
+  const confirmPrint = (receipts: PrintReceipt[], printedBy: string, paper: PaperSize) => {
     try { localStorage.setItem(printedByKey, printedBy); } catch { /* full storage must not stop a receipt printing */ }
 
     const onSheet = receipts.map((r) => r.bill);
@@ -1822,7 +1876,7 @@ function App({ boot }: { boot: BootData }) {
       }));
     }
 
-    setPrintJob({ receipts: printed, printedBy, printedAt: manilaStamp() });
+    setPrintJob({ receipts: printed, printedBy, printedAt: manilaStamp(), paper });
     setPrintRequest(null);
     const sheets = Math.ceil(receipts.length / RECEIPTS_PER_SHEET);
     const sent = `${receipts.length} receipt${receipts.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} sent to print`;
@@ -1835,7 +1889,7 @@ function App({ boot }: { boot: BootData }) {
      that was cancelled leaves the counter where it was. Each slip goes onto the
      register as it is numbered, so the office can answer for any number that
      comes back to it later. */
-  const confirmVerification = (drafts: Omit<VerificationSlip, 'controlNo'>[]) => {
+  const confirmVerification = (drafts: Omit<VerificationSlip, 'controlNo'>[], paper: PaperSize) => {
     if (drafts.length === 0) return;
     const issuedBy = drafts[0].issuedBy;
     try { localStorage.setItem(verifiedByKey, issuedBy); } catch { /* full storage must not stop a slip printing */ }
@@ -1843,9 +1897,13 @@ function App({ boot }: { boot: BootData }) {
     const numbers = claimIds('SSV', state.verifications.map((v) => v.controlNo), drafts.length);
     const slips: VerificationSlip[] = drafts.map((d, i) => ({ ...d, controlNo: numbers[i] }));
     const span = slips.length === 1 ? slips[0].controlNo : `${slips[0].controlNo}–${slips[slips.length - 1].controlNo}`;
-    const forWhom = slips[0].issuedTo
-      ? `${slips[0].issuedTo}${slips[0].stallNo ? ` (stall ${slips[0].stallNo})` : ''}`
-      : 'blank, to be filled in at the counter';
+    /* A sheet may carry slips for different tenants; the logbook names each. */
+    const named = slips.map((s) => s.issuedTo
+      ? `${s.controlNo} ${s.issuedTo}${s.stallNo ? ` (stall ${s.stallNo})` : ''}`
+      : `${s.controlNo} blank, to be filled in at the counter`);
+    const forWhom = new Set(slips.map((s) => `${s.issuedTo}|${s.stallNo}`)).size === 1
+      ? named[0].replace(/^\S+ /, '')
+      : named.join('; ');
 
     setState((p) => ({
       ...p,
@@ -1854,7 +1912,7 @@ function App({ boot }: { boot: BootData }) {
       activities: withActivity(p.activities, 'fact_check', 'blue', span, ` issued for business permit ${slips[0].purpose.toLowerCase()}.`),
     }));
 
-    setVerifyJob(slips);
+    setVerifyJob({ slips, paper });
     setVerifyRequest(null);
     showToast(`Verification ${span} issued and sent to print`);
   };
@@ -1863,6 +1921,7 @@ function App({ boot }: { boot: BootData }) {
      so a later plain Ctrl+P does not silently reprint a numbered slip. */
   useEffect(() => {
     if (!verifyJob) return;
+    applyPrintPaper(verifyJob.paper);
     document.body.classList.add('printing');
     const finish = () => setVerifyJob(null);
     window.addEventListener('afterprint', finish);
@@ -1886,7 +1945,7 @@ function App({ boot }: { boot: BootData }) {
       showToast('Nothing to print — no records match the current filters');
       return;
     }
-    setRegisterJob({ title, subtitle, columns, rows, printedAt: manilaStamp() });
+    setRegisterRequest({ title, subtitle, columns, rows });
   }, [showToast]);
 
   /* Same two-step as a receipt: lay the sheet out, let the print stylesheet cut
@@ -1894,6 +1953,7 @@ function App({ boot }: { boot: BootData }) {
      screen rather than silently reprinting this register. */
   useEffect(() => {
     if (!registerJob) return;
+    applyPrintPaper(registerJob.paper);
     document.body.classList.add('printing');
     const finish = () => setRegisterJob(null);
     window.addEventListener('afterprint', finish);
@@ -1911,6 +1971,7 @@ function App({ boot }: { boot: BootData }) {
   useEffect(() => {
     if (!reportJob) return;
     let dropped = false;
+    applyPrintPaper(reportJob.paper);
     document.body.classList.add('printing');
     const finish = () => setReportJob(null);
     const fileName = `Market Analytics Report ${isoDate(reportJob.at)}.pdf`;
@@ -2014,8 +2075,11 @@ function App({ boot }: { boot: BootData }) {
     if (maintenanceCount > 0) items.push({ id: 'n-maintenance', icon: 'build', tone: 'danger', title: `${maintenanceCount} stall${maintenanceCount > 1 ? 's' : ''} under maintenance`, detail: 'Check stall management', target: 'stalls' });
     const openViolations = state.violations.filter((v) => v.status === 'Open').length;
     if (openViolations > 0) items.push({ id: 'n-violations', icon: 'gavel', tone: 'danger', title: `${openViolations} open violation${openViolations > 1 ? 's' : ''}`, detail: 'Open the Violations register', target: 'violations' });
+    if (backups.status?.dailyError) items.push({ id: 'n-daily-backup', icon: 'error', tone: 'danger', title: 'Today\'s automatic backup failed', detail: `${backups.status.dailyError} — save a copy from Settings`, target: 'settings' });
+    const copyDue = copyElsewhereDue(backups.status);
+    if (copyDue) items.push({ id: 'n-copy-elsewhere', icon: 'save', tone: 'warning', title: 'Copy the records off this computer', detail: `${copyDue} Save one to a USB drive from Settings.`, target: 'settings' });
     return items;
-  }, [state.utilities, state.tenants, state.violations, unpaidBills, outstandingUtilities, pendingApplicants, maintenanceCount]);
+  }, [state.utilities, state.tenants, state.violations, unpaidBills, outstandingUtilities, pendingApplicants, maintenanceCount, backups.status]);
 
   /* A modal holds the record as it was when it opened. A save made from one
      form leaves that snapshot stale, so detail sheets and the "on record"
@@ -2032,6 +2096,15 @@ function App({ boot }: { boot: BootData }) {
 
   const makeLog = (existing: LogEntry[], type: string, details: string, by = userRef.current?.name ?? ''): LogEntry =>
     ({ id: nextId('LOG', existing.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type, details, recordedBy: by });
+
+  /* A tenancy as it ends, stamped with when, why and by whom. Its payments go
+     with it into Ended tenancies, so they are never lost. */
+  const endTenancy = (t: Tenant, reason: string): EndedTenancy =>
+    ({ ...t, endedOn: todayIso(), endReason: reason, endedBy: userRef.current?.name ?? '' });
+  const paymentsNote = (t: Tenant) => {
+    const n = Object.keys(t.rentPayments).length;
+    return n === 0 ? 'their record is kept under Ended tenancies' : `their record and ${n} rent payment${n === 1 ? '' : 's'} are kept under Ended tenancies`;
+  };
 
   /* ---------- Signing in and out ---------- */
 
@@ -2366,13 +2439,14 @@ function App({ boot }: { boot: BootData }) {
           : occupant && (occupant.section !== updated.section || renumbered)
             ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section, stallId: updated.id } : t))
             : p.tenants,
+        endedTenancies: released ? [...p.endedTenancies, endTenancy(occupant, `Stall ${updated.id} released to Available`)] : p.endedTenancies,
         applicants: renumbered ? p.applicants.map((a) => (a.stallId === oldId ? { ...a, stallId: updated.id } : a)) : p.applicants,
         utilities: renumbered ? p.utilities.map((b) => (b.stallId === oldId ? { ...b, stallId: updated.id, section: updated.section } : b)) : p.utilities,
         ...(log
           ? {
               activities: withActivity(p.activities, 'storefront', released ? 'red' : 'blue', updated.id, released ? ` was released to Available; ${occupant.name} was removed from tenant records.` : renumbered ? ` was renumbered from ${oldId} on moving to ${updated.section}.` : ' was updated in stall management.'),
               logs: [...p.logs, makeLog(p.logs, 'Maintenance', released
-                ? `Stall ${updated.id} was released to Available — ${occupant.name} was removed from tenant records.`
+                ? `Stall ${updated.id} was released to Available — ${occupant.name}'s tenancy ended; ${paymentsNote(occupant)}.`
                 : `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}.${renumbered ? ` Renumbered from ${oldId}; its tenant record, applications and utility bills now name ${updated.id}.` : ''}`)],
             }
           : {}),
@@ -2393,15 +2467,22 @@ function App({ boot }: { boot: BootData }) {
     closeModal();
   };
 
+  /* Removing a tenant ends their tenancy rather than erasing it: the record
+     and its rent payments move to Ended tenancies. */
   const deleteTenant = (tenant: Tenant) => {
-    setState((p) => ({
-      ...p,
-      tenants: p.tenants.filter((t) => t.id !== tenant.id),
-      stalls: p.stalls.map((s) => (s.id === tenant.stallId ? { ...s, tenant: 'Vacant', status: 'Available' as StallStatus } : s)),
-      activities: withActivity(p.activities, 'groups', 'red', tenant.name, ` was removed from tenant records.`),
-      logs: [...p.logs, makeLog(p.logs, 'Announcement', `Tenant ${tenant.name} was removed from tenant records${tenant.stallId && tenant.stallId !== '—' ? `; stall ${tenant.stallId} released to Available` : ''}.`)],
-    }));
-    showToast(`Tenant ${tenant.name} deleted`);
+    setState((p) => {
+      const current = p.tenants.find((t) => t.id === tenant.id);
+      if (!current) return p;
+      return {
+        ...p,
+        tenants: p.tenants.filter((t) => t.id !== current.id),
+        endedTenancies: [...p.endedTenancies, endTenancy(current, 'Removed from tenant records')],
+        stalls: p.stalls.map((s) => (s.id === current.stallId ? { ...s, tenant: 'Vacant', status: 'Available' as StallStatus } : s)),
+        activities: withActivity(p.activities, 'groups', 'red', current.name, ` was removed from tenant records.`),
+        logs: [...p.logs, makeLog(p.logs, 'Announcement', `Tenant ${current.name} was removed from tenant records${current.stallId && current.stallId !== '—' ? `; stall ${current.stallId} released to Available` : ''}; ${paymentsNote(current)}.`)],
+      };
+    });
+    showToast(`Tenant ${tenant.name} removed — kept under Ended tenancies`);
     closeModal();
   };
 
@@ -2416,14 +2497,34 @@ function App({ boot }: { boot: BootData }) {
     closeModal();
   };
 
+  /* The logbook is the office's record of what happened, so removing an entry
+     leaves one in its place saying what was removed, when and by whom. */
   const deleteLog = (log: LogEntry) => {
-    setState((p) => ({ ...p, logs: p.logs.filter((l) => l.id !== log.id) }));
+    if (!isAdmin) { showToast('Only an administrator can delete a logbook entry.'); closeModal(); return; }
+    const said = log.details.length > 160 ? `${log.details.slice(0, 157)}…` : log.details;
+    setState((p) => ({
+      ...p,
+      logs: [...p.logs.filter((l) => l.id !== log.id), makeLog(p.logs, 'Incident', `Logbook entry ${log.id} (${log.type}, ${formatIsoDate(log.date) || 'undated'}${log.recordedBy ? `, recorded by ${log.recordedBy}` : ''}) was deleted. It read: “${said}”`)],
+    }));
     showToast(`Log entry ${log.id} deleted`);
     closeModal();
   };
 
+  /* A bill is a record of money owed or collected. Only an administrator may
+     delete one, and the logbook keeps what it was, so a collection can never
+     disappear without a trace. */
   const deleteBill = (id: string) => {
-    setState((p) => ({ ...p, utilities: p.utilities.filter((b) => b.id !== id) }));
+    if (!isAdmin) { showToast('Only an administrator can delete a bill.'); closeModal(); return; }
+    setState((p) => {
+      const bill = p.utilities.find((b) => b.id === id);
+      if (!bill) return p;
+      return {
+        ...p,
+        utilities: p.utilities.filter((b) => b.id !== id),
+        activities: withActivity(p.activities, 'receipt_long', 'red', id, ' was deleted from billing records.'),
+        logs: [...p.logs, makeLog(p.logs, 'Incident', `Bill ${bill.id} was deleted — ${bill.type}, stall ${bill.stallId}, ${bill.tenantName || 'no tenant named'}, ${formatPeriod(bill.period)}, ${money(bill.amount)}, ${bill.status}.`)],
+      };
+    });
     showToast(`Bill ${id} deleted`);
     closeModal();
   };
@@ -2602,15 +2703,15 @@ function App({ boot }: { boot: BootData }) {
 
         <div className="page-content">
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={(b) => setModal({ type: 'confirm-delete-bill', data: b })} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={isAdmin ? (b) => setModal({ type: 'confirm-delete-bill', data: b }) : undefined} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
-          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
+          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} ended={state.endedTenancies} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
           {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Offence','Points','Status','Date Recorded','Date Reprimanded','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
-          {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} exporting={!!reportJob} onExport={() => setReportJob({ at: new Date() })} onNavigate={setActive} />}
+          {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} exporting={!!reportJob} onExport={() => setReportRequest(true)} onNavigate={setActive} />}
           {active === 'logbook' && <LogbookPage canDelete={isAdmin} onPrintList={printRegister} logs={state.logs} search={searchTerm} onAdd={() => setModal({ type: 'add-log' })} onDelete={(l) => setModal({ type: 'confirm-delete-log', data: l })} onExport={() => { downloadCSV(['Date','Time','Type','Details','Visitors','Visitor Names','Recorded By'], state.logs.map(l => [l.date ? formatIsoDate(l.date) : '—', l.time, l.type, l.details, l.type === 'Visitation' && l.visitorCount ? String(l.visitorCount) : '—', (l.visitors ?? []).join('; ') || '—', l.recordedBy || '—']), 'logbook.csv'); showToast('Log exported'); }} />}
           {active === 'officers' && <OfficersPage officers={state.officers} search={searchTerm} onAdd={() => setModal({ type: 'add-officer' })} onView={(o) => setModal({ type: 'view-officer', data: o })} onEdit={(o) => setModal({ type: 'edit-officer', data: o })} onDelete={(o) => setModal({ type: 'confirm-delete-officer', data: o })} onPrintList={printRegister} onExport={() => { downloadCSV(['Officer ID', 'Name', 'Position', 'Office', 'Reports To', 'Status', 'Contact', 'Email', 'Appointed'], state.officers.map((o) => [o.id, o.name || 'Vacant', o.position, o.office, reportsToLabel(state.officers, o), o.status, formatPhone(o.phone) || '—', o.email || '—', o.appointed ? formatIsoDate(o.appointed) : '—']), 'market-officers.csv'); showToast('Market Officers exported'); }} />}
-          {active === 'settings' && <SettingsPage isAdmin={isAdmin} accountPanel={<AccountSettings accounts={accounts} current={user} idleMinutes={idleMinutes} onIdleMinutes={chooseIdleMinutes} onChange={changeAccounts} />} automaticBackup={automaticBackup} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
+          {active === 'settings' && <SettingsPage isAdmin={isAdmin} accountPanel={<AccountSettings accounts={accounts} current={user} idleMinutes={idleMinutes} onIdleMinutes={chooseIdleMinutes} onChange={changeAccounts} />} automaticBackup={automaticBackup} backups={backups} state={state} lastSaved={lastSaved} onReset={() => setModal({ type: 'confirm-reset' })} onExport={() => { downloadJSON(state, `pmrms-backup-${todayIso()}.json`); showToast('Backup downloaded successfully'); }} onImport={(data: AppState) => { setState(data); showToast('Data imported successfully'); }} />}
           {active === 'support' && <SupportPage canRestore={isAdmin} state={state} onRestore={(data: AppState) => { setState(data); showToast('Data restored successfully from backup'); }} onBackup={() => { downloadJSON(state, `pmrms-backup-${new Date().toISOString().slice(0,10)}.json`); showToast('Backup downloaded successfully'); }} />}
         </div>
       </main>
@@ -2654,9 +2755,9 @@ function App({ boot }: { boot: BootData }) {
         const bills = state.utilities.filter((b) => b.tenantId === tenant.id || b.stallId === tenant.stallId);
         const unpaid = bills.filter((b) => b.status === 'Unpaid');
         const hasStall = tenant.stallId && tenant.stallId !== '—';
-        return <ConfirmDialog icon="person_remove" iconStyle="danger" title={`Delete tenant ${tenant.name}?`}
-          description={`${tenant.name}'s record will be removed from tenant records.${hasStall ? ` Stall ${tenant.stallId} will be released and marked Available.` : ''}${bills.length > 0 ? ` Their ${bills.length} utility bill${bills.length === 1 ? '' : 's'} will be kept as billing history${unpaid.length > 0 ? `, including ${money(unpaid.reduce((s, b) => s + b.amount, 0))} still unpaid` : ''}.` : ''} This cannot be undone.`}
-          confirmLabel="Delete Tenant" confirmDanger onConfirm={() => deleteTenant(tenant)} onCancel={closeModal} />;
+        return <ConfirmDialog icon="person_remove" iconStyle="danger" title={`Remove tenant ${tenant.name}?`}
+          description={`${tenant.name} will be removed from current tenants. Their record and rent payment history will be kept under Ended tenancies.${hasStall ? ` Stall ${tenant.stallId} will be released and marked Available.` : ''}${bills.length > 0 ? ` Their ${bills.length} utility bill${bills.length === 1 ? '' : 's'} will be kept as billing history${unpaid.length > 0 ? `, including ${money(unpaid.reduce((s, b) => s + b.amount, 0))} still unpaid` : ''}.` : ''} This cannot be undone.`}
+          confirmLabel="Remove Tenant" confirmDanger onConfirm={() => deleteTenant(tenant)} onCancel={closeModal} />;
       })()}
       {modal.type === 'confirm-delete-applicant' && (() => {
         const applicant = modal.data as Applicant;
@@ -2675,7 +2776,7 @@ function App({ boot }: { boot: BootData }) {
       {modal.type === 'confirm-delete-log' && (() => {
         const log = modal.data as LogEntry;
         return <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this log entry?"
-          description={`"${log.details}" will be removed from the logbook. The logbook is your operational audit trail, so remove entries only if they were recorded in error.`}
+          description={`"${log.details}" will be removed from the logbook. The logbook is your operational audit trail, so remove entries only if they were recorded in error. A new entry will record what was removed and who removed it.`}
           confirmLabel="Delete Entry" confirmDanger onConfirm={() => deleteLog(log)} onCancel={closeModal} />;
       })()}
       {modal.type === 'confirm-delete-violation' && (() => {
@@ -2687,6 +2788,24 @@ function App({ boot }: { boot: BootData }) {
       {printRequest && <PrintPreviewDialog signedIn={user.name} request={printRequest} billsOnRecord={state.utilities} onConfirm={confirmPrint} onCancel={() => setPrintRequest(null)} />}
       {printJob && <div className="print-area"><ReceiptSheets receipts={printJob.receipts} printedBy={printJob.printedBy} printedAt={printJob.printedAt} /></div>}
       {registerJob && <div className="print-area"><RegisterSheet job={registerJob} /></div>}
+      {registerRequest && (
+        <PaperChoiceDialog
+          title={`Print — ${registerRequest.title}`}
+          what={`${registerRequest.rows.length} row${registerRequest.rows.length === 1 ? '' : 's'} · ${registerRequest.subtitle}`}
+          confirmLabel="Print"
+          onConfirm={(paper) => { setRegisterJob({ ...registerRequest, printedAt: manilaStamp(), paper }); setRegisterRequest(null); }}
+          onCancel={() => setRegisterRequest(null)}
+        />
+      )}
+      {reportRequest && (
+        <PaperChoiceDialog
+          title="Export the analytics report"
+          what="Laid out as a PDF on the paper you choose"
+          confirmLabel="Save as PDF"
+          onConfirm={(paper) => { setReportJob({ at: new Date(), paper }); setReportRequest(false); }}
+          onCancel={() => setReportRequest(false)}
+        />
+      )}
       {reportJob && (
         <div className="print-area report-print-area">
           <AnalyticsPage
@@ -2701,14 +2820,15 @@ function App({ boot }: { boot: BootData }) {
           signedIn={user.name}
           stall={verifyRequest.stall}
           tenantName={verifyRequest.stall ? (state.tenants.find((t) => t.stallId === verifyRequest.stall!.id)?.name ?? verifyRequest.stall.tenant) : undefined}
+          tenants={state.tenants}
           existingIds={state.verifications.map((v) => v.controlNo)}
           onConfirm={confirmVerification}
           onCancel={() => setVerifyRequest(null)}
         />
       )}
-      {verifyJob && <div className="print-area"><VerificationSheets slips={verifyJob} /></div>}
+      {verifyJob && <div className="print-area"><VerificationSheets slips={verifyJob.slips} /></div>}
 
-      {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
+      {modal.type === 'confirm-delete-bill' && <ConfirmDialog icon="delete" iconStyle="danger" title="Delete this bill?" description={`Bill ${(modal.data as UtilityBill).id} for stall ${(modal.data as UtilityBill).stallId} will be removed from the records. This cannot be undone; the logbook will keep a note of the bill and who deleted it.`} confirmLabel="Delete Bill" confirmDanger onConfirm={() => deleteBill((modal.data as UtilityBill).id)} onCancel={closeModal} />}
 
       {toasts.length > 0 && (
         <div className="toast-container">
@@ -2747,8 +2867,9 @@ function DashboardPage({ state, search, occupiedCount, pendingApplicants, outsta
   /* What the market earns. The rent roll is what every tenancy on record is
      contracted to pay in a month; collected is what has actually come in. */
   const rentPeriod = currentPeriod();
-  const roll = useMemo(() => rentRollFor(state.tenants, rentPeriod), [state.tenants, rentPeriod]);
-  const rentToDate = useMemo(() => rentCollectedToDate(state.tenants), [state.tenants]);
+  const roll = useMemo(() => rentRollFor(state.tenants, rentPeriod, state.endedTenancies), [state.tenants, rentPeriod, state.endedTenancies]);
+  /* Ended tenancies' payments count too: that money was collected. */
+  const rentToDate = useMemo(() => rentCollectedToDate([...state.tenants, ...state.endedTenancies]), [state.tenants, state.endedTenancies]);
   const utilitiesCollected = useMemo(
     () => state.utilities.filter((b) => b.status === 'Paid').reduce((s, b) => s + b.amount, 0),
     [state.utilities],
@@ -3121,7 +3242,7 @@ function EarningsFigure({ label, value, basis, tone }: { label: string; value: s
    Tenant Records Page
    ============================================================ */
 
-function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+function TenantRecordsPage({ tenants, ended, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; ended: EndedTenancy[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
     `Tenant register · rent for ${formatPeriodShort(period)}${search ? ` · matching “${search}”` : ''}`,
@@ -3254,7 +3375,7 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
                       )}
                     </td>
                     <td><TenantStatusBadge status={t.status} /></td>
-                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Delete tenant" aria-label="Delete tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
+                    <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Remove tenant" aria-label="Remove tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
                   </tr>
                 );
               })}
@@ -3264,6 +3385,33 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
         </div>
         <PaginationBar paged={paged} onPage={setPage} />
       </div>
+      {ended.length > 0 && (
+        <details className="panel ended-tenancies">
+          <summary>
+            <span className="material-symbols-outlined" aria-hidden="true">history</span>
+            <span>Ended tenancies <b>{ended.length}</b></span>
+            <small>Tenants removed or whose stall was released, kept with their rent payments so past collections never change.</small>
+          </summary>
+          <div className="table-wrap">
+            <table className="data-table"><thead><tr><th>Name</th><th>Stall ID</th><th>Section</th><th>Ended</th><th>Reason</th><th>Ended by</th><th>Months paid</th><th>Rent collected</th></tr></thead>
+              <tbody>
+                {[...ended].reverse().map((t) => (
+                  <tr key={t.id}>
+                    <td className="no-wrap"><strong>{registerName(t.name)}</strong></td>
+                    <td className="no-wrap">{t.stallId}</td>
+                    <td className="no-wrap">{t.section}</td>
+                    <td className="no-wrap">{t.endedOn ? formatIsoDate(t.endedOn) : '—'}</td>
+                    <td>{t.endReason || '—'}</td>
+                    <td className="no-wrap">{t.endedBy || '—'}</td>
+                    <td>{Object.keys(t.rentPayments).length}</td>
+                    <td>{money(rentTotalPaid(t))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </>
   );
 }
@@ -3275,7 +3423,8 @@ function TenantRecordsPage({ tenants, search, onAdd, onView, onDelete, onSetRent
 function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport, onPrintList }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; search: string;
   onAdd: (b: UtilityBill) => void; onView: (b: UtilityBill) => void;
-  onToggleStatus: (id: string) => void; onDelete: (b: UtilityBill) => void;
+  /* Left out for staff: only an administrator may delete a bill. */
+  onToggleStatus: (id: string) => void; onDelete?: (b: UtilityBill) => void;
   onPrint: (b: UtilityBill) => void;
   onPrintBatch: (bills: UtilityBill[]) => void;
   onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
@@ -3446,7 +3595,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
                       <button type="button" className="row-icon-btn" title="View bill" aria-label="View bill" onClick={() => onView(b)}><span className="material-symbols-outlined">visibility</span></button>
                       <button type="button" className="row-icon-btn" title={b.status === 'Paid' ? 'Mark unpaid' : 'Mark paid'} aria-label={b.status === 'Paid' ? 'Mark unpaid' : 'Mark paid'} onClick={() => onToggleStatus(b.id)}><span className="material-symbols-outlined">{b.status === 'Paid' ? 'undo' : 'check_circle'}</span></button>
                       <button type="button" className="row-icon-btn" title="Print receipt" aria-label="Print receipt" onClick={() => onPrint(b)}><span className="material-symbols-outlined">print</span></button>
-                      <button type="button" className="row-icon-btn danger" title="Delete bill" aria-label="Delete bill" onClick={() => onDelete(b)}><span className="material-symbols-outlined">delete</span></button>
+                      {onDelete && <button type="button" className="row-icon-btn danger" title="Delete bill" aria-label="Delete bill" onClick={() => onDelete(b)}><span className="material-symbols-outlined">delete</span></button>}
                     </div>
                   </td>
                 </tr>
@@ -4707,14 +4856,14 @@ function AppearanceSettings() {
     </section>
   );
 }
-function SettingsPage({ state, lastSaved, onReset, onExport, onImport, automaticBackup, accountPanel, isAdmin }: { automaticBackup: ReturnType<typeof useAutomaticBackup>; state: AppState; lastSaved: string; onReset: () => void; onExport: () => void; onImport: (data: AppState) => void; accountPanel: ReactNode; isAdmin: boolean }) {
+function SettingsPage({ state, lastSaved, onReset, onExport, onImport, automaticBackup, backups, accountPanel, isAdmin }: { automaticBackup: ReturnType<typeof useAutomaticBackup>; backups: ReturnType<typeof useBackupStatus>; state: AppState; lastSaved: string; onReset: () => void; onExport: () => void; onImport: (data: AppState) => void; accountPanel: ReactNode; isAdmin: boolean }) {
   /* An import replaces every record on this workstation, so the file is read
      first and its contents shown before anything is overwritten. */
   const [pending, setPending] = useState<{ data: AppState; fileName: string } | null>(null);
   const backup = useBackupFile((data, file) => setPending({ data, fileName: file.name }));
 
   const countOf = (data: AppState) =>
-    data.stalls.length + data.tenants.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length + data.officers.length;
+    data.stalls.length + data.tenants.length + data.endedTenancies.length + data.applicants.length + data.logs.length + data.violations.length + data.utilities.length + data.officers.length;
 
   /* Read straight from the database rather than counted off the screen, so the
      figures shown are the ones actually on disk. Re-read after every save. */
@@ -4732,9 +4881,16 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport, automatic
   const saveDatabaseCopy = () => {
     setDbCheck('');
     backupDatabase()
-      .then((result) => { if (result && !result.canceled) setDbCheck(`Copy saved to ${result.filePath}`); })
+      .then((result) => {
+        if (!result || result.canceled) return;
+        setDbCheck(result.sameDrive
+          ? `Copy saved to ${result.filePath}. That is the same drive as the records, so it would be lost with them — save the next one to a USB drive or another computer.`
+          : `Copy saved to ${result.filePath}.`);
+        backups.refresh();
+      })
       .catch((error: unknown) => setDbCheck(error instanceof Error ? error.message : 'The copy could not be saved.'));
   };
+  const copyDue = copyElsewhereDue(backups.status);
 
   return (
     <>
@@ -4792,6 +4948,27 @@ function SettingsPage({ state, lastSaved, onReset, onExport, onImport, automatic
               <div className="settings-item"><span className="settings-item-label">Rows stored</span><span className="settings-item-value">
                 {`${Object.values(dbInfo.counts).reduce((sum, n) => sum + n, 0)} — ${dbInfo.counts.tenants ?? 0} tenants, ${dbInfo.counts.stalls ?? 0} stalls, ${dbInfo.counts.applicants ?? 0} applicants, ${dbInfo.counts.utilities ?? 0} bills`}
               </span></div>
+              {backups.status && (
+                <>
+                  <div className="settings-item"><span className="settings-item-label">Daily copies on this computer</span><span className="settings-item-value">
+                    {backups.status.dailyCount > 0
+                      ? `${backups.status.dailyCount} kept (the last ${backups.status.keepDays} days) · latest ${formatIsoDate(backups.status.latestDaily)}`
+                      : 'None yet — the first is made when the system opens'}
+                  </span></div>
+                  <div className="settings-item"><span className="settings-item-label">Last copy saved elsewhere</span><span className="settings-item-value" style={{ wordBreak: 'break-all' }}>
+                    {backups.status.lastCopyElsewhere ? `${formatIsoDate(backups.status.lastCopyElsewhere.date)} · ${backups.status.lastCopyElsewhere.path}` : 'Never'}
+                  </span></div>
+                  {backups.status.dailyError && (
+                    <div className="form-error" role="alert">Today's automatic copy failed: {backups.status.dailyError}. Save a copy with the button below.</div>
+                  )}
+                  {copyDue && (
+                    <p className="settings-note">
+                      <span className="material-symbols-outlined">warning</span>
+                      {copyDue} The daily copies stay on this computer, so a failed drive or a stolen computer takes them too. Plug in a USB drive and use Save a Copy of the Database at least once a month.
+                    </p>
+                  )}
+                </>
+              )}
               <div className="settings-actions">
                 <button className="btn-primary" onClick={saveDatabaseCopy}><span className="material-symbols-outlined">save</span>Save a Copy of the Database</button>
                 <button className="btn-outline" onClick={() => { void revealDataFolder(); }}><span className="material-symbols-outlined">folder_open</span>Open Data Folder</button>
@@ -6591,6 +6768,28 @@ function PaginationBar({ paged, onPage }: { paged: PageInfo; onPage: (p: number)
 /* The printed register. Deliberately plain — a column of running numbers, the
    same headings as the screen, and a footer that says how many records were on
    the sheet so a printout can be checked against the system later. */
+/* Lists and the analytics report have no preview of their own, so they ask
+   here which bond paper is in the printer before anything is laid out. */
+function PaperChoiceDialog({ title, what, confirmLabel, onConfirm, onCancel }: { title: string; what: string; confirmLabel: string; onConfirm: (paper: PaperSize) => void; onCancel: () => void }) {
+  const [paper, setPaper] = useState<PaperSize | ''>('');
+  const [missing, setMissing] = useState(false);
+  const go = () => { if (!paper) { setMissing(true); return; } onConfirm(paper); };
+  return (
+    <Modal title={title} subtitle={what} narrow onClose={onCancel}>
+      <div className="form-group">
+        <label className="form-label">Bond paper in the printer *</label>
+        <PaperSizePicker value={paper} onChange={(p) => { setPaper(p); setMissing(false); }} invalid={missing} />
+        {missing && <div className="form-error"><span className="material-symbols-outlined">error</span>Choose the bond paper loaded in the printer.</div>}
+        <p className="paper-size-note">Choose the same paper size in the printer's own window when it opens.</p>
+      </div>
+      <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
+        <button className="btn-outline" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={go}><span className="material-symbols-outlined">print</span>{confirmLabel}</button>
+      </div>
+    </Modal>
+  );
+}
+
 function RegisterSheet({ job }: { job: RegisterJob }) {
   return (
     <div className="register-sheet">
@@ -7471,7 +7670,7 @@ function billsClashing(pending: UtilityBill[], onRecord: UtilityBill[]): Utility
 
 /* What goes on paper, and what the preview shows — the same component both
    times, so the preview cannot drift from the print. */
-function ReceiptSheets({ receipts, printedBy, printedAt }: { receipts: PrintReceipt[]; printedBy: string; printedAt: string }) {
+export function ReceiptSheets({ receipts, printedBy, printedAt }: { receipts: PrintReceipt[]; printedBy: string; printedAt: string }) {
   return (<>
     {chunkIntoSheets(receipts).map((sheet, sheetIndex) => (
       <div className="receipt-sheet" key={sheetIndex}>
@@ -7489,10 +7688,14 @@ function ReceiptSheets({ receipts, printedBy, printedAt }: { receipts: PrintRece
 /* A receipt has to say who issued it. It starts on whoever is signed in, and
    stays editable for a receipt printed on someone else's behalf.
    Nothing reaches the printer until the officer has seen the sheet. */
-function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCancel }: { request: PrintRequest; billsOnRecord: UtilityBill[]; signedIn: string; onConfirm: (receipts: PrintReceipt[], printedBy: string) => void; onCancel: () => void }) {
+function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCancel }: { request: PrintRequest; billsOnRecord: UtilityBill[]; signedIn: string; onConfirm: (receipts: PrintReceipt[], printedBy: string, paper: PaperSize) => void; onCancel: () => void }) {
   const [name, setName] = useState(() => { if (signedIn) return signedIn; try { return localStorage.getItem(printedByKey) ?? ''; } catch { return ''; } });
   const [copies, setCopies] = useState(2);
   const [error, setError] = useState('');
+  /* Which bond paper is in the printer — chosen every time, never assumed. */
+  const [paperSize, setPaperSize] = useState<PaperSize | ''>('');
+  const [paperMissing, setPaperMissing] = useState(false);
+  const paperName = paperSize ? `${PAPER[paperSize].name} ` : '';
   /* Other tenants' bills the officer has added to this sheet. A sheet takes
      four, so a collector walking a row can print the row rather than one
      tenant at a time. */
@@ -7527,17 +7730,16 @@ function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCan
      cannot change what prints. Fullscreen is an in-page mode rather than the
      Fullscreen API: the dialog is already inside an Electron window, and a
      real fullscreen request would hide the window chrome the officer needs. */
-  const [zoom, setZoom] = useState(FIT_ZOOM);
+  const paper = usePaperZoom(paperSize);
   const [full, setFull] = useState(false);
 
-  const stepZoom = (delta: number) => setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
-
   /* Esc backs out of fullscreen before it closes the dialog, so the first press
-     never loses a half-filled form. Capture phase beats Modal's own handler. */
+     never loses a half-filled form. Capture phase beats Modal's own handler.
+     While Match screen is open, Esc is its own. */
   useEffect(() => {
     if (!full) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || screenLocked) return;
+      if (e.key !== 'Escape' || screenLocked || document.querySelector('.paper-calibration')) return;
       e.stopImmediatePropagation();
       e.stopPropagation();
       setFull(false);
@@ -7547,32 +7749,29 @@ function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCan
   }, [full]);
 
   const submit = () => {
+    if (!paperSize) { setPaperMissing(true); setFull(false); setError('Choose the bond paper loaded in the printer.'); return; }
     if (!name.trim()) { setError('Enter the name of the person printing these receipts.'); return; }
     if (receipts.length === 0) { setError('There is nothing to print.'); return; }
-    onConfirm(receipts, name.trim());
+    onConfirm(receipts, name.trim(), paperSize);
   };
 
   const preview = (
     <div className={`print-preview${full ? ' fullscreen' : ''}`} aria-label="Preview of the sheets that will print">
       <div className="print-preview-toolbar">
-        <span className="print-preview-count">{sheets} A4 sheet{sheets === 1 ? '' : 's'} · {receipts.length} receipt{receipts.length === 1 ? '' : 's'}</span>
+        <span className="print-preview-count">{sheets} {paperName}sheet{sheets === 1 ? '' : 's'} · {receipts.length} receipt{receipts.length === 1 ? '' : 's'}{paperSize ? '' : ' · shown on A4 until you choose the paper'}</span>
         <div className="print-preview-zoom">
-          <button type="button" className="row-icon-btn" title="Zoom out" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-0.15)}><span className="material-symbols-outlined">zoom_out</span></button>
-          <span className="print-preview-level">{Math.round(zoom * 100)}%</span>
-          <button type="button" className="row-icon-btn" title="Zoom in" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(0.15)}><span className="material-symbols-outlined">zoom_in</span></button>
-          <button type="button" className="btn-outline-sm" onClick={() => setZoom(FIT_ZOOM)}>Fit</button>
-          <button type="button" className="btn-outline-sm" onClick={() => setZoom(1)}>Actual size</button>
+          {paper.controls}
           <button type="button" className="row-icon-btn" title={full ? 'Exit fullscreen' : 'Fullscreen'} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'} onClick={() => setFull((v) => !v)}>
             <span className="material-symbols-outlined">{full ? 'fullscreen_exit' : 'fullscreen'}</span>
           </button>
         </div>
       </div>
-      <div className="print-preview-viewport">
+      <div className="print-preview-viewport" ref={paper.viewportRef}>
         {/* `zoom`, not `transform: scale` — zoom reflows, so the scroll area
             sizes itself to the magnified sheet. A transform would leave the
             container at its unscaled size and the sheet would be clipped at
             anything above 100%. Chromium-only, which is all this app runs on. */}
-        <div className="print-preview-scale zoomable" style={{ zoom }}>
+        <div className="print-preview-scale zoomable" style={paper.style}>
           <ReceiptSheets
             receipts={previewReceipts}
             printedBy={name.trim() || '—'}
@@ -7580,6 +7779,7 @@ function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCan
           />
         </div>
       </div>
+      {paper.calibration}
     </div>
   );
 
@@ -7591,7 +7791,7 @@ function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCan
             <span className="material-symbols-outlined">print</span>
             <div>
               <strong>Print Preview</strong>
-              <span>{receipts.length} receipt{receipts.length === 1 ? '' : 's'} · {sheets} A4 sheet{sheets === 1 ? '' : 's'}</span>
+              <span>{receipts.length} receipt{receipts.length === 1 ? '' : 's'} · {sheets} {paperName}sheet{sheets === 1 ? '' : 's'}</span>
             </div>
           </div>
           <div className="print-fullscreen-actions">
@@ -7608,9 +7808,14 @@ function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCan
   return (
     <Modal
       title="Print Preview — Billing Receipt"
-      subtitle={`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} · ${sheets} A4 sheet${sheets === 1 ? '' : 's'} · four to a sheet`}
+      subtitle={`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} · ${sheets} ${paperName}sheet${sheets === 1 ? '' : 's'} · four to a sheet`}
       stacked wide onClose={onCancel}
     >
+      <div className="form-group">
+        <label className="form-label">Bond Paper in the Printer *</label>
+        <PaperSizePicker value={paperSize} onChange={(p) => { setPaperSize(p); setPaperMissing(false); setError(''); }} invalid={paperMissing} />
+        <p className="paper-size-note">Choose the same paper size in the printer's own window when it opens.</p>
+      </div>
       <div className="print-setup">
         <div className="form-group">
           <label className="form-label">Printed By *</label>
@@ -7658,7 +7863,7 @@ function PrintPreviewDialog({ request, billsOnRecord, signedIn, onConfirm, onCan
           }}
         >
           <option value="">
-            {room <= 0 ? 'The sheet is full' : addable.length === 0 ? 'No other bills on record' : `Add a bill… (room for ${room} more)`}
+            {room <= 0 ? 'The sheet is full' : addable.length === 0 ? 'No other bills on record' : `Add another tenant's bill… (room for ${room} more)`}
           </option>
           {room > 0 && addable.map((b) => (
             <option key={b.id} value={b.id}>{b.stallId} — {b.tenantName || 'Unassigned'} · {b.type} · {money(b.amount)}</option>
@@ -7803,7 +8008,7 @@ function chunkSlips(slips: VerificationSlip[]): VerificationSlip[][] {
   return sheets.length > 0 ? sheets : [[]];
 }
 
-function VerificationSheets({ slips }: { slips: VerificationSlip[] }) {
+export function VerificationSheets({ slips }: { slips: VerificationSlip[] }) {
   return (<>
     {chunkSlips(slips).map((sheet, sheetIndex) => (
       <div className="slip-sheet" key={sheetIndex}>
@@ -7894,24 +8099,44 @@ function VerificationSlipCard({ slip }: { slip: VerificationSlip }) {
 /* Nothing reaches the printer until the officer has seen the sheet, the same
    rule the receipts follow. The control numbers on the preview are the ones
    that will print — they are only claimed when Print is pressed. */
-function VerificationPrintDialog({ stall, tenantName, existingIds, signedIn, onConfirm, onCancel }: {
-  stall?: Stall; tenantName?: string; existingIds: string[]; signedIn: string;
-  onConfirm: (slips: Omit<VerificationSlip, 'controlNo'>[]) => void;
+/* Who one slip on the sheet is for. A sheet carries up to four, and each may be
+   a different tenant — or left blank to be written in at the counter. */
+type SlipFor = { issuedTo: string; section: string; stallNo: string };
+
+function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, signedIn, onConfirm, onCancel }: {
+  stall?: Stall; tenantName?: string; tenants: Tenant[]; existingIds: string[]; signedIn: string;
+  onConfirm: (slips: Omit<VerificationSlip, 'controlNo'>[], paper: PaperSize) => void;
   onCancel: () => void;
 }) {
   const [purpose, setPurpose] = useState<VerificationPurpose>('Renewal');
-  const [issuedTo, setIssuedTo] = useState(tenantName && tenantName !== 'Vacant' ? tenantName : '');
-  const [section, setSection] = useState(stall?.section ?? '');
-  const [stallNo, setStallNo] = useState(stall?.id ?? '');
+  const [rows, setRows] = useState<SlipFor[]>(() => [{
+    issuedTo: tenantName && tenantName !== 'Vacant' ? tenantName : '',
+    section: stall?.section ?? '',
+    stallNo: stall?.id ?? '',
+  }]);
   const [checked, setChecked] = useState<string[]>(VERIFICATION_DEFAULTS.Renewal);
   const [others, setOthers] = useState('');
-  const [count, setCount] = useState(1);
   const [issuedBy, setIssuedBy] = useState(() => { if (signedIn) return signedIn; try { return localStorage.getItem(verifiedByKey) ?? ''; } catch { return ''; } });
   const [error, setError] = useState('');
-  const [zoom, setZoom] = useState(FIT_ZOOM);
+  /* Which bond paper is in the printer — chosen every time, never assumed. */
+  const [paperSize, setPaperSize] = useState<PaperSize | ''>('');
+  const [paperMissing, setPaperMissing] = useState(false);
+  const paperName = paperSize ? `${PAPER[paperSize].name} ` : '';
+  const paper = usePaperZoom(paperSize);
   const [full, setFull] = useState(false);
+  const count = rows.length;
+  const room = SLIPS_PER_SHEET - count;
 
-  const stepZoom = (delta: number) => setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
+  const editRow = (index: number, patch: Partial<SlipFor>) => setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  /* Tenants not already on the sheet, in stall order, to add with one choice. */
+  const onSheet = new Set(rows.map((r) => r.stallNo.trim().toUpperCase()).filter(Boolean));
+  const addableTenants = tenants
+    .filter((t) => t.stallId && t.stallId !== '—' && !onSheet.has(t.stallId.toUpperCase()))
+    .sort((a, b) => compareStallNumbers(a.stallId, b.stallId));
+  const addTenant = (id: string) => {
+    const t = tenants.find((x) => x.id === id);
+    if (t && room > 0) setRows((prev) => [...prev, { issuedTo: t.name, section: t.section, stallNo: t.stallId }]);
+  };
 
   /* Shown in the note under the preview. The slip itself re-reads the date as
      it is built, so what prints is the day it printed. */
@@ -7932,13 +8157,13 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, signedIn, onC
   /* Read at the moment they are needed, not when the dialog opened: a preview
      left sitting open past midnight would otherwise print yesterday's date, and
      the validity is counted from the day the slip is actually handed over. */
-  const draft = (): Omit<VerificationSlip, 'controlNo'> => {
+  const draft = (row: SlipFor): Omit<VerificationSlip, 'controlNo'> => {
     const dateIssued = todayIso();
     return {
       purpose,
-      issuedTo: issuedTo.trim(),
-      section: section.trim(),
-      stallNo: stallNo.trim(),
+      issuedTo: row.issuedTo.trim(),
+      section: row.section.trim(),
+      stallNo: row.stallNo.trim(),
       checked,
       others: others.trim(),
       dateIssued,
@@ -7950,23 +8175,29 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, signedIn, onC
   /* Each slip on the sheet is a separate issuable leaf, so each gets its own
      number — printing four is running off a short pad, not four copies of one. */
   const numbers = peekIds('SSV', existingIds, count);
-  const preview: VerificationSlip[] = numbers.map((controlNo) => ({
-    ...draft(),
+  const preview: VerificationSlip[] = numbers.map((controlNo, i) => ({
+    ...draft(rows[i]),
     issuedBy: issuedBy.trim() || '',
     controlNo,
   }));
 
   const submit = () => {
+    if (!paperSize) { setPaperMissing(true); setError('Choose the bond paper loaded in the printer.'); return; }
     if (!issuedBy.trim()) { setError('Enter the name of the officer issuing these slips.'); return; }
-    onConfirm(Array.from({ length: count }, () => draft()));
+    onConfirm(rows.map(draft), paperSize);
   };
 
   return (
     <Modal
       title="Print Preview — Stall / Space Verification"
-      subtitle={`${count} slip${count === 1 ? '' : 's'} · 1 A4 sheet · four to a sheet · valid ${VERIFICATION_VALID_DAYS} days`}
+      subtitle={`${count} slip${count === 1 ? '' : 's'} · 1 ${paperName}sheet · four to a sheet · valid ${VERIFICATION_VALID_DAYS} days`}
       stacked wide onClose={onCancel}
     >
+      <div className="form-group">
+        <label className="form-label">Bond Paper in the Printer *</label>
+        <PaperSizePicker value={paperSize} onChange={(p) => { setPaperSize(p); setPaperMissing(false); setError(''); }} invalid={paperMissing} />
+        <p className="paper-size-note">Choose the same paper size in the printer's own window when it opens.</p>
+      </div>
       <div className="print-setup">
         <div className="form-group">
           <label className="form-label">Purpose *</label>
@@ -7983,28 +8214,35 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, signedIn, onC
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           />
         </div>
-        <div className="form-group">
-          <label className="form-label">Issued To</label>
-          <input className="form-input" value={issuedTo} placeholder="Leave blank to write in by hand" onChange={(e) => setIssuedTo(e.target.value)} />
+      </div>
+
+      {/* Up to four slips to a sheet, each for its own tenant, so the office can
+          run off a row of stalls at once — or a pad of blanks to write in. */}
+      <div className="form-group">
+        <label className="form-label">Slips on This Sheet · {count} of {SLIPS_PER_SHEET}</label>
+        <div className="slip-rows">
+          {rows.map((row, i) => (
+            <div className="slip-row" key={i}>
+              <span className="slip-row-no" aria-hidden="true">{i + 1}</span>
+              <input className="form-input" aria-label={`Slip ${i + 1}: issued to`} value={row.issuedTo} placeholder="Issued to — blank to write in by hand" onChange={(e) => editRow(i, { issuedTo: e.target.value })} />
+              <select className="form-select" aria-label={`Slip ${i + 1}: section`} value={row.section} onChange={(e) => editRow(i, { section: e.target.value })}>
+                <option value="">Section — blank</option>
+                {[...new Set([row.section, ...SECTIONS].filter(Boolean))].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <input className="form-input" aria-label={`Slip ${i + 1}: stall no.`} value={row.stallNo} placeholder="Stall no." onChange={(e) => editRow(i, { stallNo: e.target.value })} />
+              <button type="button" className="row-icon-btn danger" title="Take this slip off the sheet" aria-label={`Remove slip ${i + 1}`} disabled={count === 1} onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+          ))}
         </div>
-        <div className="form-group">
-          <label className="form-label">Section</label>
-          <select className="form-select" value={section} onChange={(e) => setSection(e.target.value)}>
-            <option value="">Leave blank</option>
-            {SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+        <div className="slip-add">
+          <select className="form-select" value="" disabled={room <= 0 || addableTenants.length === 0} onChange={(e) => addTenant(e.target.value)} aria-label="Add another tenant to this sheet">
+            <option value="">{room <= 0 ? 'The sheet is full' : `Add another tenant… (room for ${room} more)`}</option>
+            {room > 0 && addableTenants.map((t) => <option key={t.id} value={t.id}>{t.stallId} — {registerName(t.name)}</option>)}
           </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Stall No.</label>
-          <input className="form-input" value={stallNo} placeholder="e.g. KS-1" onChange={(e) => setStallNo(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Slips on the Sheet</label>
-          <select className="form-select" value={count} onChange={(e) => setCount(Number(e.target.value))}>
-            <option value={1}>1 slip</option>
-            <option value={2}>2 slips</option>
-            <option value={4}>4 — fill the sheet</option>
-          </select>
+          <button type="button" className="btn-outline-sm" disabled={room <= 0} onClick={() => setRows((prev) => [...prev, { issuedTo: '', section: '', stallNo: '' }])}>Add a blank slip</button>
+          <button type="button" className="btn-outline-sm" disabled={room <= 0} onClick={() => setRows((prev) => [...prev, ...Array.from({ length: SLIPS_PER_SHEET - prev.length }, () => ({ ...prev[0] }))])}>Fill with copies of slip 1</button>
         </div>
       </div>
 
@@ -8033,23 +8271,20 @@ function VerificationPrintDialog({ stall, tenantName, existingIds, signedIn, onC
 
       <div className={`print-preview${full ? ' fullscreen' : ''}`} aria-label="Preview of the sheet that will print">
         <div className="print-preview-toolbar">
-          <span className="print-preview-count">1 A4 sheet · {count} slip{count === 1 ? '' : 's'}</span>
+          <span className="print-preview-count">1 {paperName}sheet · {count} slip{count === 1 ? '' : 's'}{paperSize ? '' : ' · shown on A4 until you choose the paper'}</span>
           <div className="print-preview-zoom">
-            <button type="button" className="row-icon-btn" title="Zoom out" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-0.15)}><span className="material-symbols-outlined">zoom_out</span></button>
-            <span className="print-preview-level">{Math.round(zoom * 100)}%</span>
-            <button type="button" className="row-icon-btn" title="Zoom in" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(0.15)}><span className="material-symbols-outlined">zoom_in</span></button>
-            <button type="button" className="btn-outline-sm" onClick={() => setZoom(FIT_ZOOM)}>Fit</button>
-            <button type="button" className="btn-outline-sm" onClick={() => setZoom(1)}>Actual size</button>
+            {paper.controls}
             <button type="button" className="row-icon-btn" title={full ? 'Exit fullscreen' : 'Fullscreen'} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'} onClick={() => setFull((v) => !v)}>
               <span className="material-symbols-outlined">{full ? 'fullscreen_exit' : 'fullscreen'}</span>
             </button>
           </div>
         </div>
-        <div className="print-preview-viewport">
-          <div className="print-preview-scale zoomable" style={{ zoom }}>
+        <div className="print-preview-viewport" ref={paper.viewportRef}>
+          <div className="print-preview-scale zoomable" style={paper.style}>
             <VerificationSheets slips={preview.map((s) => ({ ...s, issuedBy: s.issuedBy || '—' }))} />
           </div>
         </div>
+        {paper.calibration}
       </div>
 
       <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>

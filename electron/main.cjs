@@ -9,9 +9,49 @@ const { app, BrowserWindow, Menu, shell, dialog, ipcMain, session } = require('e
 const path = require('node:path');
 const fs = require('node:fs');
 const db = require('./db.cjs');
+const backups = require('./backups.cjs');
 
 /** Where the records are kept. Backing this file up backs up the whole system. */
 const databaseFile = () => path.join(app.getPath('userData'), 'market-records.db');
+
+/* ============================================================
+   Daily copies
+   ============================================================
+   A copy of the records every day the system is open, kept for 30 days in
+   backups/daily beside the database. SQLite's own backup makes it, so the copy
+   is whole even if a save lands mid-copy, and it is written under a temporary
+   name first so a half-written file is never mistaken for a backup. A copy on
+   this computer does not survive the computer failing or being stolen, so the
+   office is also reminded to save one elsewhere (db:backup, db:backup-status). */
+const DAILY_KEEP = 30;
+const dailyFolder = () => path.join(app.getPath('userData'), 'backups', 'daily');
+let dailyRunning = false;
+let dailyError = '';
+
+async function takeDailyCopy() {
+  if (dailyRunning) return;
+  dailyRunning = true;
+  try {
+    await backups.takeDailyCopy({ backupTo: (target) => db.backupTo(target), folder: dailyFolder(), keep: DAILY_KEEP });
+    dailyError = '';
+  } catch (error) {
+    dailyError = error && error.message ? error.message : String(error);
+    console.error('[backup] daily copy failed:', error);
+  } finally {
+    dailyRunning = false;
+  }
+}
+
+function startDailyCopies() {
+  void takeDailyCopy();
+  // The office often leaves the app open for days, so check hourly whether the date has turned.
+  const timer = setInterval(() => { void takeDailyCopy(); }, 60 * 60 * 1000);
+  if (timer.unref) timer.unref();
+}
+
+/* Whether a path is on the same drive as the records — a copy there is lost with them. */
+const sameDriveAsRecords = (filePath) =>
+  path.parse(path.resolve(filePath)).root.toLowerCase() === path.parse(databaseFile()).root.toLowerCase();
 
 // A dev server URL is passed in by `npm run electron:dev`; otherwise we load
 // the built files from dist/.
@@ -167,7 +207,24 @@ function registerDatabaseHandlers() {
     });
     if (canceled || !filePath) return { canceled: true };
     await db.backupTo(filePath);
-    return { canceled: false, filePath };
+    // Remembered so the office can be reminded when no copy has left this computer lately.
+    const sameDrive = sameDriveAsRecords(filePath);
+    db.writeMeta('last_copy_elsewhere', JSON.stringify({ date: backups.localDate(), path: filePath, sameDrive }));
+    return { canceled: false, filePath, sameDrive };
+  });
+
+  /* The daily copies kept on this computer, and the last copy saved anywhere else. */
+  handle('db:backup-status', () => {
+    let lastCopyElsewhere = null;
+    try { lastCopyElsewhere = JSON.parse(db.readMeta('last_copy_elsewhere') || 'null'); } catch { /* never recorded */ }
+    return {
+      dailyFolder: dailyFolder(),
+      dailyCount: backups.listDailyCopies(dailyFolder()).length,
+      latestDaily: backups.latestDailyDate(dailyFolder()),
+      dailyError,
+      keepDays: DAILY_KEEP,
+      lastCopyElsewhere,
+    };
   });
 
   /* The analytics report as a PDF. The renderer has already laid the report
@@ -315,6 +372,7 @@ app.whenReady().then(() => {
   if (!openDatabase()) { app.exit(1); return; }
   keepOffline();
   registerDatabaseHandlers();
+  startDailyCopies();
   buildMenu();
   createWindow();
 

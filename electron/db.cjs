@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -207,6 +207,31 @@ CREATE TABLE IF NOT EXISTS rent_payments (
   discount  REAL NOT NULL DEFAULT 0
 );
 
+/* A tenancy that has ended — the tenant was removed or their stall released.
+   Its rent_payments rows go with the tenants row, so the payments and keepers
+   are kept here on the record itself, as JSON: an ended tenancy is never
+   edited, only read back, and must keep every month it paid. */
+CREATE TABLE IF NOT EXISTS ended_tenancies (
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL DEFAULT '',
+  phone            TEXT NOT NULL DEFAULT '',
+  barangay         TEXT NOT NULL DEFAULT '',
+  stallId          TEXT NOT NULL DEFAULT '',
+  section          TEXT NOT NULL DEFAULT '',
+  rent             REAL NOT NULL DEFAULT 0,
+  status           TEXT NOT NULL DEFAULT '',
+  applicantId      TEXT,
+  rentDueDay       INTEGER NOT NULL DEFAULT 5,
+  meterElectricity TEXT NOT NULL DEFAULT '',
+  meterWater       TEXT NOT NULL DEFAULT '',
+  endedOn          TEXT NOT NULL DEFAULT '',
+  endReason        TEXT NOT NULL DEFAULT '',
+  endedBy          TEXT NOT NULL DEFAULT '',
+  keepersJson      TEXT NOT NULL DEFAULT '[]',
+  paymentsJson     TEXT NOT NULL DEFAULT '{}',
+  position         INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_rent_payments_tenant ON rent_payments(tenantId);
 CREATE INDEX IF NOT EXISTS idx_verif_items_control  ON verification_items(controlNo);
 
@@ -249,10 +274,12 @@ const TABLES = {
   logs: ['id', 'date', 'time', 'type', 'details', 'recordedBy', 'visitorCount', 'visitors'],
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
   officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed', 'photo'],
+  endedTenancies: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId',
+    'rentDueDay', 'meterElectricity', 'meterWater', 'endedOn', 'endReason', 'endedBy', 'keepersJson', 'paymentsJson'],
 };
 
-/* The state key above maps to a differently named table in two cases. */
-const TABLE_NAME = { utilities: 'utility_bills' };
+/* Some state keys map to a differently named table. */
+const TABLE_NAME = { utilities: 'utility_bills', endedTenancies: 'ended_tenancies' };
 const tableOf = (key) => TABLE_NAME[key] || key;
 
 /* Row order is normally kept in `position`. The officers table cannot use that
@@ -391,6 +418,27 @@ function readAll() {
     return row;
   });
 
+  // Ended tenancies come back in the shape of a tenant, plus when and why it ended.
+  const parsed = (text, fallback, isArray) => {
+    try { const value = JSON.parse(text); return (isArray ? Array.isArray(value) : value && typeof value === 'object' && !Array.isArray(value)) ? value : fallback; } catch { return fallback; }
+  };
+  state.endedTenancies = state.endedTenancies.map((ended) => {
+    const row = {
+      ...ended,
+      rent: Number(ended.rent) || 0,
+      rentDueDay: Number(ended.rentDueDay) || 5,
+      meters: { Electricity: ended.meterElectricity || '', Water: ended.meterWater || '' },
+      keepers: parsed(ended.keepersJson, [], true),
+      rentPayments: parsed(ended.paymentsJson, {}, false),
+    };
+    delete row.meterElectricity;
+    delete row.meterWater;
+    delete row.keepersJson;
+    delete row.paymentsJson;
+    if (row.applicantId === null || row.applicantId === undefined) delete row.applicantId;
+    return row;
+  });
+
   const requirements = db.prepare('SELECT * FROM applicant_requirements ORDER BY applicantId, position').all();
   state.applicants = state.applicants.map((applicant) => ({
     ...applicant,
@@ -481,6 +529,14 @@ function bindable(record, columns, position, orderColumn = 'position') {
   // The renderer keeps a tenant's meters nested; the table holds one column each.
   if (record && record.meters && typeof record.meters === 'object') {
     record = { ...record, meterElectricity: record.meters.Electricity || '', meterWater: record.meters.Water || '' };
+  }
+  // An ended tenancy carries its payments and keepers on the row itself.
+  if (record && columns.includes('paymentsJson')) {
+    record = {
+      ...record,
+      paymentsJson: JSON.stringify(record.rentPayments && typeof record.rentPayments === 'object' ? record.rentPayments : {}),
+      keepersJson: JSON.stringify(Array.isArray(record.keepers) ? record.keepers : []),
+    };
   }
   // A visitation's names are a list; the column holds one per line, since a
   // name written surname first carries a comma of its own.

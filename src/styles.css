@@ -5807,6 +5807,223 @@ ul, ol {
   margin-bottom: 0;
 }
 
+/* In the preview each sheet is drawn on its whole sheet of A4 — the printed
+   area plus the 8 mm margin @page leaves round it — so it looks like the bond
+   paper that comes out of the printer, and at Actual size is as big as it.
+   Printing is untouched: there the margin comes from @page. Text is drawn at
+   print size whatever the interface's text-size setting, as it prints. The
+   outline sits outside the sheet, so it adds nothing to its size. */
+.print-preview-scale {
+  --font-scale: 1;
+}
+
+.print-preview-scale .receipt-sheet,
+.print-preview-scale .slip-sheet {
+  box-sizing: content-box;
+  padding: 8mm;
+  border: 0;
+  outline: 1px solid var(--color-border);
+}
+
+.print-preview-zoom .btn-outline-sm[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ---------- Match screen to real paper ---------- */
+
+.paper-calibration {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.paper-calibration-card {
+  width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  padding: 22px 24px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg, 0 20px 40px rgba(0, 0, 0, 0.25));
+}
+
+.paper-calibration-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: calc(18px * var(--font-scale, 1));
+}
+
+.paper-calibration-card ol {
+  margin: 0 0 6px 20px;
+  padding: 0;
+  line-height: 1.7;
+  font-size: calc(13.5px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+}
+
+.paper-calibration-track {
+  padding: 18px 0;
+  overflow-x: auto;
+}
+
+/* 210 mm: the short edge of A4. Its zoom is the one being tried. */
+.paper-calibration-bar {
+  width: 210mm;
+  height: 16mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2563eb;
+  border-right: 2px solid #0b2a6b;
+  color: #fff;
+  font-size: 4mm;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.paper-calibration-controls,
+.paper-calibration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.paper-calibration-controls {
+  margin-bottom: 18px;
+}
+
+.paper-calibration-actions > span {
+  flex: 1;
+}
+
+/* ---------- Bond paper choice ---------- */
+
+.paper-size-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.paper-size-picker > button {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+}
+
+.paper-size-picker > button:hover {
+  border-color: var(--color-primary);
+}
+
+.paper-size-picker > button[aria-checked='true'] {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+/* The paper's outline, drawn to scale at a tenth of a millimetre per pixel. */
+.paper-size-shape {
+  flex: 0 0 auto;
+  background: #fff;
+  border: 1px solid #94a3b8;
+  border-radius: 2px;
+  box-shadow: 1px 1px 0 rgba(15, 23, 42, 0.08);
+}
+
+.paper-size-picker > button[aria-checked='true'] .paper-size-shape {
+  border-color: var(--color-primary);
+}
+
+.paper-size-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.paper-size-text strong {
+  font-size: calc(14px * var(--font-scale, 1));
+}
+
+.paper-size-text small {
+  font-size: calc(12px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+}
+
+.paper-size-picker.invalid > button {
+  border-color: var(--color-danger, #dc2626);
+}
+
+.paper-size-note {
+  margin: 6px 0 0;
+  font-size: calc(12px * var(--font-scale, 1));
+  color: var(--color-text-secondary);
+}
+
+/* ---------- Several tenants on one sheet of slips ---------- */
+
+.slip-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slip-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 0.8fr) 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.slip-row-no {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.slip-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.slip-add .form-select {
+  flex: 1 1 260px;
+  width: auto;
+}
+
+@media (max-width: 700px) {
+  .paper-size-picker { grid-template-columns: 1fr; }
+  .slip-row { grid-template-columns: 26px minmax(0, 1fr) 32px; }
+  .slip-row .form-select,
+  .slip-row input[aria-label$='stall no.'] { grid-column: 2; }
+}
+
 /* ---------- Zoomable receipt preview ---------- */
 
 .print-preview-toolbar {
@@ -7091,4 +7308,25 @@ ul, ol {
   max-height: 248px;
   overflow-y: auto;
   padding: 2px;
+}
+
+/* Ended tenancies, below the tenant register: kept with their payments. */
+.ended-tenancies { margin-top: 20px; }
+.ended-tenancies > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 14px 20px; cursor: pointer; font-weight: 600; color: var(--color-text-primary, inherit); list-style: none; }
+.ended-tenancies > summary::-webkit-details-marker { display: none; }
+.ended-tenancies > summary .material-symbols-outlined { font-size: 20px; color: var(--color-text-secondary, #64748b); }
+.ended-tenancies > summary b { margin-left: 4px; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--color-border-light, #e5e7eb); }
+.ended-tenancies > summary small { flex-basis: 100%; font-weight: 400; font-size: 12px; color: var(--color-text-secondary, #64748b); }
+.ended-tenancies[open] > summary { border-bottom: 1px solid var(--color-border-light); }
+
+/* Each paper's fit (src/printPreview.tsx): type a touch smaller and a shorter
+   signature space, so four receipts or slips never lose their bottom edge.
+   Set on the sheet itself, so it holds in print, where --font-scale is 1. */
+.receipt-sheet,
+.slip-sheet {
+  --font-scale: var(--sheet-font, 1);
+}
+
+.receipt-signatures {
+  padding-top: var(--sign-gap, 7mm);
 }

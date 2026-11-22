@@ -32,12 +32,24 @@ type Bridge = {
   clear: () => Promise<BridgeResult<true>>;
   stats: () => Promise<BridgeResult<DatabaseStats>>;
   integrityCheck: () => Promise<BridgeResult<{ ok: boolean; result: string }>>;
-  backup: () => Promise<BridgeResult<{ canceled: boolean; filePath?: string }>>;
+  backup: () => Promise<BridgeResult<{ canceled: boolean; filePath?: string; sameDrive?: boolean }>>;
+  backupStatus?: () => Promise<BridgeResult<BackupStatus>>;
   saveReportPdf?: (fileName: string) => Promise<BridgeResult<{ canceled: boolean; filePath?: string; opened?: boolean }>>;
   revealFolder: () => Promise<BridgeResult<string>>;
   snapshot?: (label: string) => Promise<BridgeResult<string>>;
   loadAccounts?: () => Promise<BridgeResult<unknown[]>>;
   saveAccounts?: (accounts: unknown[]) => Promise<BridgeResult<true>>;
+};
+
+/* The daily copies the desktop app keeps beside the database, and the last
+   copy the office saved anywhere else (ideally a USB drive). */
+export type BackupStatus = {
+  dailyFolder: string;
+  dailyCount: number;
+  latestDaily: string;
+  dailyError: string;
+  keepDays: number;
+  lastCopyElsewhere: { date: string; path: string; sameDrive: boolean } | null;
 };
 
 export type DatabaseStats = {
@@ -224,10 +236,17 @@ export async function checkIntegrity(): Promise<{ ok: boolean; result: string } 
 }
 
 /** Saves a copy of the database file somewhere the operator chooses. */
-export async function backupDatabase(): Promise<{ canceled: boolean; filePath?: string } | null> {
+export async function backupDatabase(): Promise<{ canceled: boolean; filePath?: string; sameDrive?: boolean } | null> {
   const db = bridge();
   if (!db) return null;
   return unwrap(db.backup());
+}
+
+/** Daily copies and the last off-computer copy, or null in a browser. */
+export async function backupStatus(): Promise<BackupStatus | null> {
+  const db = bridge();
+  if (!db?.backupStatus) return null;
+  try { return await unwrap(db.backupStatus()); } catch { return null; }
 }
 
 /** Saves the page as laid out for print to a PDF the operator chooses, and

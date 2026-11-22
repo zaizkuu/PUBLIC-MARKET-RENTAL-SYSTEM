@@ -58,12 +58,82 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.replaceAll({ state: { stalls: [] }, idCounters: {} });
     db.clearAll();
     assert.equal(db.loadAccounts().length, 1);
-    assert.equal(db.stats().schemaVersion, 6);
+    assert.equal(db.stats().schemaVersion, 7);
 
     // The snapshot taken before the directory update is a complete, readable copy.
     const copy = join(folder, 'before.db');
     await db.backupTo(copy);
     assert.ok(existsSync(copy));
+  } finally {
+    db.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('an ended tenancy keeps its rent payments and keepers after the tenant row is gone', { skip: !db && 'better-sqlite3 is not built for this Node' }, async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'pmrms-db-'));
+  const file = join(folder, 'market-records.db');
+  const tenant = {
+    id: 'TEN-001', name: 'Norida Lerios', phone: '—', barangay: '', stallId: 'KS-1', section: 'Kakanin', rent: 1000, status: 'Active',
+    keepers: [{ id: 'KPR-1', name: 'Ana Lerios', phone: '', relation: 'Daughter', barangay: '' }],
+    meters: { Electricity: 'KW202392137204I', Water: '' }, rentDueDay: 5,
+    rentPayments: { '2026-10': { period: '2026-10', paidOn: '2026-10-03', amount: 950, discount: 50 }, '2026-11': { period: '2026-11', paidOn: '2026-11-10', amount: 1000, discount: 0 } },
+  };
+  try {
+    db.open(file);
+    db.save({ state: { tenants: [tenant], endedTenancies: [] }, idCounters: {} });
+    // The tenancy ends: the tenant row (and with it its rent_payments rows) goes, the ended record arrives.
+    db.save({ state: { tenants: [], endedTenancies: [{ ...tenant, endedOn: '2026-11-17', endReason: 'Removed from tenant records', endedBy: 'Felmar Pica' }] }, idCounters: {} });
+    db.close();
+
+    db.open(file);
+    const { state } = db.load();
+    assert.equal(state.tenants.length, 0);
+    assert.equal(state.endedTenancies.length, 1);
+    const ended = state.endedTenancies[0];
+    assert.equal(ended.endedOn, '2026-11-17');
+    assert.equal(ended.endReason, 'Removed from tenant records');
+    assert.equal(ended.endedBy, 'Felmar Pica');
+    assert.deepEqual(ended.rentPayments, tenant.rentPayments);
+    assert.deepEqual(ended.keepers, tenant.keepers);
+    assert.deepEqual(ended.meters, tenant.meters);
+    assert.equal(ended.rent, 1000);
+    assert.ok(!('paymentsJson' in ended) && !('keepersJson' in ended) && !('meterElectricity' in ended));
+    assert.equal(db.stats().counts.endedTenancies, 1);
+  } finally {
+    db.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('daily copies: one per day, never half-written, only the newest kept, nothing else touched', { skip: !db && 'better-sqlite3 is not built for this Node' }, async () => {
+  const backups = require('../electron/backups.cjs');
+  const folder = mkdtempSync(join(tmpdir(), 'pmrms-daily-'));
+  const daily = join(folder, 'daily');
+  try {
+    db.open(join(folder, 'market-records.db'));
+    db.save({ state: { stalls: [{ id: 'KS-1', section: 'Kakanin', tenant: 'Norida Lerios', status: 'Occupied', permit: 'Not Recorded', lastInspection: '-', note: '' }] }, idCounters: {} });
+    const backupTo = (target) => db.backupTo(target);
+    const { mkdirSync, writeFileSync, readdirSync } = await import('node:fs');
+    mkdirSync(daily, { recursive: true });
+    writeFileSync(join(daily, 'keep-me.txt'), 'not a daily copy');
+
+    const first = await backups.takeDailyCopy({ backupTo, folder: daily, date: '2026-10-01', keep: 3 });
+    assert.ok(first.endsWith('market-records-2026-10-01.db'));
+    assert.equal(await backups.takeDailyCopy({ backupTo, folder: daily, date: '2026-10-01', keep: 3 }), '', 'a day is copied once');
+    for (const date of ['2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05']) await backups.takeDailyCopy({ backupTo, folder: daily, date, keep: 3 });
+
+    assert.deepEqual(backups.listDailyCopies(daily), ['market-records-2026-10-03.db', 'market-records-2026-10-04.db', 'market-records-2026-10-05.db']);
+    assert.equal(backups.latestDailyDate(daily), '2026-10-05');
+    assert.ok(readdirSync(daily).includes('keep-me.txt'), 'files that are not daily copies are left alone');
+    assert.ok(!readdirSync(daily).some((f) => f.endsWith('.partial')), 'no half-written copy is left behind');
+
+    // A copy is a complete database holding the records.
+    const Database = require('better-sqlite3');
+    const copy = new Database(join(daily, 'market-records-2026-10-05.db'), { readonly: true });
+    assert.equal(copy.prepare('SELECT tenant FROM stalls WHERE id = ?').get('KS-1').tenant, 'Norida Lerios');
+    copy.close();
+    assert.match(backups.localDate(new Date(2026, 0, 9)), /^2026-01-09$/);
   } finally {
     db.close();
     rmSync(folder, { recursive: true, force: true });
