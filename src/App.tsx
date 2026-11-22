@@ -416,6 +416,20 @@ function issueWithCode(issue: string) {
   const code = violationCode(issue);
   return code ? `${code} — ${issue}` : issue;
 }
+
+/* A citation names its party in free text, so a tenant's record finds theirs by
+   name: the words alone, in any order, without accents, commas or capitals.
+   "AQUITANIA, KAREN KAPUNAN" and "Karen Kapunan Aquitania" are the same person. */
+function partyKey(name: string): string {
+  return name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean).sort().join(' ');
+}
+
+/** The violations recorded against the person of this name. */
+function violationsOf(violations: Violation[], name: string): Violation[] {
+  const key = partyKey(name);
+  return key ? violations.filter((v) => partyKey(v.tenant) === key) : [];
+}
 /* Records are read and written through ./db — a SQLite database in the desktop
    application, localStorage in a plain browser. */
 
@@ -2705,7 +2719,7 @@ function App({ boot }: { boot: BootData }) {
           {active === 'dashboard' && <DashboardPage state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
           {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={isAdmin ? (b) => setModal({ type: 'confirm-delete-bill', data: b }) : undefined} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} />}
-          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} ended={state.endedTenancies} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
+          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} ended={state.endedTenancies} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
           {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Offence','Points','Status','Date Recorded','Date Reprimanded','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} exporting={!!reportJob} onExport={() => setReportRequest(true)} onNavigate={setActive} />}
@@ -2717,7 +2731,7 @@ function App({ boot }: { boot: BootData }) {
       </main>
 
       {modal.type === 'add-stall' && <Modal title="Add New Stall" onClose={closeModal}><AddStallForm existingIds={state.stalls.map(s => s.id)} onSubmit={addStall} onCancel={closeModal} /></Modal>}
-      {modal.type === 'add-applicant' && <Modal title="Add New Applicant" onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} stalls={state.stalls} tenants={state.tenants} applicants={state.applicants} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
+      {modal.type === 'add-applicant' && <Modal title="Add New Applicant" wide onClose={closeModal}><AddApplicantForm existingIds={state.applicants.map(a => a.id)} stalls={state.stalls} tenants={state.tenants} applicants={state.applicants} onSubmit={addApplicant} onCancel={closeModal} /></Modal>}
       {modal.type === 'add-tenant' && <Modal title="Add New Tenant" wide onClose={closeModal}><AddTenantForm existingIds={state.tenants.map(t => t.id)} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onCancel={closeModal} /></Modal>}
       {modal.type === 'assign-stall' && <Modal title="Assign Stall & Create Tenant" wide onClose={closeModal}><AssignStallForm applicant={modal.data as Applicant} stalls={state.stalls} tenants={state.tenants} onSubmit={addTenant} onSkip={closeModal} /></Modal>}
       {modal.type === 'add-log' && <Modal title="Add Log Entry" onClose={closeModal}><AddLogForm existingIds={state.logs.map(l => l.id)} onSubmit={addLog} onCancel={closeModal} /></Modal>}
@@ -2731,7 +2745,7 @@ function App({ boot }: { boot: BootData }) {
       {modal.type === 'edit-stall' && <Modal title="Edit Stall Details" wide onClose={closeModal}><StallEditForm existingIds={state.stalls.map((s) => s.id)} stall={liveStall(modal.data as Stall)} occupant={state.tenants.find((t) => t.stallId === (modal.data as Stall).id)} bills={state.utilities.filter((b) => b.stallId === (modal.data as Stall).id)} onSave={updateStall} onClose={closeModal} /></Modal>}
       {modal.type === 'view-applicant' && <Modal title="Applicant Details" sheet onClose={closeModal}><ApplicantDetailView applicant={liveApplicant(modal.data as Applicant)} onReview={() => setModal({ type: 'edit-applicant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-applicant' && <Modal title="Review Applicant" wide onClose={closeModal}><ApplicantReviewForm applicant={modal.data as Applicant} current={liveApplicant(modal.data as Applicant)} onSave={updateApplicant} onClose={closeModal} /></Modal>}
-      {modal.type === 'view-tenant' && <Modal title="Tenant Details" sheet onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
+      {modal.type === 'view-tenant' && <Modal title="Tenant Details" sheet onClose={closeModal}><TenantDetailView tenant={liveTenant(modal.data as Tenant)} violations={violationsOf(state.violations, liveTenant(modal.data as Tenant).name)} bills={state.utilities.filter((b) => b.tenantId === (modal.data as Tenant).id || b.stallId === (modal.data as Tenant).stallId)} onSetRentPaid={setRentPaid} onEdit={() => setModal({ type: 'edit-tenant', data: modal.data })} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-tenant' && <Modal title="Edit Tenant Details" wide onClose={closeModal}><TenantEditForm tenant={modal.data as Tenant} current={liveTenant(modal.data as Tenant)} tenants={state.tenants} stalls={state.stalls} onSave={updateTenant} onClose={closeModal} /></Modal>}
       {modal.type === 'view-bill' && <Modal title="Utility Bill Details" sheet onClose={closeModal}><BillDetailView bill={liveBill(modal.data as UtilityBill)} onEdit={() => setModal({ type: 'edit-bill', data: modal.data })} onToggleStatus={toggleBillStatus} onPrint={requestPrint} onClose={closeModal} /></Modal>}
       {modal.type === 'edit-bill' && <Modal title="Edit Bill Details" subtitle="Who the bill is made out to, when it falls due, and its notes." onClose={closeModal}><BillEditForm bill={liveBill(modal.data as UtilityBill)} tenants={state.tenants} onSave={updateBill} onClose={() => setModal({ type: 'view-bill', data: modal.data })} /></Modal>}
@@ -3242,7 +3256,14 @@ function EarningsFigure({ label, value, basis, tone }: { label: string; value: s
    Tenant Records Page
    ============================================================ */
 
-function TenantRecordsPage({ tenants, ended, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; ended: EndedTenancy[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; ended: EndedTenancy[]; violations: Violation[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+  /* Open violations per person, flagged beside the name so they are seen
+     without opening the record. */
+  const openViolations = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const v of violations) if (v.status === 'Open') { const key = partyKey(v.tenant); if (key) counts.set(key, (counts.get(key) ?? 0) + 1); }
+    return counts;
+  }, [violations]);
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
     `Tenant register · rent for ${formatPeriodShort(period)}${search ? ` · matching “${search}”` : ''}`,
@@ -3352,9 +3373,17 @@ function TenantRecordsPage({ tenants, ended, search, onAdd, onView, onDelete, on
                   : paid
                   ? `Paid ${payment?.paidOn ? formatIsoDate(payment.paidOn) : 'on an unrecorded date'}${payment && payment.discount > 0 ? ` — ${money(payment.amount)} after a ${money(payment.discount)} early-payment discount` : ''} — tick to undo`
                   : `Falls due ${formatIsoDate(rentDueIso(t, period))}${late > 0 ? ` · ${late} day${late === 1 ? '' : 's'} past due` : ''}${quote.early ? ` · pays ${money(quote.payable)} today with the ${EARLY_RENT_DISCOUNT_PCT}% early discount` : ''} — tick once collected`;
+                const openCount = openViolations.get(partyKey(t.name)) ?? 0;
                 return (
                   <tr key={t.id}>
-                    <td className="no-wrap"><strong>{registerName(t.name)}</strong></td>
+                    <td className="no-wrap">
+                      <strong>{registerName(t.name)}</strong>
+                      {openCount > 0 && (
+                        <span className="violation-flag" title={`${openCount} open violation${openCount === 1 ? '' : 's'} — open the record to see ${openCount === 1 ? 'it' : 'them'}`}>
+                          <span className="material-symbols-outlined" aria-hidden="true">gavel</span>{openCount} open
+                        </span>
+                      )}
+                    </td>
                     <td className="no-wrap">{t.stallId}</td>
                     <td className="no-wrap">{t.section}</td>
                     <td>{money(t.rent)}</td>
@@ -5223,7 +5252,7 @@ function keepText(draft: string, current: string) {
 /* `stacked` is for a dialog opened from inside another one: it sits on a higher
    layer and swallows Escape before the form underneath sees it, so closing the
    sub-dialog never dismisses the record being edited. */
-function Modal({ title, subtitle, onClose, wide, narrow, stacked, sheet, children }: {
+export function Modal({ title, subtitle, onClose, wide, narrow, stacked, sheet, children }: {
   title: string; subtitle?: string; onClose: () => void; wide?: boolean; narrow?: boolean; stacked?: boolean; sheet?: boolean; children: ReactNode;
 }) {
   useEffect(() => {
@@ -5280,7 +5309,7 @@ function ConfirmDialog({ icon, iconStyle, title, description, confirmLabel, conf
    Add Forms
    ============================================================ */
 
-function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]; onSubmit: (s: Stall) => void; onCancel: () => void }) {
+export function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds: string[]; onSubmit: (s: Stall) => void; onCancel: () => void }) {
   const [id, setId] = useState('');
   const [section, setSection] = useState(SECTIONS[0]);
   const [tenant, setTenant] = useState('');
@@ -5370,7 +5399,7 @@ function RequirementsChecklist({ selected, onChange }: { selected: string[]; onC
   );
 }
 
-function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, onCancel }: { existingIds: string[]; stalls: Stall[]; tenants: Tenant[]; applicants: Applicant[]; onSubmit: (a: Applicant) => void; onCancel: () => void }) {
+export function AddApplicantForm({ existingIds, stalls, tenants, applicants, onSubmit, onCancel }: { existingIds: string[]; stalls: Stall[]; tenants: Tenant[]; applicants: Applicant[]; onSubmit: (a: Applicant) => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [section, setSection] = useState(SECTIONS[0]);
@@ -5789,7 +5818,7 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose, onVerify }: 
   </>);
 }
 
-function StallEditForm({ stall, occupant, bills, existingIds, onSave, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; existingIds: string[]; onSave: (s: Stall, opts?: SaveOpts, previous?: Stall) => void; onClose: () => void }) {
+export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; existingIds: string[]; onSave: (s: Stall, opts?: SaveOpts, previous?: Stall) => void; onClose: () => void }) {
   // Blank draft — anything left blank keeps what the stall already has.
   const [section, setSection] = useState('');
   const [tenant, setTenant] = useState('');
@@ -5887,7 +5916,8 @@ function StallEditForm({ stall, occupant, bills, existingIds, onSave, onClose }:
       </div>
       <div className="form-group">
         <label className="form-label">Last Inspection</label>
-        <div className="form-row" style={{ gap: '10px' }}>
+        {/* The form's own column spacing, so the box and button line up with the fields above. */}
+        <div className="form-row">
           <input className="form-input" value={lastInspection} placeholder={keepHint(stall.lastInspection)} onChange={(e) => edit(setLastInspection)(e.target.value)} />
           <button className="btn-outline" type="button" onClick={() => edit(setLastInspection)(todayStr())}>Inspected Today</button>
         </div>
@@ -6101,7 +6131,7 @@ function RecordNote({ children }: { children: ReactNode }) {
   return <p className="record-note">{children}</p>;
 }
 
-function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { tenant: Tenant; bills: UtilityBill[]; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onEdit: () => void; onClose: () => void }) {
+export function TenantDetailView({ tenant, bills, violations, onSetRentPaid, onEdit, onClose }: { tenant: Tenant; bills: UtilityBill[]; violations: Violation[]; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onEdit: () => void; onClose: () => void }) {
   const utilitiesBilled = bills.reduce((sum, b) => sum + b.amount, 0);
   const period = currentPeriod();
   const rentStatus = rentStatusOf(tenant, period);
@@ -6174,6 +6204,7 @@ function TenantDetailView({ tenant, bills, onSetRentPaid, onEdit, onClose }: { t
 
     <RentLedger tenant={tenant} />
     <BillHistory bills={bills} emptyText={`No electricity or water bills have been issued to ${tenant.name} yet.`} />
+    <ViolationHistory violations={violations} emptyText={`No violations have been recorded against ${registerName(tenant.name)}.`} />
     <div className="modal-footer" style={{ padding: '16px 0 0', borderTop: 'none', justifyContent: 'flex-end' }}>
       <button className="btn-outline" onClick={onClose}>Close</button>
       <button className="btn-outline" disabled={rentStatus === 'No Rent Set'} title={rentStatus === 'No Rent Set' ? 'No monthly rent is set for this stall yet' : undefined} onClick={() => onSetRentPaid(tenant.id, period, !paid)}>
@@ -6870,6 +6901,43 @@ function BillHistory({ bills, emptyText }: { bills: UtilityBill[]; emptyText: st
                 <td>{b.consumption.toLocaleString()} {UTILITY_PRESETS[b.type].unit}</td>
                 <td><strong>{money(b.amount)}</strong></td>
                 <td><BillStatusBadge bill={b} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* The violations recorded against a tenant, shown on their record: open ones
+   first, then the newest. */
+function ViolationHistory({ violations, emptyText }: { violations: Violation[]; emptyText: string }) {
+  const sorted = [...violations].sort((a, b) =>
+    (a.status === 'Open' ? 0 : 1) - (b.status === 'Open' ? 0 : 1) || b.dateRecorded.localeCompare(a.dateRecorded) || b.id.localeCompare(a.id));
+  const open = sorted.filter((v) => v.status === 'Open');
+  const points = open.reduce((s, v) => s + v.points, 0);
+  return (
+    <div className="bill-history violation-history">
+      <div className="bill-history-head">
+        <h4>Violations{sorted.length > 0 ? ` (${sorted.length})` : ''}</h4>
+        <span className={open.length > 0 ? 'outstanding' : ''}>
+          {open.length > 0 ? `${open.length} open · ${points} demerit point${points === 1 ? '' : 's'}` : sorted.length > 0 ? 'None open' : 'No violations'}
+        </span>
+      </div>
+      {sorted.length === 0 && <p className="bill-history-empty">{emptyText}</p>}
+      {sorted.length > 0 && (
+        <table className="mini-table">
+          <thead><tr><th>Citation</th><th>Recorded</th><th>Violation</th><th>Offence</th><th>Points</th><th>Status</th></tr></thead>
+          <tbody>
+            {sorted.map((v) => (
+              <tr key={v.id} title={v.notes || undefined}>
+                <td>{v.id}</td>
+                <td>{v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—'}</td>
+                <td>{issueWithCode(v.issue)}</td>
+                <td>{offenceLabel(v.offence)}</td>
+                <td>{v.points}</td>
+                <td><StatusBadge status={v.status} />{v.status === 'Reprimanded' && v.dateResolved ? <small className="violation-history-date">{formatIsoDate(v.dateResolved)}</small> : null}</td>
               </tr>
             ))}
           </tbody>

@@ -2545,14 +2545,27 @@ ul, ol {
 .form-input,
 .form-select,
 .form-textarea {
+  box-sizing: border-box;
   padding: 9px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+  font-family: inherit;
   font-size: calc(16px * var(--font-scale, 1));
+  font-weight: 400;
+  line-height: 1.5;
   color: var(--color-text);
   background: var(--color-surface);
   transition: border-color 0.15s, box-shadow 0.15s;
   width: 100%;
+}
+
+/* Every single-line box in every form is the same height whatever its kind —
+   left alone, a date field draws a little taller than a text box or a
+   dropdown. One line of text plus the padding and border, so it still grows
+   with the text-size setting. */
+.form-input,
+.form-select {
+  height: calc(1.5em + 20px);
 }
 
 .form-input:focus,
@@ -7378,3 +7391,22 @@ ul, ol {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-danger) 22%, transparent);
 }
+
+/* A tenant's violations on their record, and the flag beside their name in
+   Tenant Records while any is still open. */
+.violation-history { margin-top: 16px; }
+.violation-history-date { display: block; margin-top: 2px; font-size: 11px; color: var(--color-text-secondary); }
+.violation-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 1px;
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+.violation-flag .material-symbols-outlined { font-size: 13px; }
