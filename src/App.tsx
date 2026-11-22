@@ -16,7 +16,7 @@ import AccountSettings from './security/AccountSettings';
 import { officeAccounts, normalizeAccount, initialsOf } from './security/accounts';
 import type { Account } from './security/accounts';
 import type { BackupStatus, DatabaseStats, IdCounters } from './db';
-import { usePaperZoom, PaperSizePicker, PAPER, applyPrintPaper } from './printPreview';
+import { usePaperZoom, PaperSizePicker, PAPER, PAPER_SIZES, applyPrintPaper } from './printPreview';
 import type { PaperSize } from './printPreview';
 import {
   SECTION_LIST, SECTION_NAMES, buildDirectory, sectionInfo, rateForStallId,
@@ -8101,9 +8101,16 @@ function VerificationSlipCard({ slip }: { slip: VerificationSlip }) {
    that will print — they are only claimed when Print is pressed. */
 /* Who one slip on the sheet is for. A sheet carries up to four, and each may be
    a different tenant — or left blank to be written in at the counter. */
-type SlipFor = { issuedTo: string; section: string; stallNo: string };
+type SlipFor = {
+  issuedTo: string;
+  section: string;
+  stallNo: string;
+  /* Each slip carries its own requirements, since each tenant brings their own. */
+  checked: string[];
+  others: string;
+};
 
-function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, signedIn, onConfirm, onCancel }: {
+export function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, signedIn, onConfirm, onCancel }: {
   stall?: Stall; tenantName?: string; tenants: Tenant[]; existingIds: string[]; signedIn: string;
   onConfirm: (slips: Omit<VerificationSlip, 'controlNo'>[], paper: PaperSize) => void;
   onCancel: () => void;
@@ -8113,9 +8120,9 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
     issuedTo: tenantName && tenantName !== 'Vacant' ? tenantName : '',
     section: stall?.section ?? '',
     stallNo: stall?.id ?? '',
+    checked: VERIFICATION_DEFAULTS.Renewal,
+    others: '',
   }]);
-  const [checked, setChecked] = useState<string[]>(VERIFICATION_DEFAULTS.Renewal);
-  const [others, setOthers] = useState('');
   const [issuedBy, setIssuedBy] = useState(() => { if (signedIn) return signedIn; try { return localStorage.getItem(verifiedByKey) ?? ''; } catch { return ''; } });
   const [error, setError] = useState('');
   /* Which bond paper is in the printer — chosen every time, never assumed. */
@@ -8133,9 +8140,11 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
   const addableTenants = tenants
     .filter((t) => t.stallId && t.stallId !== '—' && !onSheet.has(t.stallId.toUpperCase()))
     .sort((a, b) => compareStallNumbers(a.stallId, b.stallId));
+  /* A slip added to the sheet starts with the usual ticks for the purpose. */
+  const newSlip = (patch: Partial<SlipFor> = {}): SlipFor => ({ issuedTo: '', section: '', stallNo: '', checked: VERIFICATION_DEFAULTS[purpose], others: '', ...patch });
   const addTenant = (id: string) => {
     const t = tenants.find((x) => x.id === id);
-    if (t && room > 0) setRows((prev) => [...prev, { issuedTo: t.name, section: t.section, stallNo: t.stallId }]);
+    if (t && room > 0) setRows((prev) => [...prev, newSlip({ issuedTo: t.name, section: t.section, stallNo: t.stallId })]);
   };
 
   /* Shown in the note under the preview. The slip itself re-reads the date as
@@ -8143,16 +8152,17 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
   const dateIssued = todayIso();
   const validUntil = isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS);
 
-  /* Switching the errand re-ticks the checklist for it. The officer can still
-     change any box afterwards — the defaults are the usual case, not a rule. */
+  /* Switching the errand re-ticks every slip's checklist for it. The officer can
+     still change any box afterwards — the defaults are the usual case, not a rule. */
   const choosePurpose = (next: VerificationPurpose) => {
     setPurpose(next);
-    setChecked(VERIFICATION_DEFAULTS[next]);
+    setRows((prev) => prev.map((r) => ({ ...r, checked: VERIFICATION_DEFAULTS[next] })));
   };
 
-  const toggle = (item: string) => setChecked((prev) => (
-    prev.includes(item) ? prev.filter((c) => c !== item) : [...prev, item]
-  ));
+  const toggle = (index: number, item: string) => setRows((prev) => prev.map((r, i) => (i !== index ? r : {
+    ...r,
+    checked: r.checked.includes(item) ? r.checked.filter((c) => c !== item) : [...r.checked, item],
+  })));
 
   /* Read at the moment they are needed, not when the dialog opened: a preview
      left sitting open past midnight would otherwise print yesterday's date, and
@@ -8164,8 +8174,8 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
       issuedTo: row.issuedTo.trim(),
       section: row.section.trim(),
       stallNo: row.stallNo.trim(),
-      checked,
-      others: others.trim(),
+      checked: row.checked,
+      others: row.others.trim(),
       dateIssued,
       validUntil: isoPlusDays(dateIssued, VERIFICATION_VALID_DAYS),
       issuedBy: issuedBy.trim(),
@@ -8193,11 +8203,6 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
       subtitle={`${count} slip${count === 1 ? '' : 's'} · 1 ${paperName}sheet · four to a sheet · valid ${VERIFICATION_VALID_DAYS} days`}
       stacked wide onClose={onCancel}
     >
-      <div className="form-group">
-        <label className="form-label">Bond Paper in the Printer *</label>
-        <PaperSizePicker value={paperSize} onChange={(p) => { setPaperSize(p); setPaperMissing(false); setError(''); }} invalid={paperMissing} />
-        <p className="paper-size-note">Choose the same paper size in the printer's own window when it opens.</p>
-      </div>
       <div className="print-setup">
         <div className="form-group">
           <label className="form-label">Purpose *</label>
@@ -8216,24 +8221,37 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
         </div>
       </div>
 
-      {/* Up to four slips to a sheet, each for its own tenant, so the office can
-          run off a row of stalls at once — or a pad of blanks to write in. */}
+      {/* Up to four slips to a sheet, each for its own tenant with its own
+          requirements, so the office can run off a row of stalls at once — or a
+          pad of blanks to write in. */}
       <div className="form-group">
         <label className="form-label">Slips on This Sheet · {count} of {SLIPS_PER_SHEET}</label>
         <div className="slip-rows">
           {rows.map((row, i) => (
-            <div className="slip-row" key={i}>
-              <span className="slip-row-no" aria-hidden="true">{i + 1}</span>
-              <input className="form-input" aria-label={`Slip ${i + 1}: issued to`} value={row.issuedTo} placeholder="Issued to — blank to write in by hand" onChange={(e) => editRow(i, { issuedTo: e.target.value })} />
-              <select className="form-select" aria-label={`Slip ${i + 1}: section`} value={row.section} onChange={(e) => editRow(i, { section: e.target.value })}>
-                <option value="">Section — blank</option>
-                {[...new Set([row.section, ...SECTIONS].filter(Boolean))].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <input className="form-input" aria-label={`Slip ${i + 1}: stall no.`} value={row.stallNo} placeholder="Stall no." onChange={(e) => editRow(i, { stallNo: e.target.value })} />
-              <button type="button" className="row-icon-btn danger" title="Take this slip off the sheet" aria-label={`Remove slip ${i + 1}`} disabled={count === 1} onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}>
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
+            <section className="slip-card" key={i} aria-label={`Slip ${i + 1}`}>
+              <div className="slip-row">
+                <span className="slip-row-no" aria-hidden="true">{i + 1}</span>
+                <input className="form-input" aria-label={`Slip ${i + 1}: issued to`} value={row.issuedTo} placeholder="Issued to — blank to write in by hand" onChange={(e) => editRow(i, { issuedTo: e.target.value })} />
+                <select className="form-select" aria-label={`Slip ${i + 1}: section`} value={row.section} onChange={(e) => editRow(i, { section: e.target.value })}>
+                  <option value="">Section — blank</option>
+                  {[...new Set([row.section, ...SECTIONS].filter(Boolean))].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <input className="form-input" aria-label={`Slip ${i + 1}: stall no.`} value={row.stallNo} placeholder="Stall no." onChange={(e) => editRow(i, { stallNo: e.target.value })} />
+                <button type="button" className="row-icon-btn danger" title="Take this slip off the sheet" aria-label={`Remove slip ${i + 1}`} disabled={count === 1} onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <div className="slip-card-label">Requirements checked{row.issuedTo.trim() ? ` — ${row.issuedTo.trim()}` : ''}</div>
+              <div className="slip-checkgrid">
+                {VERIFICATION_CHECKLIST.map((item) => (
+                  <label className="slip-checkbox" key={item}>
+                    <input type="checkbox" checked={row.checked.includes(item)} onChange={() => toggle(i, item)} />
+                    <span>{item}</span>
+                  </label>
+                ))}
+              </div>
+              <input className="form-input slip-card-others" aria-label={`Slip ${i + 1}: others`} value={row.others} placeholder="Others — e.g. until Dec 31, 2026" onChange={(e) => editRow(i, { others: e.target.value })} />
+            </section>
           ))}
         </div>
         <div className="slip-add">
@@ -8241,22 +8259,9 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
             <option value="">{room <= 0 ? 'The sheet is full' : `Add another tenant… (room for ${room} more)`}</option>
             {room > 0 && addableTenants.map((t) => <option key={t.id} value={t.id}>{t.stallId} — {registerName(t.name)}</option>)}
           </select>
-          <button type="button" className="btn-outline-sm" disabled={room <= 0} onClick={() => setRows((prev) => [...prev, { issuedTo: '', section: '', stallNo: '' }])}>Add a blank slip</button>
-          <button type="button" className="btn-outline-sm" disabled={room <= 0} onClick={() => setRows((prev) => [...prev, ...Array.from({ length: SLIPS_PER_SHEET - prev.length }, () => ({ ...prev[0] }))])}>Fill with copies of slip 1</button>
+          <button type="button" className="btn-outline-sm" disabled={room <= 0} onClick={() => setRows((prev) => [...prev, newSlip()])}>Add a blank slip</button>
+          <button type="button" className="btn-outline-sm" disabled={room <= 0} onClick={() => setRows((prev) => [...prev, ...Array.from({ length: SLIPS_PER_SHEET - prev.length }, () => ({ ...prev[0], checked: [...prev[0].checked] }))])}>Fill with copies of slip 1</button>
         </div>
-      </div>
-
-      <div className="form-group">
-        <label className="form-label">Requirements Checked</label>
-        <div className="slip-checkgrid">
-          {VERIFICATION_CHECKLIST.map((item) => (
-            <label className="slip-checkbox" key={item}>
-              <input type="checkbox" checked={checked.includes(item)} onChange={() => toggle(item)} />
-              <span>{item}</span>
-            </label>
-          ))}
-        </div>
-        <input className="form-input" value={others} placeholder="Others — e.g. until Dec 31, 2026" onChange={(e) => setOthers(e.target.value)} style={{ marginTop: '10px' }} />
       </div>
 
       <div className="dialog-note">
@@ -8271,7 +8276,21 @@ function VerificationPrintDialog({ stall, tenantName, tenants, existingIds, sign
 
       <div className={`print-preview${full ? ' fullscreen' : ''}`} aria-label="Preview of the sheet that will print">
         <div className="print-preview-toolbar">
-          <span className="print-preview-count">1 {paperName}sheet · {count} slip{count === 1 ? '' : 's'}{paperSize ? '' : ' · shown on A4 until you choose the paper'}</span>
+          {/* The paper is chosen here, beside the sheet it changes — every time, never assumed. */}
+          <div className="print-preview-paper">
+            <label className={`print-paper-select${paperMissing ? ' invalid' : ''}`}>
+              <span>Bond paper *</span>
+              <select
+                className="form-select" value={paperSize} aria-required="true" aria-invalid={paperMissing}
+                title="Choose the same paper size in the printer's own window when it opens."
+                onChange={(e) => { setPaperSize(e.target.value as PaperSize | ''); setPaperMissing(false); setError(''); }}
+              >
+                <option value="">Choose the paper in the printer…</option>
+                {PAPER_SIZES.map((id) => <option key={id} value={id}>{PAPER[id].name} — {PAPER[id].detail}</option>)}
+              </select>
+            </label>
+            <span className="print-preview-count">{count} slip{count === 1 ? '' : 's'} on 1 {paperName}sheet{paperSize ? '' : ' · shown on A4 until you choose'}</span>
+          </div>
           <div className="print-preview-zoom">
             {paper.controls}
             <button type="button" className="row-icon-btn" title={full ? 'Exit fullscreen' : 'Fullscreen'} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'} onClick={() => setFull((v) => !v)}>
