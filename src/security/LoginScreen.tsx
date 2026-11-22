@@ -55,8 +55,11 @@ function manilaToday() {
 
 export default function LoginScreen({ accounts, problem, onRetry, lockedAccount, onSwitchAccount, onSaveAccount, onSignedIn, onAudit }: Props) {
   const unlocking = !!lockedAccount;
-  const [selectedId, setSelectedId] = useState(lockedAccount?.id ?? '');
-  const [step, setStep] = useState<Step>(lockedAccount ? 'password' : 'choose');
+  /* With a single account there is nobody to choose between, so the page opens
+     straight on that person's password — or on choosing one, the first time. */
+  const onlyAccount = accounts.length === 1 ? accounts[0] : null;
+  const [selectedId, setSelectedId] = useState(lockedAccount?.id ?? onlyAccount?.id ?? '');
+  const [step, setStep] = useState<Step>(lockedAccount ? 'password' : onlyAccount ? (hasPassword(onlyAccount) ? 'password' : 'create') : 'choose');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [code, setCode] = useState('');
@@ -229,7 +232,7 @@ export default function LoginScreen({ accounts, problem, onRetry, lockedAccount,
     <div className="login-who">
       <span className={`login-avatar${selected.role === 'Administrator' ? ' admin' : ''}`} aria-hidden="true">{initialsOf(selected.name)}</span>
       <span className="login-who-text"><strong>{selected.name}</strong><span>{selected.position || selected.role}</span></span>
-      {!unlocking && step !== 'show-code' && <button type="button" className="login-link" onClick={back}>Not you?</button>}
+      {!unlocking && step !== 'show-code' && accounts.length > 1 && <button type="button" className="login-link" onClick={back}>Not you?</button>}
     </div>
   );
 

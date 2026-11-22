@@ -8,14 +8,21 @@ import {
 } from '../src/security/accounts.ts';
 
 const now = new Date('2026-10-24T08:00:00Z');
-test('there are exactly three accounts: the office head as administrator and the two officers under her', () => {
+test('there is exactly one account: the office head, as administrator', () => {
   const accounts = officeAccounts([], now);
   assert.deepEqual(accounts.map((a) => [a.name, a.role]), [
     ['Engr. Luz M. Maderazo', 'Administrator'],
-    ['Manuel G. Mercado', 'Staff'],
-    ['Felmar Pica', 'Staff'],
   ]);
-  assert.ok(accounts.every((a) => !hasPassword(a)), 'each chooses a password at first sign-in');
+  assert.ok(accounts.every((a) => !hasPassword(a)), 'she chooses a password at first sign-in');
+});
+
+test('the two officer accounts from before are dropped, her own is kept', async () => {
+  const [admin] = officeAccounts([], now);
+  const withPw = await withPassword(admin, 'Stall-2026', now);
+  const officer = (id, name) => blankAccount({ id, name, position: 'In Charge — Market Operation', role: 'Staff' }, now);
+  const accounts = officeAccounts([withPw, officer('ACC-002', 'Manuel G. Mercado'), officer('ACC-003', 'Felmar Pica')], now);
+  assert.deepEqual(accounts.map((a) => a.id), ['ACC-001']);
+  assert.equal(await checkPassword(accounts[0], 'Stall-2026'), true, 'her password carries over');
 });
 
 test('a password already chosen is kept, and accounts from an earlier version are dropped', async () => {
@@ -23,7 +30,7 @@ test('a password already chosen is kept, and accounts from an earlier version ar
   const withPw = await withPassword(admin, 'Stall-2026', now);
   const extra = blankAccount({ id: 'ACC-009', name: 'Someone Added Before', position: '', role: 'Administrator' }, now);
   const accounts = officeAccounts([{ ...withPw, role: 'Staff', name: 'Renamed' }, extra], now);
-  assert.equal(accounts.length, 3);
+  assert.equal(accounts.length, 1);
   assert.equal(await checkPassword(accounts[0], 'Stall-2026'), true);
   assert.equal(accounts[0].role, 'Administrator', 'the role always comes from the fixed list');
   assert.equal(accounts[0].name, 'Engr. Luz M. Maderazo');

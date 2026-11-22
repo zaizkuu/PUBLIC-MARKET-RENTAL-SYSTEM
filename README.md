@@ -21,22 +21,22 @@ summary, password hashing and lockout, backups, the market map, and — where
 
 ## Signing in
 
-The system opens on a sign-in page every time it starts. The person picks
-their account from the list, then types their password.
+The system opens on a sign-in page every time it starts, straight on the
+password of its one account.
 
-- **Three accounts, fixed.** Engr. Luz M. Maderazo (Market Supervisor III,
-  **Administrator**), and the two officers in charge of market operation
-  under her, Manuel G. Mercado and Felmar Pica (**Staff**). Accounts are not
-  added or removed from the interface; the list is `OFFICE_ACCOUNTS` in
-  `src/security/accounts.ts`.
-- **First sign-in.** Each account starts with no password: choosing it asks
-  for a new one. The administrator is then shown a **recovery code** once —
-  written down and kept in the office, it is the way back in if the password
-  is forgotten (*Forgot password?* on the sign-in page). Using it issues a
-  new one.
-- **Forgotten passwords.** The administrator sets a temporary password for
-  either officer in **Settings → User Accounts**, which its owner replaces at
-  the next sign-in. The same panel unlocks a locked account.
+- **One account, fixed.** Engr. Luz M. Maderazo (Market Supervisor III,
+  **Administrator**) is the only person who handles the system. Accounts are
+  not added or removed from the interface; the list is `OFFICE_ACCOUNTS` in
+  `src/security/accounts.ts`, and adding someone there brings back the
+  choose-your-account list.
+- **First sign-in.** The account starts with no password: the sign-in page
+  asks for a new one. A **recovery code** is then shown once — written down
+  and kept in the office, it is the way back in if the password is forgotten
+  (*Forgot password?* on the sign-in page). Using it issues a new one.
+- **Forgotten passwords.** With one account the recovery code is the only way
+  back in, so keep it safe. Were staff accounts added again, the
+  administrator could set them a temporary password in
+  **Settings → User Accounts**, which also unlocks a locked account.
 - **Passwords** are never stored — only a PBKDF2-SHA-256 hash with a random
   salt per account (600,000 iterations), computed by the browser engine's own
   Web Crypto, offline. A new password needs 8+ characters, a letter and a

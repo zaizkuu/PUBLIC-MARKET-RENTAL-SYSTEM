@@ -13,7 +13,7 @@ import {
    Everyone can change their own password here. The administrator also resets
    a forgotten password to a temporary one (which its owner must replace at
    the next sign-in), unlocks an account, and sets how soon an idle screen
-   locks itself. The three accounts themselves are fixed (OFFICE_ACCOUNTS),
+   locks itself. The accounts themselves are fixed (OFFICE_ACCOUNTS),
    so none is added or removed here. Every change is handed to `onChange`
    with a sentence for the logbook. */
 
@@ -186,7 +186,11 @@ export default function AccountSettings({ accounts, current, idleMinutes, onIdle
       <div className="settings-section full">
         <div className="settings-section-header">User Accounts</div>
         <div className="settings-section-body">
-          <p className="settings-lead">The system has three accounts: the Market Supervisor and the two officers in charge of market operation. Each person chooses their own password at their first sign-in, so the logbook shows who did what.</p>
+          <p className="settings-lead">
+            {accounts.length === 1
+              ? 'The system has one account: the Market Supervisor, who handles it. If the password is forgotten, the recovery code shown when it was set is the way back in — keep it somewhere safe in the office.'
+              : 'Each person chooses their own password at their first sign-in, so the logbook shows who did what.'}
+          </p>
           <div className="table-wrap">
             <table className="mini-table">
               <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>

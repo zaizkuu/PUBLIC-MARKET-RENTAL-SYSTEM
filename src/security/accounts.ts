@@ -214,19 +214,17 @@ export function blankAccount(fields: AccountSummary, now: Date): Account {
   };
 }
 
-/* The system has exactly three accounts: the head of the market office, and
-   the two officers in charge of market operation under her. The list is
-   fixed — accounts are not added or removed from the interface. Each starts
-   with no password, chosen at that person's first sign-in; the administrator
-   can reset either of the others' to a temporary one from Settings. */
+/* The system has one account: the head of the market office, the only person
+   who handles it. The list is fixed — accounts are not added or removed from
+   the interface. It starts with no password, chosen at the first sign-in, and
+   its recovery code is the way back in if the password is forgotten. An
+   account for someone else would go here, with role 'Staff'. */
 export const OFFICE_ACCOUNTS: AccountSummary[] = [
   { id: 'ACC-001', name: 'Engr. Luz M. Maderazo', position: 'Market Supervisor III', role: 'Administrator' },
-  { id: 'ACC-002', name: 'Manuel G. Mercado', position: 'In Charge — Market Operation', role: 'Staff' },
-  { id: 'ACC-003', name: 'Felmar Pica', position: 'In Charge — Market Operation', role: 'Staff' },
 ];
 
 /**
- * The three office accounts, carrying over whatever was stored for each —
+ * The office accounts, carrying over whatever was stored for each —
  * a password already chosen, a lockout in progress — matched by id. Anything
  * else stored (an account added by an earlier version) is dropped, and the
  * name, position and role always come from OFFICE_ACCOUNTS.
