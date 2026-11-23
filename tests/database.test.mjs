@@ -58,7 +58,7 @@ test('records, the directory edition and sign-in accounts are kept apart and sur
     db.replaceAll({ state: { stalls: [] }, idCounters: {} });
     db.clearAll();
     assert.equal(db.loadAccounts().length, 1);
-    assert.equal(db.stats().schemaVersion, 7);
+    assert.equal(db.stats().schemaVersion, 8);
 
     // The snapshot taken before the directory update is a complete, readable copy.
     const copy = join(folder, 'before.db');
@@ -134,6 +134,42 @@ test('daily copies: one per day, never half-written, only the newest kept, nothi
     assert.equal(copy.prepare('SELECT tenant FROM stalls WHERE id = ?').get('KS-1').tenant, 'Norida Lerios');
     copy.close();
     assert.match(backups.localDate(new Date(2026, 0, 9)), /^2026-01-09$/);
+  } finally {
+    db.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('a lease, a stall\'s own rate and the section rates survive a reopen; an old stall row reads as never set', { skip: !db && 'better-sqlite3 is not built for this Node' }, async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'pmrms-db-'));
+  const file = join(folder, 'market-records.db');
+  try {
+    db.open(file);
+    const lease = { contractNo: '2026-014', dateSigned: '2025-12-20', startDate: '2026-01-01', endDate: '2026-12-31', remarks: 'Renewable yearly' };
+    db.save({
+      state: {
+        stalls: [
+          { id: 'FS-1', section: 'Fish', tenant: 'Norida Lerios', status: 'Occupied', permit: 'Not Recorded', lastInspection: '-', note: '', ownRent: 1800 },
+          { id: 'FS-2', section: 'Fish', tenant: 'Vacant', status: 'Available', permit: 'Not Recorded', lastInspection: '-', note: '', ownRent: 0 },
+          { id: 'FS-3', section: 'Fish', tenant: 'Vacant', status: 'Available', permit: 'Not Recorded', lastInspection: '-', note: '' },
+        ],
+        tenants: [{ id: 'TEN-001', name: 'Norida Lerios', phone: '', barangay: '', stallId: 'FS-1', section: 'Fish', rent: 1800, status: 'Active', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: 5, rentPayments: {}, lease }],
+        endedTenancies: [{ id: 'TEN-000', name: 'Former Tenant', stallId: 'FS-2', section: 'Fish', rent: 1000, status: 'Active', keepers: [], meters: { Electricity: '', Water: '' }, rentDueDay: 5, rentPayments: {}, endedOn: '2026-10-01', endReason: 'Removed', endedBy: '', lease: { ...lease, contractNo: '2025-003' } }],
+        sectionRents: [{ id: 'Fish', rent: 1100 }, { id: 'Kakanin', rent: 1000 }],
+      },
+      idCounters: {},
+    });
+    db.close();
+
+    db.open(file);
+    const { state } = db.load();
+    assert.deepEqual(state.tenants[0].lease, lease);
+    assert.equal(state.tenants[0].leaseContractNo, undefined);
+    assert.equal(state.endedTenancies[0].lease.contractNo, '2025-003');
+    assert.equal(state.stalls[0].ownRent, 1800);
+    assert.equal(state.stalls[1].ownRent, 0);
+    assert.equal('ownRent' in state.stalls[2], false);
+    assert.deepEqual(state.sectionRents, [{ id: 'Fish', rent: 1100 }, { id: 'Kakanin', rent: 1000 }]);
   } finally {
     db.close();
     rmSync(folder, { recursive: true, force: true });

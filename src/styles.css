@@ -1504,6 +1504,23 @@ ul, ol {
   color: var(--color-text-tertiary);
 }
 
+/* A stall charging its own rate rather than its section's. */
+.rent-own-tag {
+  display: block;
+  margin-top: 3px;
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* The end date under a lease badge in the tenant register. */
+.lease-end {
+  display: block;
+  margin-top: 3px;
+  font-size: calc(12.5px * var(--font-scale, 1));
+  color: var(--color-text-tertiary);
+}
+
 /* Month picker in a filter row — a labelled input rather than a bare box, so
    it is not mistaken for another dropdown. */
 .filter-month {
@@ -4838,6 +4855,8 @@ ul, ol {
    It is also kept lighter than every coloured state, so the eye passes
    over it and stops on the exceptions. */
 .badge-occupied { color: #64748b; font-weight: 500; }
+/* A tenancy with no Lease of Contract Agreement keyed in yet: a gap to fill, not an alarm. */
+.badge-nolease { color: #64748b; font-weight: 500; }
 
 .badge-available,
 .badge-approved,

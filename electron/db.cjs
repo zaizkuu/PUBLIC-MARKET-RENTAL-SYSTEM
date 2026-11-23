@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -232,6 +232,14 @@ CREATE TABLE IF NOT EXISTS ended_tenancies (
   position         INTEGER NOT NULL DEFAULT 0
 );
 
+/* What each market section charges a month. A stall follows its section's
+   rate unless it carries one of its own (stalls.ownRent). */
+CREATE TABLE IF NOT EXISTS section_rents (
+  id       TEXT PRIMARY KEY,
+  rent     REAL NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_rent_payments_tenant ON rent_payments(tenantId);
 CREATE INDEX IF NOT EXISTS idx_verif_items_control  ON verification_items(controlNo);
 
@@ -262,10 +270,15 @@ CREATE TABLE IF NOT EXISTS accounts (
 /* The record types the renderer sends, and the columns each one stores. The
    read, write and delete statements are all generated from this, so adding a
    field is a one-line change here plus a column in the schema above. */
+/* The renderer keeps a tenant's lease as one nested object; the table holds a
+   column per field, named here in the same order as the object's keys. */
+const LEASE_FIELDS = ['contractNo', 'dateSigned', 'startDate', 'endDate', 'remarks'];
+const LEASE_COLUMNS = ['leaseContractNo', 'leaseDateSigned', 'leaseStartDate', 'leaseEndDate', 'leaseRemarks'];
+
 const TABLES = {
-  stalls: ['id', 'section', 'tenant', 'status', 'lastInspection', 'permit', 'note'],
+  stalls: ['id', 'section', 'tenant', 'status', 'lastInspection', 'permit', 'note', 'ownRent'],
   tenants: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId',
-    'rentDueDay', 'meterElectricity', 'meterWater'],
+    'rentDueDay', 'meterElectricity', 'meterWater', ...LEASE_COLUMNS],
   applicants: ['id', 'name', 'phone', 'stallType', 'status', 'dateApplied'],
   utilities: ['id', 'type', 'stallId', 'tenantId', 'tenantName', 'section', 'period', 'periodStart', 'periodEnd',
     'meterNumber', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
@@ -275,11 +288,13 @@ const TABLES = {
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
   officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed', 'photo'],
   endedTenancies: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId',
-    'rentDueDay', 'meterElectricity', 'meterWater', 'endedOn', 'endReason', 'endedBy', 'keepersJson', 'paymentsJson'],
+    'rentDueDay', 'meterElectricity', 'meterWater', 'endedOn', 'endReason', 'endedBy', 'keepersJson', 'paymentsJson',
+    ...LEASE_COLUMNS],
+  sectionRents: ['id', 'rent'],
 };
 
 /* Some state keys map to a differently named table. */
-const TABLE_NAME = { utilities: 'utility_bills', endedTenancies: 'ended_tenancies' };
+const TABLE_NAME = { utilities: 'utility_bills', endedTenancies: 'ended_tenancies', sectionRents: 'section_rents' };
 const tableOf = (key) => TABLE_NAME[key] || key;
 
 /* Row order is normally kept in `position`. The officers table cannot use that
@@ -331,6 +346,11 @@ const ADDED_COLUMNS = [
   // A visitation entry: how many came, and the names given, one per line.
   ['logs', 'visitorCount', 'INTEGER NOT NULL DEFAULT 0'],
   ['logs', 'visitors', "TEXT NOT NULL DEFAULT ''"],
+  // A stall's own monthly rate. NULL on a row saved before rates could be set
+  // per stall, so the app can tell "never set" from "follows its section" (0).
+  ['stalls', 'ownRent', 'REAL'],
+  // The Lease of Contract Agreement, kept on the tenancy it belongs to.
+  ...['tenants', 'ended_tenancies'].flatMap((table) => LEASE_COLUMNS.map((column) => [table, column, "TEXT NOT NULL DEFAULT ''"])),
 ];
 
 function addMissingColumns() {
@@ -406,6 +426,7 @@ function readAll() {
     };
     delete row.meterElectricity;
     delete row.meterWater;
+    nestLease(row);
     for (const pay of payments.filter((r) => r.tenantId === tenant.id)) {
       row.rentPayments[pay.period] = {
         period: pay.period,
@@ -435,9 +456,20 @@ function readAll() {
     delete row.meterWater;
     delete row.keepersJson;
     delete row.paymentsJson;
+    nestLease(row);
     if (row.applicantId === null || row.applicantId === undefined) delete row.applicantId;
     return row;
   });
+
+  // NULL means the stall predates individual rates; the renderer decides what
+  // it should be from the tenant's rent, so it is left out rather than read as 0.
+  state.stalls = state.stalls.map((stall) => {
+    const row = { ...stall };
+    if (row.ownRent === null || row.ownRent === undefined) delete row.ownRent;
+    else row.ownRent = Number(row.ownRent) || 0;
+    return row;
+  });
+  state.sectionRents = state.sectionRents.map((r) => ({ id: r.id, rent: Number(r.rent) || 0 }));
 
   const requirements = db.prepare('SELECT * FROM applicant_requirements ORDER BY applicantId, position').all();
   state.applicants = state.applicants.map((applicant) => ({
@@ -470,6 +502,15 @@ function readAll() {
   });
 
   return state;
+}
+
+/* Gathers a row's lease columns back into the nested object the renderer uses. */
+function nestLease(row) {
+  row.lease = {};
+  LEASE_FIELDS.forEach((field, i) => {
+    row.lease[field] = row[LEASE_COLUMNS[i]] || '';
+    delete row[LEASE_COLUMNS[i]];
+  });
 }
 
 function readIdCounters() {
@@ -530,6 +571,12 @@ function bindable(record, columns, position, orderColumn = 'position') {
   if (record && record.meters && typeof record.meters === 'object') {
     record = { ...record, meterElectricity: record.meters.Electricity || '', meterWater: record.meters.Water || '' };
   }
+  // A tenancy's lease is nested in the renderer and flat in the table.
+  if (record && record.lease && typeof record.lease === 'object') {
+    const flat = {};
+    LEASE_FIELDS.forEach((field, i) => { flat[LEASE_COLUMNS[i]] = record.lease[field] || ''; });
+    record = { ...record, ...flat };
+  }
   // An ended tenancy carries its payments and keepers on the row itself.
   if (record && columns.includes('paymentsJson')) {
     record = {
@@ -546,7 +593,7 @@ function bindable(record, columns, position, orderColumn = 'position') {
   for (const column of columns) {
     const value = record[column];
     if (value === null || value === undefined) {
-      row[column] = column === 'applicantId' ? null : '';
+      row[column] = column === 'applicantId' || column === 'ownRent' ? null : '';
     } else if (typeof value === 'number') {
       row[column] = Number.isFinite(value) ? value : 0;
     } else if (typeof value === 'boolean') {
@@ -556,6 +603,7 @@ function bindable(record, columns, position, orderColumn = 'position') {
     }
   }
   // Numeric columns must not arrive as text, or comparisons in SQL misbehave.
+  if (row.ownRent !== null && row.ownRent !== undefined) row.ownRent = Number(row.ownRent) || 0;
   for (const column of ['rent', 'points', 'offence', 'visitorCount', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount']) {
     if (column in row) row[column] = Number(row[column]) || 0;
   }
