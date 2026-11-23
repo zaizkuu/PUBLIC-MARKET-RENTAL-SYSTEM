@@ -27,8 +27,6 @@ import { OFFICE_ORDER_STAFF, ROSTER_EDITION, SUPERVISOR, missingStaff, nameKey, 
 import { registerName } from './market/registerNames';
 import { SECOND_FLOOR_IMPORT, SECOND_FLOOR_AS_OF, missingSecondFloor } from './market/secondFloor';
 import type { OfficeOrderSeat } from './market/officeOrders';
-import { BLANK_LEASE, LEASE_EXPIRING_DAYS, LEASE_STATUSES, daysBetween, leaseIsBlank, leaseProblem, leaseStatus, leaseTerm, normalizeLease } from './market/lease';
-import type { Lease, LeaseStatus } from './market/lease';
 import {
   adoptTenantRents, applySectionRate, defaultSectionRents, hasOwnRent, normalizeSectionRents, ownRentFor,
   sectionRate, sectionRateForStallId, stallRent,
@@ -220,8 +218,6 @@ type Tenant = {
   /* Day of the month rent falls due, and every month settled so far. */
   rentDueDay: number;
   rentPayments: Record<string, RentPayment>;
-  /* The Lease of Contract Agreement for this tenancy (src/market/lease.ts). */
-  lease: Lease;
 };
 
 /* A tenancy that has ended: the tenant was removed from the records, or their
@@ -247,6 +243,10 @@ type Stall = {
   /* The stall's own monthly rate, agreed apart from its section's. 0 means it
      follows the section rate (src/market/rents.ts). */
   ownRent: number;
+  /* LCA: the Lease of Contract Agreement for the stall is signed. Ticked
+     beside BP (`permit`), and cleared when the stall is released, since the
+     next tenant signs a contract of their own. */
+  lca: boolean;
 };
 
 type Violation = {
@@ -718,7 +718,6 @@ function directoryTenants(): Tenant[] {
     meters: { Electricity: electric.get(t.stallId)?.[3] ?? '', Water: '' },
     rentDueDay: DEFAULT_RENT_DUE_DAY,
     rentPayments: {},
-    lease: { ...BLANK_LEASE },
   })));
 }
 
@@ -734,7 +733,7 @@ const initialState = {
   applicants: [] as Applicant[],
   tenants: directoryTenants(),
   endedTenancies: [] as EndedTenancy[],
-  stalls: buildDirectory().stalls.map((s) => ({ ...s, ownRent: 0 })) as Stall[],
+  stalls: buildDirectory().stalls.map((s) => ({ ...s, ownRent: 0, lca: false })) as Stall[],
   violations: [] as Violation[],
 
   /* What each section charges a month, editable from Stall Management. */
@@ -896,8 +895,6 @@ function normalizeTenant(raw: Tenant): Tenant {
     meters,
     rentDueDay: clampDueDay(raw?.rentDueDay),
     rentPayments,
-    /* Records filed before leases were kept read as "No lease on file". */
-    lease: normalizeLease((raw as { lease?: unknown })?.lease),
   };
 }
 
@@ -927,6 +924,7 @@ function normalizeStall(s: Stall): Stall {
     permit: PERMIT_STATUSES.includes(loose.permit as PermitStatus) ? (loose.permit as PermitStatus) : 'Not Recorded',
     note: typeof loose.note === 'string' ? loose.note : '',
     ownRent: Number.isFinite(Number(loose.ownRent)) && Number(loose.ownRent) > 0 ? Math.round(Number(loose.ownRent) * 100) / 100 : 0,
+    lca: loose.lca === true,
   };
 }
 
@@ -1038,6 +1036,11 @@ function mergeState(input: unknown): AppState {
   const sectionRents = normalizeSectionRents(parsed.sectionRents);
   setActiveSectionRents(sectionRents);
   const tenants = pick('tenants').map(normalizeTenant);
+  /* Version 0.3.1 kept a contract number and dates on the tenant record; a
+     stall whose tenant had any of them filled in starts with LCA ticked. */
+  const signedLeaseStalls = new Set((Array.isArray(parsed.tenants) ? parsed.tenants : [])
+    .filter((t) => { const l = (t as { lease?: Record<string, unknown> })?.lease; return !!l && ['contractNo', 'dateSigned', 'startDate', 'endDate'].some((k) => typeof l[k] === 'string' && (l[k] as string).trim()); })
+    .map((t) => t.stallId));
   return {
     sectionRents,
     applicants: pick('applicants').map(normalizeApplicant),
@@ -1058,7 +1061,9 @@ function mergeState(input: unknown): AppState {
     activities: pick('activities').slice(0, MAX_ACTIVITIES),
     /* A stall saved before rates could be set per stall takes its tenant's
        rent as its own rate where that differs from the section's. */
-    stalls: adoptTenantRents(sectionRents, pick('stalls') as Array<Stall & { ownRent?: number }>, tenants).map(normalizeStall),
+    stalls: adoptTenantRents(sectionRents, pick('stalls') as Array<Stall & { ownRent?: number }>, tenants)
+      .map((s) => (s.lca === undefined && signedLeaseStalls.has(s.id) ? { ...s, lca: true } : s))
+      .map(normalizeStall),
     violations: pick('violations').map((v) => ({
       ...v,
       points: Math.max(0, Number(v?.points) || 0),
@@ -2296,7 +2301,7 @@ function App({ boot }: { boot: BootData }) {
   };
   const addLog = (l: LogEntry) => { setState((p) => ({ ...p, logs: [...p.logs, { ...l, recordedBy: userRef.current?.name ?? '' }] })); showToast('Log entry added'); closeModal(); };
 
-  const addTenant = (t: Tenant) => {
+  const addTenant = (t: Tenant, checks?: Partial<StallChecks>) => {
     if (state.tenants.some(existing => existing.stallId === t.stallId || (t.applicantId && existing.applicantId === t.applicantId)) || !state.stalls.some(s => s.id === t.stallId && s.status === 'Available')) {
       showToast('This applicant or stall already has a tenant. Choose an available stall.');
       return;
@@ -2306,7 +2311,7 @@ function App({ boot }: { boot: BootData }) {
       tenants: [...p.tenants, t],
       applicants: p.applicants.map(a => a.id === t.applicantId ? { ...a, stallId: t.stallId } : a),
       /* A rent typed apart from the section rate becomes the stall's own rate. */
-      stalls: p.stalls.map((s) => (s.id === t.stallId ? { ...s, tenant: t.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection, ownRent: ownRentFor(p.sectionRents, s.section, t.rent) } : s)),
+      stalls: p.stalls.map((s) => (s.id === t.stallId ? { ...s, tenant: t.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection, ownRent: ownRentFor(p.sectionRents, s.section, t.rent), ...(checks ?? {}) } : s)),
       activities: withActivity(p.activities, 'groups', 'blue', t.name, ` added as tenant at stall ${t.stallId}.`),
     }));
     showToast(`Tenant ${t.name} added successfully`);
@@ -2418,7 +2423,7 @@ function App({ boot }: { boot: BootData }) {
       name: updated.name, phone: updated.phone, stallId: target.stall.id,
       section: target.stall.section, rent: rentForStall(target.stall.id, state.stalls) || monthlyRentForSection(target.stall.section, state.stalls),
       status: 'Active', barangay: '', keepers: [], meters: { Electricity: '', Water: '' },
-      rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {}, lease: { ...BLANK_LEASE },
+      rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {},
     } : undefined;
     setState((p) => ({
       ...p,
@@ -2482,7 +2487,7 @@ function App({ boot }: { boot: BootData }) {
     closeModal();
   };
 
-  const updateTenant = (updated: Tenant, opts: SaveOpts = {}, snapshot?: Tenant) => {
+  const updateTenant = (updated: Tenant, opts: SaveOpts = {}, snapshot?: Tenant, checks?: Partial<StallChecks>) => {
     const { log = true, close = true } = opts;
     setState((p) => {
       const previous = p.tenants.find((t) => t.id === updated.id);
@@ -2498,14 +2503,14 @@ function App({ boot }: { boot: BootData }) {
       const saved = movedStall && !rentChanged && newStall ? { ...updated, rent: stallRent(p.sectionRents, newStall) } : updated;
       const changes = [
         loggedFrom && loggedFrom.rent !== saved.rent ? `monthly rent ${money(loggedFrom.rent)} → ${money(saved.rent)}` : '',
-        loggedFrom && JSON.stringify(loggedFrom.lease) !== JSON.stringify(saved.lease) ? `lease ${leaseSummary(saved.lease)}` : '',
+        newStall && checks ? checksNote(newStall, checks) : '',
       ].filter(Boolean);
       return {
         ...p,
         tenants: p.tenants.map((t) => (t.id === updated.id ? saved : t)),
         stalls: p.stalls.map((s) => {
-          if (movedStall && s.id === oldStallId) return { ...s, tenant: 'Vacant', status: 'Available' as StallStatus };
-          if (s.id === updated.stallId) return { ...s, tenant: updated.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection, ...(rentChanged ? { ownRent: ownRentFor(p.sectionRents, s.section, saved.rent) } : {}) };
+          if (movedStall && s.id === oldStallId) return { ...s, tenant: 'Vacant', status: 'Available' as StallStatus, lca: false };
+          if (s.id === updated.stallId) return { ...s, tenant: updated.name, status: 'Occupied' as StallStatus, lastInspection: s.lastInspection === '-' ? todayStr() : s.lastInspection, ...(rentChanged ? { ownRent: ownRentFor(p.sectionRents, s.section, saved.rent) } : {}), ...(checks ?? {}) };
           return s;
         }),
         utilities: previous && previous.name !== updated.name
@@ -2526,7 +2531,7 @@ function App({ boot }: { boot: BootData }) {
   /* `previous` is the stall as the form opened on it. Its ID differs from
      `updated.id` when a change of section renumbered the stall, and then
      everything that names the stall follows it to the new number. */
-  const updateStall = (updated: Stall, opts: SaveOpts = {}, previous?: Stall, lease?: Lease) => {
+  const updateStall = (updated: Stall, opts: SaveOpts = {}, previous?: Stall) => {
     const { log = true, close = true } = opts;
     const oldId = previous?.id ?? updated.id;
     const renumbered = oldId !== updated.id;
@@ -2534,7 +2539,8 @@ function App({ boot }: { boot: BootData }) {
       const occupant = p.tenants.find((t) => t.stallId === oldId);
       /* Released: the stall is being handed back, so the tenancy on it ends. */
       const released = updated.status === 'Available' && !!occupant;
-      const stall = released ? { ...updated, tenant: 'Vacant' } : updated;
+      /* The next tenant signs a contract of their own, so LCA starts unticked. */
+      const stall = released ? { ...updated, tenant: 'Vacant', lca: false } : updated;
       /* The occupant's rent follows the stall: its own rate, or its section's
          when it has none. Only re-worked when one of those changed, so a
          plain status edit never touches the rent on record. */
@@ -2542,14 +2548,14 @@ function App({ boot }: { boot: BootData }) {
       const rentMoved = !!before && (before.ownRent !== updated.ownRent || before.section !== updated.section);
       const nextRent = stallRent(p.sectionRents, updated);
       const rentNote = occupant && !released && rentMoved && occupant.rent !== nextRent ? ` ${occupant.name}'s monthly rent is now ${money(nextRent)} (was ${money(occupant.rent)}).` : '';
-      const leaseNote = occupant && !released && lease && JSON.stringify(lease) !== JSON.stringify(occupant.lease) ? ` Lease ${leaseSummary(lease)}.` : '';
+      const ticks = before && !released ? checksNote(before, updated) : '';
       return {
         ...p,
         stalls: p.stalls.map((s) => (s.id === oldId ? stall : s)),
         tenants: released
           ? p.tenants.filter((t) => t.id !== occupant.id)
           : occupant
-            ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section, stallId: updated.id, ...(rentMoved ? { rent: nextRent } : {}), ...(lease ? { lease } : {}) } : t))
+            ? p.tenants.map((t) => (t.id === occupant.id ? { ...t, section: updated.section, stallId: updated.id, ...(rentMoved ? { rent: nextRent } : {}) } : t))
             : p.tenants,
         endedTenancies: released ? [...p.endedTenancies, endTenancy(occupant, `Stall ${updated.id} released to Available`)] : p.endedTenancies,
         applicants: renumbered ? p.applicants.map((a) => (a.stallId === oldId ? { ...a, stallId: updated.id } : a)) : p.applicants,
@@ -2559,7 +2565,7 @@ function App({ boot }: { boot: BootData }) {
               activities: withActivity(p.activities, 'storefront', released ? 'red' : 'blue', updated.id, released ? ` was released to Available; ${occupant.name} was removed from tenant records.` : renumbered ? ` was renumbered from ${oldId} on moving to ${updated.section}.` : ' was updated in stall management.'),
               logs: [...p.logs, makeLog(p.logs, 'Maintenance', released
                 ? `Stall ${updated.id} was released to Available — ${occupant.name}'s tenancy ended; ${paymentsNote(occupant)}.`
-                : `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}, monthly rent ${money(nextRent)} (${hasOwnRent(updated) ? 'individual rate' : 'section rate'}).${renumbered ? ` Renumbered from ${oldId}; its tenant record, applications and utility bills now name ${updated.id}.` : ''}${rentNote}${leaseNote}`)],
+                : `Stall ${updated.id} was updated — ${updated.section}, ${updated.status}, tenant: ${updated.tenant}, monthly rent ${money(nextRent)} (${hasOwnRent(updated) ? 'individual rate' : 'section rate'}).${renumbered ? ` Renumbered from ${oldId}; its tenant record, applications and utility bills now name ${updated.id}.` : ''}${ticks ? ` ${ticks.charAt(0).toUpperCase()}${ticks.slice(1)}.` : ''}${rentNote}`)],
             }
           : {}),
       };
@@ -2620,7 +2626,7 @@ function App({ boot }: { boot: BootData }) {
         ...p,
         tenants: p.tenants.filter((t) => t.id !== current.id),
         endedTenancies: [...p.endedTenancies, endTenancy(current, 'Removed from tenant records')],
-        stalls: p.stalls.map((s) => (s.id === current.stallId ? { ...s, tenant: 'Vacant', status: 'Available' as StallStatus } : s)),
+        stalls: p.stalls.map((s) => (s.id === current.stallId ? { ...s, tenant: 'Vacant', status: 'Available' as StallStatus, lca: false } : s)),
         activities: withActivity(p.activities, 'groups', 'red', current.name, ` was removed from tenant records.`),
         logs: [...p.logs, makeLog(p.logs, 'Announcement', `Tenant ${current.name} was removed from tenant records${current.stallId && current.stallId !== '—' ? `; stall ${current.stallId} released to Available` : ''}; ${paymentsNote(current)}.`)],
       };
@@ -2849,7 +2855,7 @@ function App({ boot }: { boot: BootData }) {
           {active === 'dashboard' && <DashboardPage onViewStall={(id) => { const stall = state.stalls.find((s) => s.id === id); if (stall) setModal({ type: 'view-stall', data: stall }); }} state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
           {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={isAdmin ? (b) => setModal({ type: 'confirm-delete-bill', data: b }) : undefined} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} onSectionRents={() => setModal({ type: 'section-rents' })} />}
-          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} ended={state.endedTenancies} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
+          {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} stalls={state.stalls} ended={state.endedTenancies} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
           {active === 'violations' && <ViolationsPage onPrintList={printRegister} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-violation' })} onView={(v) => setModal({ type: 'view-violation', data: v })} onEdit={(v) => setModal({ type: 'edit-violation', data: v })} onDelete={(v) => setModal({ type: 'confirm-delete-violation', data: v })} onExport={() => { downloadCSV(['Violation ID','Tenant','Code','Violation','Offence','Points','Status','Date Recorded','Date Reprimanded','Notes'], state.violations.map((v) => [v.id, v.tenant, violationCode(v.issue) || '—', v.issue, offenceLabel(v.offence), String(v.points), v.status, v.dateRecorded ? formatIsoDate(v.dateRecorded) : '—', v.dateResolved ? formatIsoDate(v.dateResolved) : '—', v.notes]), 'violations.csv'); showToast('Violations exported'); }} />}
           {active === 'analytics' && <AnalyticsPage state={state} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} exporting={!!reportJob} onExport={() => setReportRequest(true)} onNavigate={setActive} />}
@@ -3192,8 +3198,8 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
     `${statusFilter || 'All statuses'}${search ? ` · matching “${search}”` : ''}`,
-    ['Stall ID', 'Section', 'Tenant', 'Status', 'Permit', 'Monthly Rent'],
-    filtered.map((s) => [s.id, s.section, registerName(s.tenant), s.status, s.permit === 'Not Recorded' ? '—' : s.permit, `${money(stallRent(activeSectionRents, s))}${hasOwnRent(s) ? ' *' : ''}`]),
+    ['Stall ID', 'Section', 'Tenant', 'Status', 'LCA', 'BP', 'Monthly Rent'],
+    filtered.map((s) => [s.id, s.section, registerName(s.tenant), s.status, s.lca ? '✓' : '—', s.permit === 'With BP' ? '✓' : '—', `${money(stallRent(activeSectionRents, s))}${hasOwnRent(s) ? ' *' : ''}`]),
   );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -3261,10 +3267,10 @@ function StallManagementPage({ stalls, occupiedCount, availableCount, maintenanc
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} stalls</span>
         </div>
         <div className="table-wrap">
-          <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th>Permit</th><th>Monthly Rent</th><th>Last Inspection</th><th>Action</th></tr></thead>
+          <table className="data-table"><thead><tr><th>Stall ID</th><th>Section</th><th>Tenant</th><th>Status</th><th className="check-col">LCA</th><th className="check-col">BP</th><th>Monthly Rent</th><th>Last Inspection</th><th>Action</th></tr></thead>
             <tbody>
-              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{registerName(s.tenant)}</td><td><StatusBadge status={s.status} /></td><td><PermitBadge permit={s.permit} /></td><td className="no-wrap" title={rentBasis(s)}>{money(stallRent(activeSectionRents, s))}{hasOwnRent(s) && <span className="rent-own-tag">individual</span>}</td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn" title="Issue verification slip" aria-label="Issue verification slip" onClick={() => onVerify(s)}><span className="material-symbols-outlined">fact_check</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
-              {paged.items.length === 0 && <tr><td colSpan={8}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
+              {paged.items.map((s) => (<tr key={s.id}><td><strong>{s.id}</strong></td><td>{s.section}</td><td className={s.status === 'Available' ? 'tenant-cell' : ''}>{registerName(s.tenant)}</td><td><StatusBadge status={s.status} /></td><td className="check-col"><Tick on={s.lca} /></td><td className="check-col"><Tick on={s.permit === 'With BP'} unknown={s.permit === 'Not Recorded'} /></td><td className="no-wrap" title={rentBasis(s)}>{money(stallRent(activeSectionRents, s))}{hasOwnRent(s) && <span className="rent-own-tag">individual</span>}</td><td>{s.lastInspection}</td><td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(s)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn" title="Issue verification slip" aria-label="Issue verification slip" onClick={() => onVerify(s)}><span className="material-symbols-outlined">fact_check</span></button><button type="button" className="row-icon-btn danger" title="Delete stall" aria-label="Delete stall" onClick={() => onDelete(s)}><span className="material-symbols-outlined">delete</span></button></div></td></tr>))}
+              {paged.items.length === 0 && <tr><td colSpan={9}><div className="empty-state"><span className="material-symbols-outlined">storefront</span>No stalls match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -3388,7 +3394,7 @@ function EarningsFigure({ label, value, basis, tone }: { label: string; value: s
    Tenant Records Page
    ============================================================ */
 
-export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; ended: EndedTenancy[]; violations: Violation[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
+export function TenantRecordsPage({ tenants, stalls, ended, violations, search, onAdd, onView, onDelete, onSetRentPaid, onPrintList }: { tenants: Tenant[]; stalls: Stall[]; ended: EndedTenancy[]; violations: Violation[]; search: string; onAdd: () => void; onView: (t: Tenant) => void; onDelete: (t: Tenant) => void; onSetRentPaid: (tenantId: string, period: string, paid: boolean) => void; onPrintList: (title: string, subtitle: string, columns: string[], rows: string[][]) => void; }) {
   /* Open violations per person, flagged beside the name so they are seen
      without opening the record. */
   const openViolations = useMemo(() => {
@@ -3399,24 +3405,24 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
   const printList = () => onPrintList(
     sectionFilter || 'All Sections',
     `Tenant register · rent for ${formatPeriodShort(period)}${search ? ` · matching “${search}”` : ''}`,
-    ['Name', 'Stall ID', 'Section', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`, 'Collected', 'Discount', 'Contract No.', 'Lease Ends', 'Lease'],
+    ['Name', 'Stall ID', 'Section', 'Monthly Rent', `Rent ${formatPeriodShort(period)}`, 'Collected', 'Discount', 'LCA', 'BP'],
     filtered.map((t) => {
       const payment = rentPaymentFor(t, period);
       return [
         registerName(t.name), t.stallId, t.section, money(t.rent), rentStatusOf(t, period),
         payment ? money(payment.amount) : '—',
         payment && payment.discount > 0 ? `−${money(payment.discount)}` : '—',
-        t.lease.contractNo || '—',
-        t.lease.endDate ? formatIsoDate(t.lease.endDate) : '—',
-        leaseStatus(t.lease, today),
+        stallOf(t)?.lca ? '✓' : '—',
+        stallOf(t)?.permit === 'With BP' ? '✓' : '—',
       ];
     }),
   );
   const [sectionFilter, setSectionFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [rentFilter, setRentFilter] = useState('');
-  const [leaseFilter, setLeaseFilter] = useState('');
-  const today = todayIso();
+  const [checkFilter, setCheckFilter] = useState('');
+  const stallById = useMemo(() => new Map(stalls.map((s) => [s.id, s])), [stalls]);
+  const stallOf = (t: Tenant) => stallById.get(t.stallId);
   /* Rent is recorded a month at a time. The register opens on the current
      month; the picker is how a payment is entered against an earlier one. */
   const [period, setPeriod] = useState(currentPeriod);
@@ -3424,12 +3430,9 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
 
   const activeCount = tenants.filter(t => t.status === 'Active').length;
   const expiringCount = tenants.filter(t => t.status === 'Expiring Soon').length;
-  /* Leases needing the office: ending within the month, or already ended. */
-  const leaseCounts = useMemo(() => {
-    const counts: Record<LeaseStatus, number> = { 'Active': 0, 'Expiring': 0, 'Expired': 0, 'Not Yet Started': 0, 'No Lease on File': 0 };
-    tenants.forEach((t) => { counts[leaseStatus(t.lease, today)] += 1; });
-    return counts;
-  }, [tenants, today]);
+  /* How many tenants' stalls have the LCA and the BP ticked. */
+  const lcaCount = tenants.filter((t) => stallById.get(t.stallId)?.lca).length;
+  const bpCount = tenants.filter((t) => stallById.get(t.stallId)?.permit === 'With BP').length;
   const monthlyRent = tenants.reduce((s, t) => s + t.rent, 0);
   const roll = useMemo(() => rentRollFor(tenants, period), [tenants, period]);
 
@@ -3438,7 +3441,13 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
   const filtered = useMemo(() => tenants.filter((t) => {
     if (sectionFilter && t.section !== sectionFilter) return false;
     if (statusFilter && t.status !== statusFilter) return false;
-    if (leaseFilter && leaseStatus(t.lease, today) !== leaseFilter) return false;
+    if (checkFilter) {
+      const st = stallById.get(t.stallId);
+      if (checkFilter === 'lca' && !st?.lca) return false;
+      if (checkFilter === 'no-lca' && st?.lca) return false;
+      if (checkFilter === 'bp' && st?.permit !== 'With BP') return false;
+      if (checkFilter === 'no-bp' && st?.permit === 'With BP') return false;
+    }
     if (rentFilter) {
       const rent = rentStatusOf(t, period);
       // "Unpaid" covers everything not settled, overdue months included.
@@ -3449,7 +3458,7 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
     if (search) { const q = search.toLowerCase(); if (!t.name.toLowerCase().includes(q) && !registerName(t.name).toLowerCase().includes(q) && !t.stallId.toLowerCase().includes(q) && !t.section.toLowerCase().includes(q) && !t.keepers.some((k) => k.name.toLowerCase().includes(q))) return false; }
     return true;
     /* In the directory's numbering, whenever a tenant was added. */
-  }).sort((a, b) => compareStallNumbers(a.stallId, b.stallId)), [tenants, sectionFilter, statusFilter, leaseFilter, rentFilter, period, search, today]);
+  }).sort((a, b) => compareStallNumbers(a.stallId, b.stallId)), [tenants, sectionFilter, statusFilter, checkFilter, rentFilter, period, search, stallById]);
 
   const paged = paginate(filtered, page);
 
@@ -3458,7 +3467,7 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
       <div className="page-header">
         <div><h2 className="page-title">Tenant Records</h2><p className="page-subtitle">View and manage all tenant information and lease details.</p></div>
         <div className="page-actions">
-          <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); setRentFilter(''); setLeaseFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
+          <button className="btn-outline" onClick={() => { setSectionFilter(''); setStatusFilter(''); setRentFilter(''); setCheckFilter(''); }}><span className="material-symbols-outlined">tune</span>Clear Filters</button>
           <button className="btn-outline" disabled={filtered.length === 0} title={filtered.length === 0 ? 'No records match the current filters' : undefined} onClick={printList}><span className="material-symbols-outlined">print</span>Print List</button>
           <button className="btn-primary" onClick={onAdd}><span className="material-symbols-outlined">add</span>New Tenant</button>
         </div>
@@ -3475,9 +3484,9 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
           <div className="stat-caption">{percent(ratio(activeCount, tenants.length))} of all tenants</div>
         </div>
         <div className="stat-card">
-          <div className="stat-header"><span className="stat-label">Leases to Renew</span><span className={`material-symbols-outlined stat-icon ${leaseCounts.Expired > 0 ? 'danger' : 'warning'}`}>description</span></div>
-          <div className={`stat-value${leaseCounts.Expired > 0 ? ' danger' : ''}`}>{leaseCounts.Expiring + leaseCounts.Expired}</div>
-          <div className="stat-caption">{leaseCounts.Expiring} ending within {LEASE_EXPIRING_DAYS} days, {leaseCounts.Expired} expired · {leaseCounts['No Lease on File']} with no lease on file</div>
+          <div className="stat-header"><span className="stat-label">LCA · BP</span><span className="material-symbols-outlined stat-icon primary">check_box</span></div>
+          <div className="stat-value">{lcaCount}</div>
+          <div className="stat-caption">{lcaCount} of {tenants.length} with LCA signed · {bpCount} with BP</div>
         </div>
         <div className="stat-card">
           <div className="stat-header"><span className="stat-label">Monthly Revenue</span><span className="material-symbols-outlined stat-icon primary">payments</span></div>
@@ -3495,7 +3504,7 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
         <div className="filter-row">
           <select className="filter-select" value={sectionFilter} onChange={(e) => { setSectionFilter(e.target.value); setPage(1); }}><option value="">All Sections</option>{sectionsIn(tenants).map(s => <option key={s} value={s}>{s}</option>)}</select>
           <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">All Statuses</option><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select>
-          <select className="filter-select" value={leaseFilter} onChange={(e) => { setLeaseFilter(e.target.value); setPage(1); }}><option value="">All Leases</option>{LEASE_STATUSES.map((l) => <option key={l} value={l}>{l === 'No Lease on File' ? l : `Lease ${l}`} ({leaseCounts[l]})</option>)}</select>
+          <select className="filter-select" value={checkFilter} onChange={(e) => { setCheckFilter(e.target.value); setPage(1); }}><option value="">All LCA &amp; BP</option><option value="lca">With LCA</option><option value="no-lca">No LCA</option><option value="bp">With BP</option><option value="no-bp">No BP</option></select>
           <select className="filter-select" value={rentFilter} onChange={(e) => { setRentFilter(e.target.value); setPage(1); }}><option value="">All Rent</option><option value="Paid">Rent Paid</option><option value="Unpaid">Rent Unpaid</option><option value="Overdue">Rent Overdue</option></select>
           <label className="filter-month">
             <span>Rent month</span>
@@ -3504,7 +3513,7 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
           <span className="table-info">Showing {paged.start}-{paged.end} of {paged.total} tenants</span>
         </div>
         <div className="table-wrap">
-          <table className="data-table"><thead><tr><th>Name</th><th>Stall ID</th><th>Section</th><th>Monthly Rent</th><th>Rent — {formatPeriodShort(period)}</th><th>Lease</th><th>Status</th><th>Action</th></tr></thead>
+          <table className="data-table"><thead><tr><th>Name</th><th>Stall ID</th><th>Section</th><th>Monthly Rent</th><th>Rent — {formatPeriodShort(period)}</th><th className="check-col">LCA</th><th className="check-col">BP</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
               {paged.items.map((t) => {
                 const rentStatus = rentStatusOf(t, period);
@@ -3547,13 +3556,14 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
                         </span>
                       )}
                     </td>
-                    <td className="no-wrap"><LeaseBadge lease={t.lease} />{t.lease.endDate && <span className="lease-end">to {formatIsoDate(t.lease.endDate)}</span>}</td>
+                    <td className="check-col">{stallOf(t) ? <Tick on={!!stallOf(t)?.lca} /> : '—'}</td>
+                    <td className="check-col">{stallOf(t) ? <Tick on={stallOf(t)?.permit === 'With BP'} unknown={stallOf(t)?.permit === 'Not Recorded'} /> : '—'}</td>
                     <td><TenantStatusBadge status={t.status} /></td>
                     <td><div className="row-actions"><button type="button" className="row-icon-btn" title="View details" aria-label="View details" onClick={() => onView(t)}><span className="material-symbols-outlined">visibility</span></button><button type="button" className="row-icon-btn danger" title="Remove tenant" aria-label="Remove tenant" onClick={() => onDelete(t)}><span className="material-symbols-outlined">delete</span></button></div></td>
                   </tr>
                 );
               })}
-              {paged.items.length === 0 && <tr><td colSpan={8}><div className="empty-state"><span className="material-symbols-outlined">groups</span>No tenants match the current filters.</div></td></tr>}
+              {paged.items.length === 0 && <tr><td colSpan={9}><div className="empty-state"><span className="material-symbols-outlined">groups</span>No tenants match the current filters.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -3567,7 +3577,7 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
             <small>Tenants removed or whose stall was released, kept with their rent payments so past collections never change.</small>
           </summary>
           <div className="table-wrap">
-            <table className="data-table"><thead><tr><th>Name</th><th>Stall ID</th><th>Section</th><th>Ended</th><th>Reason</th><th>Ended by</th><th>Contract No.</th><th>Months paid</th><th>Rent collected</th></tr></thead>
+            <table className="data-table"><thead><tr><th>Name</th><th>Stall ID</th><th>Section</th><th>Ended</th><th>Reason</th><th>Ended by</th><th>Months paid</th><th>Rent collected</th></tr></thead>
               <tbody>
                 {[...ended].reverse().map((t) => (
                   <tr key={t.id}>
@@ -3577,7 +3587,6 @@ export function TenantRecordsPage({ tenants, ended, violations, search, onAdd, o
                     <td className="no-wrap">{t.endedOn ? formatIsoDate(t.endedOn) : '—'}</td>
                     <td>{t.endReason || '—'}</td>
                     <td className="no-wrap">{t.endedBy || '—'}</td>
-                    <td className="no-wrap">{t.lease?.contractNo || '—'}</td>
                     <td>{Object.keys(t.rentPayments).length}</td>
                     <td>{money(rentTotalPaid(t))}</td>
                   </tr>
@@ -5461,6 +5470,7 @@ export function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds:
   const [tenant, setTenant] = useState('');
   const [status, setStatus] = useState<StallStatus>('Available');
   const [permit, setPermit] = useState<PermitStatus>('Not Recorded');
+  const [lca, setLca] = useState(false);
   const [error, setError] = useState('');
 
   /* A new stall takes its section's code and the next number on the layout,
@@ -5480,7 +5490,7 @@ export function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds:
       setError(`Stall ${stallId} already exists. Use a different stall number.`);
       return;
     }
-    onSubmit({ id: stallId, section, tenant: status === 'Available' ? 'Vacant' : (tenant.trim() || 'Vacant'), status, permit, lastInspection: status === 'Available' ? '-' : todayStr(), note: '', ownRent: 0 });
+    onSubmit({ id: stallId, section, tenant: status === 'Available' ? 'Vacant' : (tenant.trim() || 'Vacant'), status, permit, lastInspection: status === 'Available' ? '-' : todayStr(), note: '', ownRent: 0, lca });
   };
 
   return (
@@ -5498,7 +5508,7 @@ export function AddStallForm({ existingIds, onSubmit, onCancel }: { existingIds:
         <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={status} onChange={(e) => { setStatus(e.target.value as StallStatus); setError(''); }}>{STALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
       </div>
       <div className="form-row">
-        <div className="form-group"><label className="form-label">Business Permit</label><select className="form-select" value={permit} onChange={(e) => setPermit(e.target.value as PermitStatus)}>{PERMIT_STATUSES.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+        <ChecksField lca={lca} bp={permit === 'With BP'} bpUnset={permit === 'Not Recorded'} onLca={setLca} onBp={(v) => setPermit(v ? 'With BP' : 'No BP')} />
         <div className="form-group" />
       </div>
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
@@ -5629,7 +5639,7 @@ export function AddApplicantForm({ existingIds, stalls, tenants, applicants, onS
   );
 }
 
-function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { applicant: Applicant; stalls: Stall[]; tenants: Tenant[]; onSubmit: (t: Tenant) => void; onSkip: () => void }) {
+function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { applicant: Applicant; stalls: Stall[]; tenants: Tenant[]; onSubmit: (t: Tenant, checks?: Partial<StallChecks>) => void; onSkip: () => void }) {
   const takenStalls = useMemo(() => new Set(tenants.map((t) => t.stallId)), [tenants]);
   const vacantStalls = useMemo(
     () => stalls.filter((s) => s.status === 'Available' && !takenStalls.has(s.id)),
@@ -5648,7 +5658,9 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
   const [section, setSection] = useState(() => opening?.section ?? SECTIONS[0]);
   const [rent, setRent] = useState(() => (opening ? rentForStall(opening.id, stalls) : 0));
   const [status, setStatus] = useState('Active');
-  const [lease, setLease] = useState<Lease>({ ...BLANK_LEASE });
+  /* LCA and BP for the stall being assigned; null until ticked or unticked. */
+  const [lca, setLca] = useState<boolean | null>(null);
+  const [bp, setBp] = useState<boolean | null>(null);
   const [error, setError] = useState('');
 
   const duplicate = tenants.find((t) => t.name.trim().toLowerCase() === name.trim().toLowerCase());
@@ -5676,10 +5688,9 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
   const handleSubmit = () => {
     if (!name.trim()) { setError('Tenant name is required.'); return; }
     if (!stallId) { setError('Select a stall to assign, or skip for now.'); return; }
-    const badPhone = phoneProblem(phone) || leaseProblem(lease);
+    const badPhone = phoneProblem(phone);
     if (badPhone) { setError(badPhone); return; }
     onSubmit({
-      lease: cleanLease(lease),
       id: nextId('TEN', tenants.map((t) => t.id)),
       keepers: [],
       barangay: '',
@@ -5694,8 +5705,9 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
       meters: { Electricity: '', Water: '' },
       rentDueDay: DEFAULT_RENT_DUE_DAY,
       rentPayments: {},
-    });
+    }, checksFor(stalls.find((s) => s.id === stallId), lca, bp));
   };
+  const chosen = stalls.find((s) => s.id === stallId);
 
   return (
     <div className="form-grid">
@@ -5737,7 +5749,10 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
             <div className="form-group"><label className="form-label">Tenant Status</label><select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="Active">Active</option><option value="Expiring Soon">Expiring Soon</option></select></div>
           </div>
 
-          <LeaseFields value={lease} onChange={(next) => { setLease(next); setError(''); }} />
+          <div className="form-row">
+            <ChecksField lca={lca ?? chosen?.lca ?? false} bp={bp ?? chosen?.permit === 'With BP'} bpUnset={bp === null && chosen?.permit === 'Not Recorded'} onLca={setLca} onBp={setBp} />
+            <div className="form-group" />
+          </div>
 
           {duplicate && <span className="form-hint error">A tenant named "{duplicate.name}"{duplicate.stallId && duplicate.stallId !== '—' ? ` (stall ${duplicate.stallId})` : ''} already exists — check this is not a duplicate.</span>}
         </>
@@ -5753,7 +5768,7 @@ function AssignStallForm({ applicant, stalls, tenants, onSubmit, onSkip }: { app
   );
 }
 
-function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { existingIds: string[]; stalls: Stall[]; tenants: Tenant[]; onSubmit: (t: Tenant) => void; onCancel: () => void }) {
+function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { existingIds: string[]; stalls: Stall[]; tenants: Tenant[]; onSubmit: (t: Tenant, checks?: Partial<StallChecks>) => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [stallId, setStallId] = useState('');
@@ -5765,7 +5780,8 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
   const [electricMeter, setElectricMeter] = useState('');
   const [waterMeter, setWaterMeter] = useState('');
   const [keeperDrafts, setKeeperDrafts] = useState<KeeperDraft[]>([]);
-  const [lease, setLease] = useState<Lease>({ ...BLANK_LEASE });
+  const [lca, setLca] = useState<boolean | null>(null);
+  const [bp, setBp] = useState<boolean | null>(null);
   const [error, setError] = useState('');
 
   /* The section and the rent follow the stall, as Section 43 sets the rent
@@ -5791,18 +5807,18 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
       const occupant = tenants.find((t) => t.stallId.toLowerCase() === trimmedStall.toLowerCase());
       if (occupant) { setError(`Stall ${trimmedStall} is already assigned to ${occupant.name}.`); return; }
     }
-    const problem = phoneProblem(phone) || keeperDraftsProblem(keeperDrafts) || leaseProblem(lease);
+    const problem = phoneProblem(phone) || keeperDraftsProblem(keeperDrafts);
     if (problem) { setError(problem); return; }
     onSubmit({
-      lease: cleanLease(lease),
       id: nextId('TEN', existingIds), name: name.trim(), phone: phone.trim() || '—', barangay: barangay.trim(),
       stallId: trimmedStall || '—', section, rent, status,
       keepers: resolveKeepers(keeperDrafts),
       meters: { Electricity: electricMeter.trim(), Water: waterMeter.trim() },
       rentDueDay: clampDueDay(rentDueDay),
       rentPayments: {},
-    });
+    }, checksFor(stalls.find((s) => s.id === trimmedStall), lca, bp));
   };
+  const chosen = stalls.find((s) => s.id.toLowerCase() === stallId.trim().toLowerCase());
 
   return (
     <div className="form-grid">
@@ -5846,7 +5862,10 @@ function AddTenantForm({ existingIds, stalls, tenants, onSubmit, onCancel }: { e
           <input className="form-input" placeholder="e.g. WM-2301" value={waterMeter} onChange={(e) => setWaterMeter(e.target.value)} />
         </div>
       </div>
-      <LeaseFields value={lease} onChange={(next) => { setLease(next); setError(''); }} />
+      <div className="form-row">
+        <ChecksField lca={lca ?? chosen?.lca ?? false} bp={bp ?? chosen?.permit === 'With BP'} bpUnset={bp === null && (!chosen || chosen.permit === 'Not Recorded')} onLca={setLca} onBp={setBp} />
+        <div className="form-group" />
+      </div>
       <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { setKeeperDrafts(next); setError(''); }} />
       {error && <div className="form-error"><span className="material-symbols-outlined">error</span>{error}</div>}
       <div className="modal-footer" style={{ padding: 0, borderTop: 'none', justifyContent: 'flex-end' }}><button className="btn-outline" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={handleSubmit}>Add Tenant</button></div>
@@ -5933,7 +5952,7 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose, onVerify }: 
           <RecordRow label="Market Section" value={stall.section} />
           <RecordRow label="Occupancy Status" node={<StatusBadge status={stall.status} />} />
           <RecordRow label="Last Inspection" value={stall.lastInspection === '-' ? '' : stall.lastInspection} />
-          <RecordRow label="Business Permit" node={<PermitBadge permit={stall.permit} />} />
+          <ChecksRecord stall={stall} />
           <RecordRow label="Sheet Note" value={stall.note} />
           <RecordRow label="Monthly Rent" value={money(stallRent(activeSectionRents, stall))} />
           <RecordRow label="Rent Basis" value={rentBasis(stall)} />
@@ -5948,10 +5967,6 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose, onVerify }: 
             <RecordRow label="Monthly Rent Charged" value={money(occupant.rent)} />
           </div>
         ) : <RecordNote>This stall has no tenant record assigned to it.</RecordNote>}
-      </RecordSection>
-
-      <RecordSection title="Lease of Contract Agreement" icon="description">
-        <LeaseRecord lease={occupant?.lease} emptyText="No lease — the stall has no tenant assigned to it." />
       </RecordSection>
 
       <RecordSection title={(occupant?.keepers.length ?? 0) > 1 ? `Stallkeepers (${occupant?.keepers.length})` : 'Stallkeeper Information'} icon="storefront">
@@ -5979,7 +5994,7 @@ function StallDetailView({ stall, occupant, bills, onEdit, onClose, onVerify }: 
   </>);
 }
 
-export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; existingIds: string[]; onSave: (s: Stall, opts?: SaveOpts, previous?: Stall, lease?: Lease) => void; onClose: () => void }) {
+export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onClose }: { stall: Stall; occupant?: Tenant; bills: UtilityBill[]; existingIds: string[]; onSave: (s: Stall, opts?: SaveOpts, previous?: Stall) => void; onClose: () => void }) {
   // Blank draft — anything left blank keeps what the stall already has.
   const [section, setSection] = useState('');
   const [tenant, setTenant] = useState('');
@@ -5989,13 +6004,11 @@ export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onC
   /* Rent: keep as it is, follow the section rate, or an individual rate. */
   const [rentMode, setRentMode] = useState<'' | 'section' | 'own'>('');
   const [ownRent, setOwnRent] = useState('');
-  /* The occupant's lease, opened filled in (see LeaseFields). */
-  const [lease, setLease] = useState<Lease>(() => occupant?.lease ?? { ...BLANK_LEASE });
+  const [lca, setLca] = useState<boolean | null>(null);
 
   const locked = !!occupant;
   const recordedTenant = stall.tenant === 'Vacant' ? '' : stall.tenant;
-  const leaseChanged = !!occupant && JSON.stringify(cleanLease(lease)) !== JSON.stringify(occupant.lease);
-  const dirty = !!(section || tenant.trim() || status || permit || lastInspection.trim() || rentMode === 'section' || (rentMode === 'own' && ownRent.trim()) || leaseChanged);
+  const dirty = !!(section || tenant.trim() || status || (permit && permit !== stall.permit) || lastInspection.trim() || rentMode === 'section' || (rentMode === 'own' && ownRent.trim()) || (lca !== null && lca !== stall.lca));
   /* A tenant record holds the stall, but it does not mean the stall is trading —
      a temporarily closed or abandoned one keeps that state through an edit. */
   const heldFallback: StallStatus = HELD_STATUSES.includes(stall.status) ? stall.status : 'Occupied';
@@ -6021,6 +6034,7 @@ export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onC
       permit: permit || stall.permit,
       lastInspection: keepText(lastInspection, stall.lastInspection) || '-',
       ownRent: rentMode === 'section' ? 0 : rentMode === 'own' && ownRent.trim() ? toAmount(ownRent) : stall.ownRent,
+      lca: lca ?? stall.lca,
     };
   };
 
@@ -6031,15 +6045,13 @@ export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onC
     const next = merged();
     if (rentMode === 'own' && ownRent.trim() && isNegative(ownRent)) return 'The monthly rent cannot be negative.';
     if (rentMode === 'own' && ownRent.trim() && toAmount(ownRent) === 0) return 'Enter the individual monthly rate, or choose to follow the section rate.';
-    const badLease = leaseChanged ? leaseProblem(lease) : '';
-    if (badLease) return badLease;
     if (!locked && HELD_STATUSES.includes(next.status) && next.tenant === 'Vacant') {
       return 'Enter the tenant holding this stall, or set the status back to Available.';
     }
     if (next.id !== stall.id && existingIds.includes(next.id)) {
       return `Stall ${next.id} already exists, so this stall cannot take that number in ${next.section}. Renumber or remove ${next.id} first.`;
     }
-    onSave(next, {}, stall, leaseChanged ? cleanLease(lease) : undefined);
+    onSave(next, {}, stall);
     return '';
   };
 
@@ -6081,13 +6093,13 @@ export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onC
             </span>
           )}
         </div>
-        <div className="form-group">
-          <label className="form-label">Business Permit</label>
-          <select className="form-select" value={permit} onChange={(e) => edit(setPermit)(e.target.value as PermitStatus)}>
-            <option value="">— Keep {stall.permit}</option>
-            {PERMIT_STATUSES.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
+        <ChecksField
+          lca={lca ?? stall.lca}
+          bp={(permit || stall.permit) === 'With BP'}
+          bpUnset={!permit && stall.permit === 'Not Recorded'}
+          onLca={(v) => edit(setLca)(v)}
+          onBp={(v) => edit(setPermit)(v ? 'With BP' : 'No BP')}
+        />
       </div>
       <div className="form-group">
         <label className="form-label">Last Inspection</label>
@@ -6119,9 +6131,6 @@ export function StallEditForm({ stall, occupant, bills, existingIds, onSave, onC
           <input className="form-input" type="number" min="0" step="50" disabled={rentMode !== 'own'} placeholder={rentMode === 'own' ? (hasOwnRent(stall) ? `On record: ${money(stall.ownRent)}` : 'e.g. 1200') : 'Choose “Individual rate” first'} value={ownRent} onChange={(e) => edit(setOwnRent)(e.target.value)} />
         </div>
       </div>
-      {occupant && (
-        <LeaseFields value={lease} onChange={(next) => { form.clearError(); setLease(next); }} note={`${occupant.name}'s contract for this stall. It is kept on their tenant record too.`} />
-      )}
       {occupant && (
         <div className="detail-grid">
           <div className="detail-field">
@@ -6353,15 +6362,12 @@ export function TenantDetailView({ tenant, stall, bills, violations, onSetRentPa
           <RecordRow label="Barangay" value={tenant.barangay} />
           <RecordRow label="Stall Assignment" value={tenant.stallId} />
           <RecordRow label="Market Section" value={tenant.section} />
+          <ChecksRecord stall={stall} />
         </div>
       </RecordSection>
 
       <RecordSection title={tenant.keepers.length > 1 ? `Stallkeepers (${tenant.keepers.length})` : 'Stallkeeper Information'} icon="storefront">
         <StallkeeperRecord keepers={tenant.keepers} emptyText="No stallkeeper has been registered for this tenant." />
-      </RecordSection>
-
-      <RecordSection title="Lease of Contract Agreement" icon="description">
-        <LeaseRecord lease={tenant.lease} emptyText="" />
       </RecordSection>
 
       <RecordSection title="Utility Meters" icon="speed">
@@ -6421,7 +6427,7 @@ export function TenantDetailView({ tenant, stall, bills, violations, onSetRentPa
   </>);
 }
 
-function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: { tenant: Tenant; current: Tenant; tenants: Tenant[]; stalls: Stall[]; onSave: (t: Tenant, opts?: SaveOpts, previous?: Tenant) => void; onClose: () => void }) {
+function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: { tenant: Tenant; current: Tenant; tenants: Tenant[]; stalls: Stall[]; onSave: (t: Tenant, opts?: SaveOpts, previous?: Tenant, checks?: Partial<StallChecks>) => void; onClose: () => void }) {
   // Blank draft — anything left blank keeps what the tenant record already has.
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -6438,14 +6444,16 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
      field. Adding a row registers someone new; removing one takes them off the
      record — both only once the form is saved. */
   const [keeperDrafts, setKeeperDrafts] = useState<KeeperDraft[]>(() => keeperDraftsFrom(current.keepers));
-  /* The lease opens filled in with what is on record (see LeaseFields). */
-  const [lease, setLease] = useState<Lease>(() => current.lease);
+  /* LCA and BP belong to the stall; null means left as it is. */
+  const [lca, setLca] = useState<boolean | null>(null);
+  const [bp, setBp] = useState<boolean | null>(null);
 
   const recordedPhone = current.phone === '—' ? '' : current.phone;
   const keepersChanged = JSON.stringify(resolveKeepers(keeperDrafts)) !== JSON.stringify(current.keepers)
     || keeperDraftsTouched(keeperDrafts);
-  const leaseChanged = JSON.stringify(cleanLease(lease)) !== JSON.stringify(current.lease);
-  const dirty = !!(name.trim() || phone.trim() || stallId || section || rent.trim() || rentDueDay || status || barangay.trim() || electricMeter.trim() || waterMeter.trim() || keepersChanged || leaseChanged);
+  const heldStall = stalls.find((s) => s.id === (stallId || current.stallId));
+  const checks = checksFor(heldStall, lca, bp);
+  const dirty = !!(name.trim() || phone.trim() || stallId || section || rent.trim() || rentDueDay || status || barangay.trim() || electricMeter.trim() || waterMeter.trim() || keepersChanged || checks);
 
   const merged = (): Tenant => ({
     ...current,
@@ -6462,7 +6470,6 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
       Electricity: keepText(electricMeter, current.meters.Electricity),
       Water: keepText(waterMeter, current.meters.Water),
     },
-    lease: cleanLease(lease),
   });
 
   const commit = () => {
@@ -6470,9 +6477,9 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
     const clash = tenants.find((t) => t.id !== current.id && t.stallId === next.stallId && next.stallId !== '—');
     if (clash) return `Stall ${next.stallId} is already assigned to ${clash.name}.`;
     if (rent.trim() && isNegative(rent)) return 'The monthly rent cannot be negative.';
-    const problem = phoneProblem(phone) || keeperDraftsProblem(keeperDrafts) || leaseProblem(lease);
+    const problem = phoneProblem(phone) || keeperDraftsProblem(keeperDrafts);
     if (problem) return problem;
-    onSave(next, {}, tenant);
+    onSave(next, {}, tenant, checks);
     return '';
   };
 
@@ -6554,7 +6561,12 @@ function TenantEditForm({ tenant, current, tenants, stalls, onSave, onClose }: {
         <label className="form-label">Water Meter Number</label>
         <input className="form-input" value={waterMeter} placeholder={keepHint(current.meters.Water)} onChange={(e) => edit(setWaterMeter)(e.target.value)} />
       </div>
-      <LeaseFields value={lease} onChange={(next) => { form.clearError(); setLease(next); }} />
+      {heldStall && (
+        <div className="form-row">
+          <ChecksField lca={lca ?? heldStall.lca} bp={bp ?? heldStall.permit === 'With BP'} bpUnset={bp === null && heldStall.permit === 'Not Recorded'} onLca={(v) => edit(setLca)(v)} onBp={(v) => edit(setBp)(v)} hint={`For stall ${heldStall.id}. LCA: Lease of Contract Agreement signed. BP: business permit on file.`} />
+          <div className="form-group" />
+        </div>
+      )}
       <StallkeeperEditor drafts={keeperDrafts} onChange={(next) => { form.clearError(); setKeeperDrafts(next); }} />
     </div>
     <EditActions dirty={dirty} onSave={form.save} onCancel={onClose} />
@@ -7086,15 +7098,6 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={map[status] || 'badge'}>{status}</span>;
 }
 
-/* The business-permit column of the occupancy sheet. A blank cell there is
-   'Not Recorded' — which is not the same as knowing the stall has no permit. */
-function PermitBadge({ permit }: { permit: PermitStatus }) {
-  const map: Record<PermitStatus, string> = {
-    'With BP': 'badge badge-active', 'No BP': 'badge badge-open', 'Not Recorded': 'badge',
-  };
-  return <span className={map[permit]}>{permit === 'Not Recorded' ? '—' : permit}</span>;
-}
-
 function BillStatusBadge({ bill }: { bill: UtilityBill }) {
   if (isOverdue(bill)) return <span className="badge badge-overdue">Overdue</span>;
   return <span className={`badge ${bill.status === 'Paid' ? 'badge-paid' : 'badge-unpaid'}`}>{bill.status}</span>;
@@ -7309,93 +7312,75 @@ function BillEditForm({ bill, tenants, onSave, onClose }: { bill: UtilityBill; t
 }
 
 
-/* ---------- Lease of Contract Agreement ---------- */
+/* ---------- LCA and BP ---------- */
 
-/* How a lease change reads in the logbook: "contract 2026-014, 1 Jan 2026 to 31 Dec 2026". */
-function leaseSummary(lease: Lease) {
-  if (leaseIsBlank(lease)) return 'cleared';
-  const period = lease.startDate || lease.endDate
-    ? `${lease.startDate ? formatIsoDate(lease.startDate) : 'no start date'} to ${lease.endDate ? formatIsoDate(lease.endDate) : 'no end date'}`
-    : '';
-  return [lease.contractNo ? `contract ${lease.contractNo}` : '', period].filter(Boolean).join(', ') || 'updated';
+/* Two ticks the office keeps for every stall, side by side as on its own
+   sheets: LCA, the signed Lease of Contract Agreement, and BP, the business
+   permit. BP keeps the occupancy sheet's three answers underneath (With BP,
+   No BP, Not Recorded), so a stall nobody has checked yet is not mistaken for
+   one known to have no permit. */
+type StallChecks = { lca: boolean; permit: PermitStatus };
+
+/* What a form's LCA and BP boxes change on a stall: only a box the officer
+   actually ticked or unticked (null means left as it was). */
+function checksFor(stall: Stall | undefined, lca: boolean | null, bp: boolean | null): Partial<StallChecks> | undefined {
+  if (!stall) return undefined;
+  const out: Partial<StallChecks> = {};
+  if (lca !== null && lca !== stall.lca) out.lca = lca;
+  if (bp !== null && (bp ? 'With BP' : 'No BP') !== stall.permit) out.permit = bp ? 'With BP' : 'No BP';
+  return Object.keys(out).length ? out : undefined;
 }
 
-const LEASE_BADGE: Record<LeaseStatus, string> = {
-  'Active': 'badge badge-active',
-  'Expiring': 'badge badge-expiring',
-  'Expired': 'badge badge-overdue',
-  'Not Yet Started': 'badge badge-pending',
-  'No Lease on File': 'badge badge-nolease',
-};
-
-function LeaseBadge({ lease }: { lease: Lease }) {
-  const status = leaseStatus(lease, todayIso());
-  const left = lease.endDate ? daysBetween(todayIso(), lease.endDate) : 0;
-  const title = status === 'Expiring' ? `Ends ${formatIsoDate(lease.endDate)} — ${left === 0 ? 'today' : `${left} day${left === 1 ? '' : 's'} left`}`
-    : status === 'Expired' ? `Ended ${formatIsoDate(lease.endDate)}` : undefined;
-  return <span className={LEASE_BADGE[status]} title={title}>{status}</span>;
+/* How a change of LCA or BP reads in the logbook. */
+function checksNote(before: StallChecks, after: Partial<StallChecks>): string {
+  return [
+    after.lca !== undefined && after.lca !== before.lca ? `LCA ${after.lca ? 'ticked' : 'unticked'}` : '',
+    after.permit !== undefined && after.permit !== before.permit ? `BP ${after.permit === 'With BP' ? 'ticked' : 'unticked'}` : '',
+  ].filter(Boolean).join(', ');
 }
 
-/* The lease as a record section, shown on both the tenant and the stall. */
-function LeaseRecord({ lease, emptyText }: { lease?: Lease; emptyText: string }) {
-  if (!lease) return <RecordNote>{emptyText}</RecordNote>;
-  const status = leaseStatus(lease, todayIso());
-  const left = lease.endDate ? daysBetween(todayIso(), lease.endDate) : 0;
-  return (<>
-    <div className="record-grid">
-      <RecordRow label="Lease Status" node={<LeaseBadge lease={lease} />} />
-      <RecordRow label="Contract No." value={lease.contractNo} />
-      <RecordRow label="Date Signed" value={lease.dateSigned ? formatIsoDate(lease.dateSigned) : ''} />
-      <RecordRow label="Term" value={leaseTerm(lease)} />
-      <RecordRow label="Start Date" value={lease.startDate ? formatIsoDate(lease.startDate) : ''} />
-      <RecordRow label="End Date" value={lease.endDate ? formatIsoDate(lease.endDate) : ''} />
-    </div>
-    {lease.remarks && <RecordNote>{lease.remarks}</RecordNote>}
-    {status === 'No Lease on File' && <RecordNote>No Lease of Contract Agreement has been recorded. Add the contract number and dates with Edit Details.</RecordNote>}
-    {status === 'Expiring' && <RecordNote>The lease ends on {formatIsoDate(lease.endDate)}, {left === 0 ? 'today' : `in ${left} day${left === 1 ? '' : 's'}`}. Arrange the renewal before then.</RecordNote>}
-    {status === 'Expired' && <RecordNote>The lease ended on {formatIsoDate(lease.endDate)}. Record the renewed contract once it is signed.</RecordNote>}
-  </>);
-}
-
-/* The lease fields as a form section. Unlike the other edit fields these open
-   filled in with what is on record, since a date box cannot show a hint:
-   change what is different, or clear a box to remove it. */
-function LeaseFields({ value, onChange, note }: { value: Lease; onChange: (next: Lease) => void; note?: string }) {
-  const set = (field: keyof Lease) => (raw: string) => onChange({ ...value, [field]: raw });
-  const problem = leaseProblem(value);
-  const term = leaseTerm(value);
-  const status = leaseStatus(value, todayIso());
+function Tick({ on, unknown }: { on: boolean; unknown?: boolean }) {
+  if (unknown) return <span className="tick tick-unknown" title="Not recorded yet">—</span>;
   return (
-    <section className="form-section">
-      <header className="form-section-head">
-        <div className="form-section-title">
-          <h4>Lease of Contract Agreement</h4>
-          <span className="form-section-note">{note ?? 'As written on the signed contract. Leave blank if no contract has been signed yet.'}</span>
-        </div>
-        {!leaseIsBlank(value) && <LeaseBadge lease={value} />}
-      </header>
-      <div className="form-row">
-        <div className="form-group"><label className="form-label">Contract No.</label><input className="form-input" placeholder="e.g. 2026-014" value={value.contractNo} onChange={(e) => set('contractNo')(e.target.value)} /></div>
-        <div className="form-group"><label className="form-label">Date Signed</label><input className="form-input" type="date" value={value.dateSigned} onChange={(e) => set('dateSigned')(e.target.value)} /></div>
-      </div>
-      <div className="form-row">
-        <div className="form-group"><label className="form-label">Start Date</label><input className="form-input" type="date" value={value.startDate} onChange={(e) => set('startDate')(e.target.value)} /></div>
-        <div className="form-group">
-          <label className="form-label">End Date</label>
-          <input className="form-input" type="date" value={value.endDate} onChange={(e) => set('endDate')(e.target.value)} />
-          {problem
-            ? <span className="form-hint error">{problem}</span>
-            : term ? <span className="form-hint">Term: {term}{status === 'Expiring' || status === 'Expired' ? ` · ${status.toLowerCase()}` : ''}</span> : null}
-        </div>
-      </div>
-      <div className="form-group"><label className="form-label">Remarks</label><input className="form-input" placeholder="e.g. Renewable yearly; notarized copy in the file cabinet" value={value.remarks} onChange={(e) => set('remarks')(e.target.value)} /></div>
-    </section>
+    <span className={`tick${on ? ' on' : ''}`} title={on ? 'Yes' : 'No'}>
+      <span className="material-symbols-outlined" aria-hidden="true">{on ? 'check_box' : 'check_box_outline_blank'}</span>
+      <span className="sr-only">{on ? 'Yes' : 'No'}</span>
+    </span>
   );
 }
 
-/* Typed text tidied for saving: trimmed, and dates kept only when whole. */
-function cleanLease(draft: Lease): Lease {
-  return normalizeLease(draft);
+/* "LCA ☑  BP ☐" as one record row. */
+function ChecksRecord({ stall }: { stall?: StallChecks }) {
+  if (!stall) return <RecordRow label="LCA · BP" value="" />;
+  return (
+    <RecordRow label="LCA · BP" node={
+      <span className="checks-pair">
+        <span className="checks-item"><Tick on={stall.lca} /> LCA</span>
+        <span className="checks-item"><Tick on={stall.permit === 'With BP'} unknown={stall.permit === 'Not Recorded'} /> BP</span>
+      </span>
+    } />
+  );
+}
+
+/* The two checkboxes as a form field. `bpUnset` shows that BP has not been
+   recorded yet; ticking or unticking it records an answer. */
+function ChecksField({ lca, bp, bpUnset, onLca, onBp, hint }: { lca: boolean; bp: boolean; bpUnset?: boolean; onLca: (v: boolean) => void; onBp: (v: boolean) => void; hint?: string }) {
+  return (
+    <div className="form-group">
+      <span className="form-label">LCA · BP</span>
+      <div className="checks-field">
+        <label className="form-check" title="Lease of Contract Agreement signed">
+          <input type="checkbox" checked={lca} onChange={(e) => onLca(e.target.checked)} />
+          <span>LCA</span>
+        </label>
+        <label className="form-check" title="Business permit on file">
+          <input type="checkbox" checked={bp} onChange={(e) => onBp(e.target.checked)} />
+          <span>BP</span>
+        </label>
+      </div>
+      <span className="form-hint">{hint ?? `LCA: Lease of Contract Agreement signed. BP: business permit on file.${bpUnset ? ' BP is not recorded yet.' : ''}`}</span>
+    </div>
+  );
 }
 
 /* ---------- Monthly rent, by section and by stall ---------- */
@@ -8866,13 +8851,13 @@ async function startUp(): Promise<BootData> {
       const tenants: Tenant[] = tenancies.map((t, i) => ({
         id: ids[i], name: t.name, phone: '', barangay: '', stallId: t.stallId, section: t.section,
         rent: monthlyRentForStall(t.stallId), status: 'Active', keepers: [], meters: { Electricity: '', Water: '' },
-        rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {}, lease: { ...BLANK_LEASE },
+        rentDueDay: DEFAULT_RENT_DUE_DAY, rentPayments: {},
       }));
       const copyAt = loaded.raw && (stalls.length > 0 || tenants.length > 0) ? await keepCopyBefore('second-floor-vendors-2026-09-30', state) : '';
       const details = stalls.length > 0 || tenants.length > 0
         ? `${SECOND_FLOOR_IMPORT}: added ${stalls.length} stalls and ${tenants.length} tenant records to the 2nd Floor section (the list has no PS-51). No rent is billed for them until the office sets the 2nd-floor rate.${copyAt ? ` The records as they stood were saved to ${copyAt}.` : ''}`
         : `${SECOND_FLOOR_IMPORT}: every stall on it was already in the records; nothing was added.`;
-      const next: AppState = { ...state, stalls: [...state.stalls, ...stalls.map((s) => ({ ...s, ownRent: 0 }))], tenants: [...state.tenants, ...tenants], logs: [...state.logs, {
+      const next: AppState = { ...state, stalls: [...state.stalls, ...stalls.map((s) => ({ ...s, ownRent: 0, lca: false }))], tenants: [...state.tenants, ...tenants], logs: [...state.logs, {
         id: nextId('LOG', state.logs.map((l) => l.id)), date: todayIso(), time: nowTimeStr(), type: 'Announcement' as const, recordedBy: 'System update', details,
       }] };
       await persist(next, currentIdCounters(), dataset, roster);

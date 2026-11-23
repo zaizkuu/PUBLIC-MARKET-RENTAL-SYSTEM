@@ -23,7 +23,7 @@ const Database = require('better-sqlite3');
 
 /* Bumped whenever the statements below change shape. `migrate()` reads the
    number back out of the file to decide what still needs doing. */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stalls (
@@ -270,15 +270,10 @@ CREATE TABLE IF NOT EXISTS accounts (
 /* The record types the renderer sends, and the columns each one stores. The
    read, write and delete statements are all generated from this, so adding a
    field is a one-line change here plus a column in the schema above. */
-/* The renderer keeps a tenant's lease as one nested object; the table holds a
-   column per field, named here in the same order as the object's keys. */
-const LEASE_FIELDS = ['contractNo', 'dateSigned', 'startDate', 'endDate', 'remarks'];
-const LEASE_COLUMNS = ['leaseContractNo', 'leaseDateSigned', 'leaseStartDate', 'leaseEndDate', 'leaseRemarks'];
-
 const TABLES = {
-  stalls: ['id', 'section', 'tenant', 'status', 'lastInspection', 'permit', 'note', 'ownRent'],
+  stalls: ['id', 'section', 'tenant', 'status', 'lastInspection', 'permit', 'note', 'ownRent', 'lca'],
   tenants: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId',
-    'rentDueDay', 'meterElectricity', 'meterWater', ...LEASE_COLUMNS],
+    'rentDueDay', 'meterElectricity', 'meterWater'],
   applicants: ['id', 'name', 'phone', 'stallType', 'status', 'dateApplied'],
   utilities: ['id', 'type', 'stallId', 'tenantId', 'tenantName', 'section', 'period', 'periodStart', 'periodEnd',
     'meterNumber', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
@@ -288,8 +283,7 @@ const TABLES = {
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
   officers: ['id', 'name', 'position', 'office', 'reportsTo', 'phone', 'email', 'status', 'appointed', 'photo'],
   endedTenancies: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId',
-    'rentDueDay', 'meterElectricity', 'meterWater', 'endedOn', 'endReason', 'endedBy', 'keepersJson', 'paymentsJson',
-    ...LEASE_COLUMNS],
+    'rentDueDay', 'meterElectricity', 'meterWater', 'endedOn', 'endReason', 'endedBy', 'keepersJson', 'paymentsJson'],
   sectionRents: ['id', 'rent'],
 };
 
@@ -349,8 +343,8 @@ const ADDED_COLUMNS = [
   // A stall's own monthly rate. NULL on a row saved before rates could be set
   // per stall, so the app can tell "never set" from "follows its section" (0).
   ['stalls', 'ownRent', 'REAL'],
-  // The Lease of Contract Agreement, kept on the tenancy it belongs to.
-  ...['tenants', 'ended_tenancies'].flatMap((table) => LEASE_COLUMNS.map((column) => [table, column, "TEXT NOT NULL DEFAULT ''"])),
+  // LCA: the stall's Lease of Contract Agreement is signed, ticked beside BP.
+  ['stalls', 'lca', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 function addMissingColumns() {
@@ -364,7 +358,20 @@ function migrate() {
   db.exec(SCHEMA);
   addMissingColumns();
   const current = Number(readMeta('schema_version') || 0);
+  if (current === 8) leaseFieldsToLca();
   if (current !== SCHEMA_VERSION) writeMeta('schema_version', String(SCHEMA_VERSION));
+}
+
+/* Version 8 (app 0.3.1) kept a contract number and dates on each tenant. From
+   version 9 the office keeps only a tick, LCA, beside BP on the stall: a stall
+   whose tenant had any of those filled in starts ticked. The old columns are
+   left in place, unread. */
+function leaseFieldsToLca() {
+  const has = db.prepare('PRAGMA table_info(tenants)').all().some((c) => c.name === 'leaseContractNo');
+  if (!has) return;
+  db.exec(`UPDATE stalls SET lca = 1 WHERE id IN (
+    SELECT stallId FROM tenants
+     WHERE leaseContractNo <> '' OR leaseDateSigned <> '' OR leaseStartDate <> '' OR leaseEndDate <> '')`);
 }
 
 function readMeta(key) {
@@ -426,7 +433,6 @@ function readAll() {
     };
     delete row.meterElectricity;
     delete row.meterWater;
-    nestLease(row);
     for (const pay of payments.filter((r) => r.tenantId === tenant.id)) {
       row.rentPayments[pay.period] = {
         period: pay.period,
@@ -456,7 +462,6 @@ function readAll() {
     delete row.meterWater;
     delete row.keepersJson;
     delete row.paymentsJson;
-    nestLease(row);
     if (row.applicantId === null || row.applicantId === undefined) delete row.applicantId;
     return row;
   });
@@ -467,6 +472,7 @@ function readAll() {
     const row = { ...stall };
     if (row.ownRent === null || row.ownRent === undefined) delete row.ownRent;
     else row.ownRent = Number(row.ownRent) || 0;
+    row.lca = Number(row.lca) === 1;
     return row;
   });
   state.sectionRents = state.sectionRents.map((r) => ({ id: r.id, rent: Number(r.rent) || 0 }));
@@ -502,15 +508,6 @@ function readAll() {
   });
 
   return state;
-}
-
-/* Gathers a row's lease columns back into the nested object the renderer uses. */
-function nestLease(row) {
-  row.lease = {};
-  LEASE_FIELDS.forEach((field, i) => {
-    row.lease[field] = row[LEASE_COLUMNS[i]] || '';
-    delete row[LEASE_COLUMNS[i]];
-  });
 }
 
 function readIdCounters() {
@@ -570,12 +567,6 @@ function bindable(record, columns, position, orderColumn = 'position') {
   // The renderer keeps a tenant's meters nested; the table holds one column each.
   if (record && record.meters && typeof record.meters === 'object') {
     record = { ...record, meterElectricity: record.meters.Electricity || '', meterWater: record.meters.Water || '' };
-  }
-  // A tenancy's lease is nested in the renderer and flat in the table.
-  if (record && record.lease && typeof record.lease === 'object') {
-    const flat = {};
-    LEASE_FIELDS.forEach((field, i) => { flat[LEASE_COLUMNS[i]] = record.lease[field] || ''; });
-    record = { ...record, ...flat };
   }
   // An ended tenancy carries its payments and keepers on the row itself.
   if (record && columns.includes('paymentsJson')) {
