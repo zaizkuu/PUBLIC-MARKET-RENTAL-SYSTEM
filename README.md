@@ -79,8 +79,8 @@ That produces two files in `release/`:
 
 | File | Use |
 | --- | --- |
-| `TanauanPublicMarketSystem-Setup-0.1.0.exe` | Installer — adds desktop and Start Menu shortcuts. Normal deployment. |
-| `TanauanPublicMarketSystem-Portable-0.1.0.exe` | Single portable file. Runs from a USB stick, installs nothing. |
+| `TanauanPublicMarketSystem-Setup-0.3.0.exe` | Installer — adds desktop and Start Menu shortcuts. Normal deployment. |
+| `TanauanPublicMarketSystem-Portable-0.3.0.exe` | Single portable file. Runs from a USB stick, installs nothing. |
 
 Build one target at a time with `npm run dist:installer` or `npm run dist:portable`.
 To run the desktop shell against the live dev server while developing, start
