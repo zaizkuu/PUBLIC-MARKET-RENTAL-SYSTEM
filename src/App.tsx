@@ -32,6 +32,8 @@ import {
   sectionRate, sectionRateForStallId, stallRent,
 } from './market/rents';
 import type { SectionRent } from './market/rents';
+import { WATER_TIERS, defaultWaterRates, normalizeWaterRates, waterCharge } from './market/waterRates';
+import type { WaterRate, WaterRateId } from './market/waterRates';
 
 /* ============================================================
    Types
@@ -291,6 +293,12 @@ type UtilityBill = {
      picks up at the moment it happens to be printed past the due date. See
      `surchargeAmount`. */
   amount: number;
+  /* Water only: the tier rates this bill was worked out on (see
+     src/market/waterRates.ts). Kept on the bill so changing the rates later
+     never rewrites it. Absent on a water bill from before tiered billing,
+     which was charged a flat `rate` per cu.m. For a tiered bill `rate` holds
+     the 0–10 cu.m minimum charge. */
+  waterRates?: WaterRate[];
   status: BillStatus;
   dateIssued: string;
   dueDate: string;
@@ -739,6 +747,9 @@ const initialState = {
   /* What each section charges a month, editable from Stall Management. */
   sectionRents: defaultSectionRents(),
 
+  /* The tiered water rates in force, editable from Utility Billing. */
+  waterRates: defaultWaterRates(),
+
   /* The market office's own board, seeded as the seats rather than the people
      — the office types in who holds each one. A seat stays on the board while
      it is vacant, because the post exists whether or not anybody holds it. */
@@ -911,7 +922,10 @@ function normalizeBill(raw: UtilityBill): UtilityBill {
   const periodStart = isDay(raw?.periodStart) ? raw.periodStart : monthStartIso(period);
   const periodEnd = isDay(raw?.periodEnd) ? raw.periodEnd : monthEndIso(period);
   const meterNumber = typeof raw?.meterNumber === 'string' ? raw.meterNumber.trim() : '';
-  return { ...raw, meterNumber, period: periodOf(periodEnd) || period, periodStart, periodEnd };
+  const bill: UtilityBill = { ...raw, meterNumber, period: periodOf(periodEnd) || period, periodStart, periodEnd };
+  if (bill.type === 'Water' && Array.isArray(raw?.waterRates) && raw.waterRates.length) bill.waterRates = normalizeWaterRates(raw.waterRates);
+  else delete bill.waterRates;
+  return bill;
 }
 
 /* A stall saved before the occupancy sheet was imported carries no permit or
@@ -1043,6 +1057,7 @@ function mergeState(input: unknown): AppState {
     .map((t) => t.stallId));
   return {
     sectionRents,
+    waterRates: normalizeWaterRates(parsed.waterRates),
     applicants: pick('applicants').map(normalizeApplicant),
     tenants,
     endedTenancies: pick('endedTenancies').map(normalizeEndedTenancy),
@@ -1592,6 +1607,22 @@ function computeBill(previousReading: number, currentReading: number, rate: numb
   const consumption = Math.max(0, currentReading - previousReading);
   const amount = Math.round(consumption * rate * 100) / 100;
   return { consumption, amount };
+}
+
+/* A water bill raised on the tiered schedule. One from before carries a flat
+   rate per cu.m and no tiers, and is shown the way it was billed. */
+function isTieredWater(bill: UtilityBill) {
+  return bill.type === 'Water' && !!bill.waterRates?.length;
+}
+
+/* "4 cu.m × ₱54.93" or "0–10 cu.m minimum" — one tier line on a bill. */
+function waterLineText(line: { label: string; units: number; rate: number; flat: boolean }) {
+  return line.flat ? `${line.label} minimum charge` : `${line.label}: ${line.units.toLocaleString()} cu.m × ${money(line.rate)}`;
+}
+
+/* The rate column of a list or export: a tiered water bill has no single rate. */
+function billRateText(bill: UtilityBill) {
+  return isTieredWater(bill) ? 'Tiered' : bill.rate.toFixed(2);
 }
 
 function isOverdue(bill: UtilityBill) {
@@ -2605,6 +2636,22 @@ function App({ boot }: { boot: BootData }) {
     closeModal();
   };
 
+  /* New tiered water rates for bills raised from now on. Saved bills keep the
+     rates they were billed at. */
+  const updateWaterRates = (next: WaterRate[]) => {
+    const rates = normalizeWaterRates(next);
+    const changed = WATER_TIERS.filter((t) => rates.find((r) => r.id === t.id)!.rate !== state.waterRates.find((r) => r.id === t.id)?.rate);
+    if (changed.length === 0) return;
+    const describe = (list: WaterRate[]) => WATER_TIERS.map((t) => `${t.label} ${money(list.find((r) => r.id === t.id)!.rate)}`).join(', ');
+    setState((p) => ({
+      ...p,
+      waterRates: rates,
+      logs: [...p.logs, makeLog(p.logs, 'Announcement', `Water rates changed from ${describe(p.waterRates)} to ${describe(rates)}. Bills already saved keep the rates they were billed at.`)],
+      activities: withActivity(p.activities, 'water_drop', 'blue', 'Water rates', ' updated for new bills.'),
+    }));
+    showToast('Water rates saved for new bills');
+  };
+
   const deleteStall = (id: string) => {
     setState((p) => ({
       ...p,
@@ -2853,7 +2900,7 @@ function App({ boot }: { boot: BootData }) {
         <div className="page-content">
           {saveProblem && <SaveProblemBanner problem={saveProblem} lastSaved={lastSaved} onRetry={() => setSaveAttempt((n) => n + 1)} onBackup={() => setActive('support')} />}
           {active === 'dashboard' && <DashboardPage onViewStall={(id) => { const stall = state.stalls.find((s) => s.id === id); if (stall) setModal({ type: 'view-stall', data: stall }); }} state={state} search={searchTerm} occupiedCount={occupiedCount} pendingApplicants={pendingApplicants} outstandingUtilities={outstandingUtilities} unpaidBillCount={unpaidBills.length} onNavigate={setActive} />}
-          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={isAdmin ? (b) => setModal({ type: 'confirm-delete-bill', data: b }) : undefined} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, b.rate.toFixed(2), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
+          {active === 'utilities' && <UtilityBillingPage onPrintList={printRegister} waterRates={state.waterRates} onSaveWaterRates={updateWaterRates} bills={state.utilities} tenants={state.tenants} stalls={state.stalls} search={searchTerm} onAdd={addBill} onView={(b) => setModal({ type: 'view-bill', data: b })} onToggleStatus={toggleBillStatus} onDelete={isAdmin ? (b) => setModal({ type: 'confirm-delete-bill', data: b }) : undefined} onPrint={requestPrint} onPrintBatch={requestPrintBatch} onRecordMeter={recordMeterNumber} onExport={() => { downloadCSV(['Bill ID','Type','Stall','Tenant','Section','Meter No.','Period Covered','Period Start','Period End','Previous','Current','Consumption','Unit','Rate','Amount','Surcharge %','Surcharge If Printed Today','Total If Printed Today','Status','Issued','Due'], state.utilities.map((b) => [b.id, b.type, b.stallId, b.tenantName || '—', b.section || '—', b.meterNumber || '—', billPeriodText(b), formatIsoDate(b.periodStart), formatIsoDate(b.periodEnd), String(b.previousReading), String(b.currentReading), String(b.consumption), UTILITY_PRESETS[b.type].unit, billRateText(b), b.amount.toFixed(2), String(SURCHARGE_RATES[b.type]), surchargeAmount(b).toFixed(2), amountWithSurcharge(b).toFixed(2), isOverdue(b) ? 'Overdue' : b.status, formatIsoDate(b.dateIssued), formatIsoDate(b.dueDate)]), 'utility-bills.csv'); showToast('Utility bills exported'); }} />}
           {active === 'stalls' && <StallManagementPage onVerify={(s) => setVerifyRequest({ stall: s })} onPrintList={printRegister} stalls={state.stalls} occupiedCount={occupiedCount} availableCount={availableCount} maintenanceCount={maintenanceCount} search={searchTerm} onAdd={() => setModal({ type: 'add-stall' })} onView={(s) => setModal({ type: 'view-stall', data: s })} onDelete={(s) => setModal({ type: 'confirm-delete-stall', data: s })} onSectionRents={() => setModal({ type: 'section-rents' })} />}
           {active === 'tenants' && <TenantRecordsPage onPrintList={printRegister} tenants={state.tenants} stalls={state.stalls} ended={state.endedTenancies} violations={state.violations} search={searchTerm} onAdd={() => setModal({ type: 'add-tenant' })} onView={(t) => setModal({ type: 'view-tenant', data: t })} onDelete={(t) => setModal({ type: 'confirm-delete-tenant', data: t })} onSetRentPaid={setRentPaid} />}
           {active === 'applicants' && <ApplicantManagementPage onPrintList={printRegister} applicants={state.applicants} pendingApplicants={pendingApplicants} incompleteApplicants={incompleteApplicants} approvedApplicants={approvedApplicants} search={searchTerm} onAdd={() => setModal({ type: 'add-applicant' })} onView={(a) => setModal({ type: 'view-applicant', data: a })} onEdit={(a) => setModal({ type: 'edit-applicant', data: a })} onDelete={(a) => setModal({ type: 'confirm-delete-applicant', data: a })} />}
@@ -3604,8 +3651,9 @@ export function TenantRecordsPage({ tenants, stalls, ended, violations, search, 
    Utility Billing Page — electricity & water calculator + records
    ============================================================ */
 
-function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport, onPrintList }: {
+function UtilityBillingPage({ bills, tenants, stalls, search, waterRates, onSaveWaterRates, onAdd, onView, onToggleStatus, onDelete, onPrint, onPrintBatch, onRecordMeter, onExport, onPrintList }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[]; search: string;
+  waterRates: WaterRate[]; onSaveWaterRates: (rates: WaterRate[]) => void;
   onAdd: (b: UtilityBill) => void; onView: (b: UtilityBill) => void;
   /* Left out for staff: only an administrator may delete a bill. */
   onToggleStatus: (id: string) => void; onDelete?: (b: UtilityBill) => void;
@@ -3712,7 +3760,7 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
         </div>
       </div>
 
-      <BillCalculator bills={bills} tenants={tenants} stalls={stalls} onAdd={onAdd} onPrint={onPrint} onRecordMeter={onRecordMeter} />
+      <BillCalculator bills={bills} tenants={tenants} stalls={stalls} waterRates={waterRates} onSaveWaterRates={onSaveWaterRates} onAdd={onAdd} onPrint={onPrint} onRecordMeter={onRecordMeter} />
 
       <div className="panel" style={{ marginTop: '20px' }}>
         <div className="panel-header"><h3 className="panel-title">Billing Records</h3></div>
@@ -3794,8 +3842,9 @@ function UtilityBillingPage({ bills, tenants, stalls, search, onAdd, onView, onT
   );
 }
 
-function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter }: {
+function BillCalculator({ bills, tenants, stalls, waterRates, onSaveWaterRates, onAdd, onPrint, onRecordMeter }: {
   bills: UtilityBill[]; tenants: Tenant[]; stalls: Stall[];
+  waterRates: WaterRate[]; onSaveWaterRates: (rates: WaterRate[]) => void;
   onAdd: (b: UtilityBill) => void; onPrint: (b: UtilityBill) => void;
   onRecordMeter: (tenantId: string, type: UtilityType, meterNumber: string) => void;
 }) {
@@ -3822,6 +3871,11 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
   const [previous, setPrevious] = useState('');
   const [current, setCurrent] = useState('');
   const [rate, setRate] = useState(String(UTILITY_PRESETS.Electricity.rate));
+  /* The water tiers as typed, starting from the rates on file. Editing them
+     changes this bill; "Keep these rates" files them for every bill after. */
+  const ratesOnFile = useMemo(() => Object.fromEntries(waterRates.map((r) => [r.id, String(r.rate)])) as Record<WaterRateId, string>, [waterRates]);
+  const [tierInput, setTierInput] = useState<Record<WaterRateId, string>>(ratesOnFile);
+  useEffect(() => { setTierInput(ratesOnFile); }, [ratesOnFile]);
   /* The bill falls due after the period it covers. Moving the period end drags
      the due date with it, until the officer sets one of their own. */
   const [dueDate, setDueDate] = useState(() => isoPlusDays(monthEndIso(currentPeriod()), 15));
@@ -3884,8 +3938,15 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
 
   const prevNum = toAmount(previous);
   const currNum = toAmount(current);
-  const rateNum = toAmount(rate);
-  const { consumption, amount } = computeBill(prevNum, currNum, rateNum);
+  const isWater = type === 'Water';
+  const tierRates: WaterRate[] = WATER_TIERS.map((t) => ({ id: t.id, rate: Math.round(toAmount(tierInput[t.id] ?? '') * 100) / 100 }));
+  const tiersEdited = tierRates.some((r) => r.rate !== waterRates.find((w) => w.id === r.id)?.rate);
+  const tierProblem = WATER_TIERS.some((t) => (tierInput[t.id] ?? '').trim() === '' || isNegative(tierInput[t.id])) ? 'Enter every water rate, zero or more.' : '';
+  const flat = computeBill(prevNum, currNum, toAmount(rate));
+  const consumption = flat.consumption;
+  const water = waterCharge(consumption, tierRates);
+  const rateNum = isWater ? tierRates[0].rate : toAmount(rate);
+  const amount = isWater ? water.amount : flat.amount;
   const readingsInverted = current !== '' && currNum < prevNum;
   /* A live heads-up, not an enforced figure — the bill is not on record yet,
      so nothing here is what actually prints; it just warns the officer before
@@ -3906,7 +3967,8 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
     if (current === '') return 'Enter the current meter reading.';
     if (isNegative(previous) || isNegative(current)) return 'Meter readings cannot be negative.';
     if (readingsInverted) return 'Current reading cannot be lower than the previous reading.';
-    if (rateNum <= 0) return 'Rate per unit must be greater than zero.';
+    if (isWater && tierProblem) return tierProblem;
+    if (!isWater && rateNum <= 0) return 'Rate per unit must be greater than zero.';
     if (!periodStart || !periodEnd) return 'Set the days this billing period covers.';
     if (periodEnd < periodStart) return 'The billing period cannot end before it starts.';
     if (!dueDate) return 'Set the date this bill falls due.';
@@ -3933,6 +3995,7 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
       consumption,
       rate: rateNum,
       amount,
+      ...(isWater ? { waterRates: tierRates } : {}),
       status: 'Unpaid',
       dateIssued: todayIso(),
       dueDate,
@@ -4050,10 +4113,29 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Rate per {preset.unit} (₱)</label>
-            <input className="form-input" type="number" min="0" step="0.01" value={rate} onChange={(e) => { setRate(e.target.value); setError(''); }} />
-          </div>
+          {isWater ? (
+            <fieldset className="form-group water-tiers">
+              <legend className="form-label">Water Rates (₱)</legend>
+              <div className="form-row">
+                {WATER_TIERS.map((t) => (
+                  <div className="form-group" key={t.id}>
+                    <label className="form-label" htmlFor={`water-rate-${t.id}`}>{t.flat ? `${t.label} minimum` : `${t.label}, per cu.m`}</label>
+                    <input id={`water-rate-${t.id}`} className="form-input" type="number" min="0" step="0.01" value={tierInput[t.id] ?? ''} onChange={(e) => { setTierInput((p) => ({ ...p, [t.id]: e.target.value })); setError(''); }} />
+                  </div>
+                ))}
+              </div>
+              <span className="form-hint">
+                {tiersEdited
+                  ? <>These differ from the rates on file and apply to this bill. <button type="button" className="link-btn" disabled={!!tierProblem} onClick={() => onSaveWaterRates(tierRates)}>Keep these rates for every new water bill</button> · <button type="button" className="link-btn" onClick={() => setTierInput(ratesOnFile)}>Go back to the rates on file</button></>
+                  : 'The rates on file. Change any of them here; bills already saved keep the rates they were billed at.'}
+              </span>
+            </fieldset>
+          ) : (
+            <div className="form-group">
+              <label className="form-label">Rate per {preset.unit} (₱)</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={rate} onChange={(e) => { setRate(e.target.value); setError(''); }} />
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Notes</label>
@@ -4074,8 +4156,14 @@ function BillCalculator({ bills, tenants, stalls, onAdd, onPrint, onRecordMeter 
           <div className="calc-row"><span>Previous reading</span><strong>{prevNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row"><span>Current reading</span><strong>{currNum.toLocaleString()} {preset.unit}</strong></div>
           <div className="calc-row highlight"><span>Consumption</span><strong>{consumption.toLocaleString()} {preset.unit}</strong></div>
-          <div className="calc-row"><span>Rate per {preset.unit}</span><strong>{money(rateNum)}</strong></div>
-          <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(amount)}</strong></div>
+          {isWater ? (
+            water.lines.length
+              ? water.lines.map((l) => <div className="calc-row" key={l.id}><span>{waterLineText(l)}</span><strong>{money(l.subtotal)}</strong></div>)
+              : <div className="calc-row"><span>Same reading — no water used</span><strong>{money(0)}</strong></div>
+          ) : (<>
+            <div className="calc-row"><span>Rate per {preset.unit}</span><strong>{money(rateNum)}</strong></div>
+            <div className="calc-row"><span>{consumption.toLocaleString()} {preset.unit} × {money(rateNum)}</span><strong>{money(amount)}</strong></div>
+          </>)}
           {/* The surcharge is always shown, so the tenant can be told what
               lateness costs before it costs it. It joins the total only after
               the due date, and never joins the amount saved to records. */}
@@ -7227,13 +7315,15 @@ function BillDetailView({ bill, onToggleStatus, onPrint, onEdit, onClose }: { bi
           <RecordRow label="Previous Reading" value={`${bill.previousReading.toLocaleString()} ${preset.unit}`} />
           <RecordRow label="Current Reading" value={`${bill.currentReading.toLocaleString()} ${preset.unit}`} />
           <RecordRow label="Consumption" value={`${bill.consumption.toLocaleString()} ${preset.unit}`} />
-          <RecordRow label="Rate" value={`${money(bill.rate)} / ${preset.unit}`} />
+          {!isTieredWater(bill) && <RecordRow label="Rate" value={`${money(bill.rate)} / ${preset.unit}`} />}
         </div>
       </RecordSection>
 
       <RecordSection title="Charges" icon="payments">
         <div className="record-grid">
-          <RecordRow label="Rate" value={`${money(bill.rate)} / ${preset.unit}`} />
+          {isTieredWater(bill)
+            ? waterCharge(bill.consumption, bill.waterRates!).lines.map((l) => <RecordRow key={l.id} label={waterLineText(l)} value={money(l.subtotal)} />)
+            : <RecordRow label="Rate" value={`${money(bill.rate)} / ${preset.unit}`} />}
           <RecordRow label="Usage Charge" value={money(bill.amount)} />
         </div>
         {isOverdue(bill) && (
@@ -8382,8 +8472,12 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
         <div className="receipt-line"><span>Previous Reading</span><strong>{bill.previousReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Current Reading</span><strong>{bill.currentReading.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Consumption</span><strong>{bill.consumption.toLocaleString()} {preset.unit}</strong></div>
-        <div className="receipt-line"><span>Rate per {preset.unit}</span><strong>{money(bill.rate)}</strong></div>
-        <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.amount)}</strong></div>
+        {isTieredWater(bill) ? (
+          waterCharge(bill.consumption, bill.waterRates!).lines.map((l) => <div className="receipt-line" key={l.id}><span>{waterLineText(l)}</span><strong>{money(l.subtotal)}</strong></div>)
+        ) : (<>
+          <div className="receipt-line"><span>Rate per {preset.unit}</span><strong>{money(bill.rate)}</strong></div>
+          <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.amount)}</strong></div>
+        </>)}
         {/* Always on the bill. Until it applies it reads as what a late
             payment would add; a paid bill shows nothing owed. */}
         <div className={`receipt-line${overdue ? ' surcharge' : ''}`}>
