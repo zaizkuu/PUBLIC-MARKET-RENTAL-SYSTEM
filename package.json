@@ -1,7 +1,7 @@
 {
   "name": "public-market-rental-monitoring-system",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "Public Market Rental Monitoring System — Tanauan Public Market, Market Office",
   "main": "electron/main.cjs",
