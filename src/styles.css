@@ -6708,10 +6708,23 @@ ul, ol {
 
   body.printing .print-area {
     display: block !important;
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: static;
     width: 100%;
+  }
+
+  /* Hidden is not gone: the screen behind a receipt still takes up its full
+     height, and the printer fed a blank sheet for every page of it. Take
+     everything but the sheet being printed out of the layout altogether, so
+     the job is exactly as many pages as the sheets themselves. */
+  body.printing #root > :not(.print-area) {
+    display: none !important;
+  }
+
+  html:has(> body.printing),
+  body.printing,
+  body.printing #root {
+    min-height: 0 !important;
+    height: auto !important;
   }
 
   /* A register runs as long as it needs to. Repeating the heading row on each

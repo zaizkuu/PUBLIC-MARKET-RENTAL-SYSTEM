@@ -1561,6 +1561,13 @@ function surchargeAmount(bill: UtilityBill) {
   return isOverdue(bill) ? Math.round(bill.amount * (SURCHARGE_RATES[bill.type] / 100) * 100) / 100 : 0;
 }
 
+/* What the surcharge comes to once it applies, worked out whether or not the
+   bill is late yet. The receipt always shows it, so a tenant paying on time
+   can still see what a late payment would cost. */
+function potentialSurcharge(bill: UtilityBill) {
+  return Math.round(bill.amount * (SURCHARGE_RATES[bill.type] / 100) * 100) / 100;
+}
+
 function amountWithSurcharge(bill: UtilityBill) {
   return Math.round((bill.amount + surchargeAmount(bill)) * 100) / 100;
 }
@@ -8026,7 +8033,7 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
         <div className="receipt-identity">
           <span>Republic of the Philippines</span>
           <span>Municipality of Tanauan, Leyte</span>
-          <strong>Public Market — Market Office</strong>
+          <strong>Public Market</strong>
         </div>
         {label && <span className="receipt-copy">{label}</span>}
       </header>
@@ -8053,19 +8060,23 @@ function BillReceipt({ bill, label, printedBy, printedAt }: { bill: UtilityBill;
         <div className="receipt-line"><span>Consumption</span><strong>{bill.consumption.toLocaleString()} {preset.unit}</strong></div>
         <div className="receipt-line"><span>Rate per {preset.unit}</span><strong>{money(bill.rate)}</strong></div>
         <div className="receipt-line"><span>{bill.consumption.toLocaleString()} {preset.unit} × {money(bill.rate)}</span><strong>{money(bill.amount)}</strong></div>
-        {overdue && (
-          <div className="receipt-line surcharge">
-            <span>Late Surcharge ({SURCHARGE_RATES[bill.type]}%)</span>
-            <strong>+{money(surcharge)}</strong>
-          </div>
-        )}
+        {/* Always on the bill. Until it applies it reads as what a late
+            payment would add; a paid bill shows nothing owed. */}
+        <div className={`receipt-line${overdue ? ' surcharge' : ''}`}>
+          <span>Late Surcharge ({SURCHARGE_RATES[bill.type]}%){overdue ? '' : bill.status === 'Paid' ? ' — not applied' : ' — if paid late'}</span>
+          <strong>{overdue ? `+${money(surcharge)}` : money(bill.status === 'Paid' ? 0 : potentialSurcharge(bill))}</strong>
+        </div>
       </section>
 
       <div className="receipt-total"><span>Total Due</span><strong>{money(overdue ? amountWithSurcharge(bill) : bill.amount)}</strong></div>
       <div className="receipt-status">Status at printing: <strong>{(overdue ? 'Overdue' : bill.status).toUpperCase()}</strong></div>
-      {overdue && (
+      {overdue ? (
         <p className="receipt-surcharge-note">
           Past due since {formatIsoDate(bill.dueDate)}. A {SURCHARGE_RATES[bill.type]}% surcharge of {money(surcharge)} has been added to the billed amount of {money(bill.amount)}.
+        </p>
+      ) : bill.status !== 'Paid' && (
+        <p className="receipt-surcharge-note">
+          {bill.dueDate ? `If unpaid after ${formatIsoDate(bill.dueDate)}, a` : 'If paid late, a'} {SURCHARGE_RATES[bill.type]}% surcharge of {money(potentialSurcharge(bill))} is added, for a total of {money(Math.round((bill.amount + potentialSurcharge(bill)) * 100) / 100)}.
         </p>
       )}
 
