@@ -7552,3 +7552,21 @@ ul, ol {
 .save-problem-actions .material-symbols-outlined {
   font-size: 16px;
 }
+
+/* Water rates on the bill calculator: four tiers side by side, wrapping to
+   two rows on a narrow window. */
+.water-tiers {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.water-tiers > .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: end;
+}
+.water-tiers .link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

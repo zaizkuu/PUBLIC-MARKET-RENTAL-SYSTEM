@@ -213,3 +213,37 @@ test('a 0.3.1 database with a contract keyed in on a tenant opens with LCA ticke
     rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test('water rates and the tiers a water bill was billed at survive a reopen; an older bill has none', { skip: !db && 'better-sqlite3 is not built for this Node' }, async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'pmrms-db-'));
+  const file = join(folder, 'market-records.db');
+  const tiers = [{ id: 'minimum', rate: 498.96 }, { id: '11-20', rate: 54.93 }, { id: '21-30', rate: 63.84 }, { id: '31-up', rate: 73.43 }];
+  const bill = { type: 'Water', stallId: 'FS-1', tenantId: '', tenantName: 'Imee Palita', section: 'Fish', meterNumber: '', period: '2026-10',
+    periodStart: '2026-10-01', periodEnd: '2026-10-31', previousReading: 675, currentReading: 689, consumption: 14, fixedCharge: 0,
+    status: 'Unpaid', dateIssued: '2026-11-15', dueDate: '2026-11-30', notes: '' };
+  try {
+    db.open(file);
+    db.save({
+      state: {
+        waterRates: [{ id: 'minimum', rate: 520 }, ...tiers.slice(1)],
+        utilities: [
+          { ...bill, id: 'UTL-001', rate: 498.96, amount: 718.68, waterRates: tiers },
+          { ...bill, id: 'UTL-002', rate: 25, amount: 350 },
+        ],
+      },
+      idCounters: {},
+    });
+    db.close();
+
+    db.open(file);
+    const { state } = db.load();
+    assert.deepEqual(state.waterRates, [{ id: 'minimum', rate: 520 }, ...tiers.slice(1)]);
+    assert.deepEqual(state.utilities[0].waterRates, tiers);
+    assert.equal(state.utilities[0].amount, 718.68);
+    assert.equal('waterRates' in state.utilities[1], false);
+    assert.equal('waterRatesJson' in state.utilities[1], false);
+  } finally {
+    db.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});

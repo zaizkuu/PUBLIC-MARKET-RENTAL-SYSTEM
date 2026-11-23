@@ -240,6 +240,15 @@ CREATE TABLE IF NOT EXISTS section_rents (
   position INTEGER NOT NULL DEFAULT 0
 );
 
+/* The tiered water rates in force: the 0–10 cu.m minimum charge and the rate
+   per cu.m above it (src/market/waterRates.ts). A bill keeps its own copy in
+   utility_bills.waterRatesJson, so changing these never rewrites one. */
+CREATE TABLE IF NOT EXISTS water_rates (
+  id       TEXT PRIMARY KEY,
+  rate     REAL NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_rent_payments_tenant ON rent_payments(tenantId);
 CREATE INDEX IF NOT EXISTS idx_verif_items_control  ON verification_items(controlNo);
 
@@ -277,7 +286,7 @@ const TABLES = {
   applicants: ['id', 'name', 'phone', 'stallType', 'status', 'dateApplied'],
   utilities: ['id', 'type', 'stallId', 'tenantId', 'tenantName', 'section', 'period', 'periodStart', 'periodEnd',
     'meterNumber', 'previousReading', 'currentReading', 'consumption', 'rate', 'fixedCharge', 'amount', 'status',
-    'dateIssued', 'dueDate', 'notes'],
+    'dateIssued', 'dueDate', 'notes', 'waterRatesJson'],
   violations: ['id', 'tenant', 'issue', 'status', 'points', 'offence', 'dateRecorded', 'dateResolved', 'notes'],
   logs: ['id', 'date', 'time', 'type', 'details', 'recordedBy', 'visitorCount', 'visitors'],
   activities: ['id', 'icon', 'iconColor', 'text', 'highlight', 'time'],
@@ -285,10 +294,11 @@ const TABLES = {
   endedTenancies: ['id', 'name', 'phone', 'barangay', 'stallId', 'section', 'rent', 'status', 'applicantId',
     'rentDueDay', 'meterElectricity', 'meterWater', 'endedOn', 'endReason', 'endedBy', 'keepersJson', 'paymentsJson'],
   sectionRents: ['id', 'rent'],
+  waterRates: ['id', 'rate'],
 };
 
 /* Some state keys map to a differently named table. */
-const TABLE_NAME = { utilities: 'utility_bills', endedTenancies: 'ended_tenancies', sectionRents: 'section_rents' };
+const TABLE_NAME = { utilities: 'utility_bills', endedTenancies: 'ended_tenancies', sectionRents: 'section_rents', waterRates: 'water_rates' };
 const tableOf = (key) => TABLE_NAME[key] || key;
 
 /* Row order is normally kept in `position`. The officers table cannot use that
@@ -345,6 +355,9 @@ const ADDED_COLUMNS = [
   ['stalls', 'ownRent', 'REAL'],
   // LCA: the stall's Lease of Contract Agreement is signed, ticked beside BP.
   ['stalls', 'lca', 'INTEGER NOT NULL DEFAULT 0'],
+  // The tier rates a water bill was worked out on, as JSON; '' on a bill from
+  // before tiered water billing.
+  ['utility_bills', 'waterRatesJson', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 function addMissingColumns() {
@@ -476,6 +489,7 @@ function readAll() {
     return row;
   });
   state.sectionRents = state.sectionRents.map((r) => ({ id: r.id, rent: Number(r.rent) || 0 }));
+  state.waterRates = state.waterRates.map((r) => ({ id: r.id, rate: Number(r.rate) || 0 }));
 
   const requirements = db.prepare('SELECT * FROM applicant_requirements ORDER BY applicantId, position').all();
   state.applicants = state.applicants.map((applicant) => ({
@@ -504,6 +518,9 @@ function readAll() {
   state.utilities = state.utilities.map((bill) => {
     const row = { ...bill };
     for (const field of numeric) row[field] = Number(row[field]) || 0;
+    const tiers = row.waterRatesJson ? parsed(row.waterRatesJson, [], true) : [];
+    if (tiers.length) row.waterRates = tiers;
+    delete row.waterRatesJson;
     return row;
   });
 
@@ -575,6 +592,10 @@ function bindable(record, columns, position, orderColumn = 'position') {
       paymentsJson: JSON.stringify(record.rentPayments && typeof record.rentPayments === 'object' ? record.rentPayments : {}),
       keepersJson: JSON.stringify(Array.isArray(record.keepers) ? record.keepers : []),
     };
+  }
+  // A tiered water bill carries the rates it was billed at.
+  if (record && columns.includes('waterRatesJson')) {
+    record = { ...record, waterRatesJson: Array.isArray(record.waterRates) && record.waterRates.length ? JSON.stringify(record.waterRates) : '' };
   }
   // A visitation's names are a list; the column holds one per line, since a
   // name written surname first carries a comma of its own.
