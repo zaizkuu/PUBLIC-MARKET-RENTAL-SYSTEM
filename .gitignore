@@ -10,6 +10,10 @@ release/
 # Build metadata
 *.tsbuildinfo
 
+# Emitted by `tsc -b` from tsconfig.node.json; vite.config.ts is the source
+vite.config.js
+vite.config.d.ts
+
 # Local knowledge-graph output
 graphify-out/
 
