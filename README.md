@@ -60,6 +60,16 @@ restoring a backup or resetting the records never changes who can sign in.
 The logic is in `src/security/accounts.ts`; the screens are
 `src/security/LoginScreen.tsx` and `src/security/AccountSettings.tsx`.
 
+## User manual
+
+The operator's manual is one document: `docs/manual.html` is the source, its
+screenshots are in `docs/manual-images/`, and `docs/PMRMS_User_Manual.pdf` is
+the printed copy. After editing the HTML, rebuild the PDF with
+
+```bash
+node scripts/generate-manual-pdf.mjs
+```
+
 ## Build
 
 ```bash

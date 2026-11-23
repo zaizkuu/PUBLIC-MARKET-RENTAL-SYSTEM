@@ -354,6 +354,11 @@ code, .key {
   line-height: 1.4;
 }
 .figure-cap b { color: var(--ink); font-weight: 800; }
+.figure-body.shot { padding: 0; background: var(--surface); }
+.figure-body.shot img { display: block; width: 100%; height: auto; }
+.shot-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+.shot-pair .figure { margin-top: 0; }
+kbd { font-family: inherit; font-size: 0.86em; font-weight: 700; border: 1px solid #c9cfdd; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: #fff; }
 
 /* ============================================================
    STEP LISTS
@@ -524,8 +529,8 @@ code, .key {
   <div><span class="cover-badge"><span class="material-symbols-outlined">menu_book</span> Operator&rsquo;s User Manual</span></div>
 
   <div class="cover-strip">
-    <div class="cover-stat"><b>235</b><span>Stalls on record</span></div>
-    <div class="cover-stat"><b>4</b><span>Market sections</span></div>
+    <div class="cover-stat"><b>247</b><span>Stalls on record</span></div>
+    <div class="cover-stat"><b>8</b><span>Market sections</span></div>
     <div class="cover-stat"><b>15</b><span>Chapters</span></div>
     <div class="cover-stat"><b>100%</b><span>Offline operation</span></div>
   </div>
@@ -590,6 +595,7 @@ code, .key {
   <thead><tr><th>Version</th><th>Date</th><th>Prepared by</th><th>Summary of change</th></tr></thead>
   <tbody>
     <tr><td><strong>1.0</strong></td><td>August 2026</td><td>System Development Team</td><td>First controlled release. Covers all fifteen modules, the four appendices and the seeded 2026 stall register.</td></tr>
+    <tr><td><strong>1.1</strong></td><td>November 2026</td><td>System Development Team</td><td>Adds signing in (§1.8 – §1.10, §14.3), the Market Floor Plan (Chapter 11, replacing the retired Market Assistant) and the 2nd floor (§4.7). Rewrites Violations (Chapter 8) for the Section 22/23 list, offence counting and reprimands. Updates the stall register to the October 2026 Market Stall Directory.</td></tr>
   </tbody>
 </table>
 
@@ -614,6 +620,9 @@ code, .key {
   <div class="toc-item toc-sub"><span class="toc-num">1.5</span><span class="toc-label">Key features at a glance</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">1.6</span><span class="toc-label">System requirements</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">1.7</span><span class="toc-label">Installing and first launch</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.8</span><span class="toc-label">Signing in</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.9</span><span class="toc-label">Locking the screen and logging out</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">1.10</span><span class="toc-label">Forgotten password and lock-outs</span></div>
   <div class="toc-item"><span class="toc-num">2</span><span class="toc-label">Interface &amp; Navigation</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">2.1</span><span class="toc-label">Application layout</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">2.2</span><span class="toc-label">Sidebar navigation</span></div>
@@ -635,6 +644,7 @@ code, .key {
   <div class="toc-item toc-sub"><span class="toc-num">4.4</span><span class="toc-label">Adding a new stall</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">4.5</span><span class="toc-label">Stall details &amp; editing</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">4.6</span><span class="toc-label">Releasing &amp; deleting a stall</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">4.7</span><span class="toc-label">The 2nd floor</span></div>
   <div class="toc-item"><span class="toc-num">5</span><span class="toc-label">Tenant Records &amp; Rent</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">5.1</span><span class="toc-label">The tenant register</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">5.2</span><span class="toc-label">Adding &amp; editing a tenant</span></div>
@@ -654,9 +664,10 @@ code, .key {
   <div class="toc-item toc-sub"><span class="toc-num">7.5</span><span class="toc-label">Receipts &amp; batch printing</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">7.6</span><span class="toc-label">Late surcharges</span></div>
   <div class="toc-item"><span class="toc-num">8</span><span class="toc-label">Violations Register</span></div>
-  <div class="toc-item toc-sub"><span class="toc-num">8.1</span><span class="toc-label">Overview &amp; demerit points</span></div>
-  <div class="toc-item toc-sub"><span class="toc-num">8.2</span><span class="toc-label">Standard citation issues</span></div>
-  <div class="toc-item toc-sub"><span class="toc-num">8.3</span><span class="toc-label">Recording &amp; resolving a citation</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">8.1</span><span class="toc-label">The register at a glance</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">8.2</span><span class="toc-label">The violation list</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">8.3</span><span class="toc-label">Recording a citation</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">8.4</span><span class="toc-label">Reprimanding, editing &amp; the tenant&rsquo;s record</span></div>
 
   <div class="toc-part">Part III — Reporting &amp; Intelligence</div>
   <div class="toc-item"><span class="toc-num">9</span><span class="toc-label">Analytics &amp; Operations Report</span></div>
@@ -667,10 +678,12 @@ code, .key {
   <div class="toc-item toc-sub"><span class="toc-num">10.1</span><span class="toc-label">Log types</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">10.2</span><span class="toc-label">What the system logs by itself</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">10.3</span><span class="toc-label">Manual entries, filtering &amp; export</span></div>
-  <div class="toc-item"><span class="toc-num">11</span><span class="toc-label">Market Assistant (AI)</span></div>
-  <div class="toc-item toc-sub"><span class="toc-num">11.1</span><span class="toc-label">How the two-tier engine works</span></div>
-  <div class="toc-item toc-sub"><span class="toc-num">11.2</span><span class="toc-label">What you can ask</span></div>
-  <div class="toc-item toc-sub"><span class="toc-num">11.3</span><span class="toc-label">Reading an answer</span></div>
+  <div class="toc-item"><span class="toc-num">11</span><span class="toc-label">Market Floor Plan</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.1</span><span class="toc-label">Reading the plan</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.2</span><span class="toc-label">Finding a stall</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.3</span><span class="toc-label">Colours and highlighting</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.4</span><span class="toc-label">Moving around the plan</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">11.5</span><span class="toc-label">The 2nd floor on the plan</span></div>
 
   <div class="toc-part">Part IV — Administration</div>
   <div class="toc-item"><span class="toc-num">12</span><span class="toc-label">Officers &amp; Organizational Board</span></div>
@@ -684,6 +697,7 @@ code, .key {
   <div class="toc-item"><span class="toc-num">14</span><span class="toc-label">Settings &amp; Data Management</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">14.1</span><span class="toc-label">System information</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">14.2</span><span class="toc-label">Export, import &amp; reset</span></div>
+  <div class="toc-item toc-sub"><span class="toc-num">14.3</span><span class="toc-label">Your account &amp; sign-in security</span></div>
   <div class="toc-item"><span class="toc-num">15</span><span class="toc-label">Support &amp; Help Center</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">15.1</span><span class="toc-label">Backup &amp; restore</span></div>
   <div class="toc-item toc-sub"><span class="toc-num">15.2</span><span class="toc-label">Built-in FAQ &amp; contacts</span></div>
@@ -906,14 +920,14 @@ code, .key {
 <h3>1.5 Key features at a glance</h3>
 <div class="grid-4">
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">dashboard</span> Dashboard</div><p>Live occupancy, earnings, collection progress and the last 50 actions.</p></div>
-  <div class="card"><div class="card-title"><span class="material-symbols-outlined">storefront</span> Stalls</div><p>Register of all 235 stalls with status, permit and inspection tracking.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">storefront</span> Stalls</div><p>Register of all 247 stalls on both floors, with status, permit and inspection tracking.</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">groups</span> Tenants</div><p>Lease terms, stallkeepers, meters and the monthly rent ledger.</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">person_add</span> Applicants</div><p>Intake through document checks to approval and stall assignment.</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">bolt</span> Utility Billing</div><p>Meter-based electricity and water billing with batch receipts.</p></div>
-  <div class="card"><div class="card-title"><span class="material-symbols-outlined">gavel</span> Violations</div><p>Citations, demerit points, resolution and repeat-offender ranking.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">gavel</span> Violations</div><p>Section 22/23 citations, offence counting, demerit points and reprimands.</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">analytics</span> Analytics</div><p>Seven-section executive report for the Mayor and Market Board.</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">menu_book</span> Logbook</div><p>Automatic, timestamped audit trail of every recorded action.</p></div>
-  <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">forum</span> Assistant</div><p>Ask in plain language; figures come from the records, not from a model.</p></div>
+  <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">map</span> Floor Plan</div><p>3D plan of both floors with every stall, its tenant and its status.</p></div>
   <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">account_tree</span> Officers</div><p>Organisational board and directory of market officials.</p></div>
   <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">fact_check</span> Verification</div><p>Numbered clearance slips for BPLO permit issuance and renewal.</p></div>
   <div class="card gold"><div class="card-title"><span class="material-symbols-outlined">backup</span> Backup</div><p>One-click export and restore of the entire database as a file.</p></div>
@@ -925,7 +939,7 @@ code, .key {
     <thead><tr><th style="width:38%">Requirement</th><th>Specification</th></tr></thead>
     <tbody>
       <tr><td><strong>Operating system</strong></td><td>Windows 10 or later, 64-bit</td></tr>
-      <tr><td><strong>Memory</strong></td><td>4 GB minimum; 8 GB if the AI assistant model is installed</td></tr>
+      <tr><td><strong>Memory</strong></td><td>4 GB minimum; 8 GB recommended for the 3D floor plan</td></tr>
       <tr><td><strong>Disk space</strong></td><td>~400 MB for the application; data grows a few MB per year</td></tr>
       <tr><td><strong>Display</strong></td><td>1280 × 720 minimum; 1920 × 1080 recommended</td></tr>
       <tr><td><strong>Printer</strong></td><td>Any A4-capable printer, portrait orientation</td></tr>
@@ -938,7 +952,6 @@ code, .key {
       <div style="font-size:8.8pt; line-height:1.55">
         <div><strong>Records:</strong> <code>%APPDATA%\Tanauan Public Market System</code></div>
         <div><strong>Backups you download:</strong> your Downloads folder, as <code>pmrms-backup-YYYY-MM-DD.json</code></div>
-        <div><strong>Optional AI model:</strong> <code>resources/models</code> beside the application</div>
       </div>
     </div>
     <div class="callout callout-tip" style="margin-bottom:0"><span class="material-symbols-outlined">lightbulb</span><div>The system runs happily on the office&rsquo;s existing desktop. It is the <em>printer</em> that most often needs attention — set it to A4 portrait once and receipts will line up every time (§2.6).</div></div>
@@ -948,11 +961,86 @@ code, .key {
 <h3>1.7 Installing and first launch</h3>
 <div class="steps">
   <div class="step"><div class="step-title">Run the installer</div>Launch <code>TanauanPublicMarketSystem-Setup-1.0.0.exe</code> and accept the default installation folder. A desktop shortcut and Start Menu entry named <strong>Tanauan Public Market System</strong> are created. A portable build is also available if the workstation forbids installation.</div>
-  <div class="step"><div class="step-title">Open the application</div>The Dashboard appears immediately. There is no account to create and no password prompt — access control is the physical security of the office workstation.</div>
-  <div class="step"><div class="step-title">Confirm the seeded register</div>The system ships with the market&rsquo;s <strong>2026 occupancy survey</strong> already loaded: 235 stalls across four sections. Open <strong>Stall Management</strong> and confirm the count matches the office&rsquo;s own sheet before you begin entering new records.</div>
+  <div class="step"><div class="step-title">Open the application and choose a password</div>The sign-in page opens. On the first start it asks for a new password and then shows a recovery code to write down (§1.8).</div>
+  <div class="step"><div class="step-title">Confirm the seeded register</div>The system ships with the office&rsquo;s <strong>Market Stall Directory</strong> already loaded: 194 ground-floor stalls in seven sections, plus the 53 stalls of the 2nd floor (§4.7), 247 in all. Open <strong>Stall Management</strong> and confirm the count matches the office&rsquo;s own sheet before you begin entering new records.</div>
   <div class="step"><div class="step-title">Set your printer</div>Print any list once and set the printer to <strong>A4, Portrait, default margins, scaling off</strong>. Windows remembers this for later print jobs.</div>
   <div class="step"><div class="step-title">Take a first backup</div>Go to <strong>Support → Download Full Backup</strong>. Keep this untouched file as your known-good starting point.</div>
 </div>
+
+
+<h3>1.8 Signing in</h3>
+<p>The system opens on a sign-in page every time it starts. It has <strong>one account</strong>: <strong>Engr. Luz M. Maderazo</strong>, Market Supervisor III, who is the system&rsquo;s <strong>Administrator</strong>. Because there is nobody else to choose between, the page opens straight on her password. Accounts are not added or removed from inside the application.</p>
+
+<h4>The first time</h4>
+<p>On a new installation the account has no password yet, so the page asks for one instead of signing in.</p>
+<div class="steps">
+  <div class="step"><div class="step-title">Choose a password</div>Type it in <strong>New password</strong> and again in <strong>Type it again</strong>. The checklist under the boxes ticks itself as each rule is met: <em>at least 8 characters</em>, <em>a letter and a number</em>, <em>does not contain your name</em>, <em>is not a common password</em>, and <em>both boxes match</em>. The eye button shows what you typed.</div>
+  <div class="step"><div class="step-title">Click <code>Save Password and Sign In</code></div>The password is saved and the next page shows your <strong>recovery code</strong>.</div>
+  <div class="step"><div class="step-title">Write the recovery code down</div>The code has four groups of four characters (<code>XXXX-XXXX-XXXX-XXXX</code>). Write it on paper and keep it somewhere safe in the office. Tick <strong>I have written this code down and will keep it safe</strong>, then click <code>Continue to the System</code>.</div>
+</div>
+<div class="shot-pair">
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/signin-create.jpg" alt="Creating the password"/></div>
+  <div class="figure-cap"><b>Figure 1.3 — Creating the password.</b> The first sign-in. Each rule is ticked as soon as the password meets it.</div>
+</div>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/signin-recovery-code.jpg" alt="The recovery code"/></div>
+  <div class="figure-cap"><b>Figure 1.4 — The recovery code.</b> Shown once only. Continue stays greyed out until the box is ticked. The code in this picture is an example, not a real one.</div>
+</div>
+</div>
+<div class="callout callout-danger"><span class="material-symbols-outlined">error</span><div><strong>The recovery code is the only way back in.</strong> With a single account there is no other administrator who can set a new password for you. Keep the code on paper, away from the computer, and replace it whenever a new one is issued.</div></div>
+
+<div class="grid-2">
+  <div>
+    <h4 style="margin-top:0">Every day after that</h4>
+    <p>Type the password and press <kbd>Enter</kbd> or click <code>Sign In</code>. The Dashboard opens. A wrong password shows a red message that says how many tries are left before the account locks.</p>
+    <p>Five wrong passwords in a row lock the account for a while (§1.10). If the password is forgotten, click <strong>Forgot password?</strong> under the button.</p>
+  </div>
+  <div><div class="figure">
+  <div class="figure-body shot"><img src="manual-images/signin-wrong-password.jpg" alt="A wrong password"/></div>
+  <div class="figure-cap"><b>Figure 1.5 — A wrong password.</b> The message counts down the tries left. The fifth wrong password in a row locks the account for 5 minutes.</div>
+</div></div>
+</div>
+
+<h3>1.9 Locking the screen and logging out</h3>
+<p>Your name and initials sit in the circle at the top right of every page. Click it to open the account menu.</p>
+<div class="grid-2">
+  <div><div class="figure">
+  <div class="figure-body shot"><img src="manual-images/signin-account-menu.jpg" alt="The account menu"/></div>
+  <div class="figure-cap"><b>Figure 1.6 — The account menu.</b> Opened from the initials at the top right.</div>
+</div></div>
+  <div>
+    <table class="compact" style="margin-top:0">
+      <thead><tr><th style="width:38%">Menu item</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Account &amp; Password</strong></td><td>Opens the <strong>Settings</strong> page, whose first panel is your account; the password is changed there (§14.3).</td></tr>
+        <tr><td><strong>Lock Screen</strong></td><td>Covers the page with a password box. Whatever was on screen, even a half-filled form, is still there after you unlock.</td></tr>
+        <tr><td><strong>Log Out</strong></td><td>Asks <em>Log Out?</em> first, then signs out and shows the sign-in page. Every record is already saved.</td></tr>
+      </tbody>
+    </table>
+    <p>The screen also <strong>locks itself</strong> when nobody has used the system for a while: 15 minutes unless the time was changed in <strong>Settings → Sign-in Security</strong> (§14.3). On the locked screen, type the password and click <code>Unlock</code>, or choose <strong>Sign out instead</strong>.</p>
+  </div>
+</div>
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Lock, don&rsquo;t log out, when you step away.</strong> Locking keeps your place. Logging out is for the end of the day.</div></div>
+
+<h3>1.10 Forgotten password and lock-outs</h3>
+<div class="grid-2">
+  <div>
+    <h4 style="margin-top:0">Forgot the password</h4>
+    <div class="steps">
+      <div class="step"><div class="step-title">Click <strong>Forgot password?</strong></div>It is under the <code>Sign In</code> button, and on the locked screen.</div>
+      <div class="step"><div class="step-title">Type the recovery code</div>The one written down at the first sign-in, or the latest one issued since.</div>
+      <div class="step"><div class="step-title">Choose a new password</div>Type it twice and click <code>Reset Password</code>. You are signed in, and a <strong>new recovery code</strong> is shown. The old code no longer works, so write the new one down in its place.</div>
+    </div>
+    <h4>Too many wrong passwords</h4>
+    <p>Five wrong passwords in a row lock the account for <strong>5 minutes</strong>. Each further round of five doubles the wait, up to <strong>one hour</strong>. The lock stays even if the computer is restarted. Wait for the time shown, then try again, or use the recovery code.</p>
+  </div>
+  <div><div class="figure">
+  <div class="figure-body shot"><img src="manual-images/signin-forgot.jpg" alt="Resetting with the recovery code"/></div>
+  <div class="figure-cap"><b>Figure 1.7 — Resetting with the recovery code.</b> Opened from <em>Forgot password?</em>.</div>
+</div></div>
+</div>
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Everything is written to the Logbook.</strong> Each sign-in, sign-out, lock, wrong password and password change is recorded as a <em>Security</em> entry (Chapter 10), and every other logbook entry records who was signed in. Receipts and verification slips print the signed-in officer&rsquo;s name.</div></div>
 
 <!-- ============================ CHAPTER 2 ============================ -->
 <div class="chapter-header">
@@ -1096,18 +1184,17 @@ code, .key {
     <tr><td><strong>Tenant Records</strong></td><td><span class="material-symbols-outlined icon-inline">groups</span></td><td>Stallholders and the rent ledger</td><td>collect rent, edit lease terms, add a stallkeeper</td></tr>
     <tr><td><strong>Applicants</strong></td><td><span class="material-symbols-outlined icon-inline">person_add</span></td><td>Application pipeline</td><td>tick requirements, approve, assign a vacant stall</td></tr>
     <tr><td><strong>Utility Billing</strong></td><td><span class="material-symbols-outlined icon-inline">bolt</span></td><td>Electricity and water billing</td><td>enter meter readings, print or batch-print receipts</td></tr>
-    <tr><td><strong>Violations</strong></td><td><span class="material-symbols-outlined icon-inline">gavel</span></td><td>Citation register</td><td>record an offence, resolve a case, check repeat offenders</td></tr>
+    <tr><td><strong>Violations</strong></td><td><span class="material-symbols-outlined icon-inline">gavel</span></td><td>Citation register</td><td>record an offence, mark it reprimanded, see who carries open points</td></tr>
     <tr><td><strong>Analytics</strong></td><td><span class="material-symbols-outlined icon-inline">analytics</span></td><td>Executive operations report</td><td>prepare the report for the Mayor or the Market Board</td></tr>
     <tr><td><strong>Logbook</strong></td><td><span class="material-symbols-outlined icon-inline">menu_book</span></td><td>Audit trail and daily ledger</td><td>prove what was done, when, and log an inspection by hand</td></tr>
     <tr><td><strong>Officers</strong></td><td><span class="material-symbols-outlined icon-inline">account_tree</span></td><td>Organisational board</td><td>appoint, transfer or retire a market official</td></tr>
-    <tr><td><strong>Assistant</strong></td><td><span class="material-symbols-outlined icon-inline">forum</span></td><td>Offline querying assistant</td><td>ask a question instead of building a filter</td></tr>
   </tbody>
 </table>
 
 <div class="grid-3">
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">settings</span> Settings</div><p>System information, record counts, export, import and reset to defaults (Chapter 14).</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">help</span> Support</div><p>Full backup and restore, the built-in FAQ and developer contacts (Chapter 15).</p></div>
-  <div class="card"><div class="card-title"><span class="material-symbols-outlined">logout</span> Log Out</div><p>Opens a confirmation dialog. Records are already saved, so nothing is lost.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">logout</span> Log Out</div><p>Asks first, then signs out and shows the sign-in page. Records are already saved, so nothing is lost (§1.9).</p></div>
 </div>
 
 <h3>2.3 Top bar &amp; search</h3>
@@ -1160,7 +1247,7 @@ code, .key {
     <tr><td><span class="badge badge-blue">Pending Applicants</span></td><td>An application has all six documents and is awaiting review</td><td>Approving or rejecting the application (§6.3)</td></tr>
     <tr><td><span class="badge badge-amber">Expiring Leases</span></td><td>A tenant is flagged <em>Expiring Soon</em></td><td>Renewing the lease terms on the tenant record</td></tr>
     <tr><td><span class="badge badge-gray">Maintenance</span></td><td>A stall is currently set to <em>Maintenance</em></td><td>Returning the stall to <em>Available</em> once work is done</td></tr>
-    <tr><td><span class="badge badge-red">Open Violations</span></td><td>A citation is still unresolved</td><td>Setting the citation to <em>Resolved</em> (§8.3)</td></tr>
+    <tr><td><span class="badge badge-red">Open Violations</span></td><td>A citation is still unresolved</td><td>Marking the citation <em>Reprimanded</em> (§8.4)</td></tr>
   </tbody>
 </table>
 
@@ -1216,6 +1303,12 @@ code, .key {
 
 <p>The Dashboard answers four questions without a single click: <em>how full is the market</em>, <em>how much has been collected</em>, <em>what is waiting for an officer</em>, and <em>what happened recently</em>. Everything on it is recomputed from live records each time it is opened — there is no refresh button because there is nothing to refresh.</p>
 
+<p>The page opens on the <strong>Market floor plan</strong>: a 3D picture of the market building with every stall in place and named. It has a chapter of its own (Chapter 11). Below the plan come the statistics cards, the earnings panel, the occupancy chart and the activity feed described in this chapter.</p>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/dashboard-floor-plan.jpg" alt="The Dashboard as it opens"/></div>
+  <div class="figure-cap"><b>Figure 3.0 — The Dashboard as it opens.</b> The floor plan fills the top of the page. Scroll down for the cards and panels in §3.1 – §3.4.</div>
+</div>
+
 <div class="figure">
   <div class="figure-body">
     <svg viewBox="0 0 720 244" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schematic of the dashboard showing five statistic cards, the earnings panel, the occupancy chart and the activity feed">
@@ -1223,7 +1316,7 @@ code, .key {
         <!-- stat cards -->
         <g text-anchor="middle">
           <rect x="2"   y="14" width="140" height="48" rx="7" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.2"/>
-          <text x="72"  y="34" font-size="12" font-weight="800" fill="#16307e">235</text>
+          <text x="72"  y="34" font-size="12" font-weight="800" fill="#16307e">247</text>
           <text x="72"  y="48" font-size="8.2" fill="#4b5468">Total Stalls</text>
           <text x="72"  y="58" font-size="7.4" fill="#8b93a5">by status breakdown</text>
 
@@ -1320,78 +1413,18 @@ code, .key {
 </div>
 
 <h3>3.3 Stall occupancy chart</h3>
-<p>A stacked bar chart breaks the register down by <strong>market section</strong> and colours each bar by stall status. Figure 3.2 reproduces it from the seeded 2026 survey, which is what you will see before any new records are entered.</p>
+<p>A stacked bar chart breaks the register down by <strong>section</strong>, the 2nd floor included, and colours each bar by stall status. Figure 3.2 shows it as the system is first loaded, before any new records are entered.</p>
 
 <div class="figure">
-  <div class="figure-body plain">
-    <svg viewBox="0 0 720 214" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stacked bar chart of stall status by market section for the 2026 register">
-      <g font-family="Inter,sans-serif">
-        <!-- legend -->
-        <g font-size="8.6" fill="#4b5468">
-          <rect x="0"   y="6" width="9" height="9" rx="2" fill="#1d4ed8"/><text x="13"  y="14">Occupied · 156</text>
-          <rect x="100" y="6" width="9" height="9" rx="2" fill="#d97706"/><text x="113" y="14">Temporarily Closed · 47</text>
-          <rect x="248" y="6" width="9" height="9" rx="2" fill="#16a34a"/><text x="261" y="14">Available · 24</text>
-          <rect x="348" y="6" width="9" height="9" rx="2" fill="#dc2626"/><text x="361" y="14">Closed · 7</text>
-          <rect x="422" y="6" width="9" height="9" rx="2" fill="#64748b"/><text x="435" y="14">Abandoned · 1</text>
-        </g>
-        <text x="718" y="14" font-size="9.6" font-weight="800" fill="#16307e" text-anchor="end">235 stalls · 66.4% occupied</text>
-        <line x1="0" y1="24" x2="718" y2="24" stroke="#dfe3ec"/>
-
-        <!-- row 1 : Vegetables & Fruits (89) -->
-        <text x="124" y="48" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Vegetables &amp; Fruits</text>
-        <text x="124" y="60" font-size="8.2" fill="#8b93a5" text-anchor="end">89 stalls · FV</text>
-        <rect x="136"   y="34" width="345.4" height="30" fill="#1d4ed8"/>
-        <rect x="481.4" y="34" width="118.9" height="30" fill="#d97706"/>
-        <rect x="600.3" y="34" width="39.7"  height="30" fill="#dc2626"/>
-        <text x="308"   y="53" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">61</text>
-        <text x="540"   y="53" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">21</text>
-        <text x="620"   y="53" font-size="9" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
-        <text x="650"   y="53" font-size="10.4" font-weight="800" fill="#16307e">68.5%</text>
-
-        <!-- row 2 : Meat & Poultry (68) -->
-        <text x="124" y="92" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Meat &amp; Poultry</text>
-        <text x="124" y="104" font-size="8.2" fill="#8b93a5" text-anchor="end">68 stalls · MS, CS</text>
-        <rect x="136"   y="78" width="186.9" height="30" fill="#1d4ed8"/>
-        <rect x="322.9" y="78" width="101.9" height="30" fill="#d97706"/>
-        <rect x="424.8" y="78" width="90.6"  height="30" fill="#16a34a"/>
-        <rect x="515.4" y="78" width="5.7"   height="30" fill="#64748b"/>
-        <text x="229"   y="97" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">33</text>
-        <text x="374"   y="97" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">18</text>
-        <text x="470"   y="97" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">16</text>
-        <text x="650"   y="97" font-size="10.4" font-weight="800" fill="#16307e">48.5%</text>
-
-        <!-- row 3 : Fish & Seafood (63) -->
-        <text x="124" y="136" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Fish &amp; Seafood</text>
-        <text x="124" y="148" font-size="8.2" fill="#8b93a5" text-anchor="end">63 stalls · FS</text>
-        <rect x="136"   y="122" width="277.5" height="30" fill="#1d4ed8"/>
-        <rect x="413.5" y="122" width="34.0"  height="30" fill="#d97706"/>
-        <rect x="447.5" y="122" width="45.3"  height="30" fill="#16a34a"/>
-        <text x="274"   y="141" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">49</text>
-        <text x="430"   y="141" font-size="8.6" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
-        <text x="470"   y="141" font-size="9" font-weight="700" fill="#ffffff" text-anchor="middle">8</text>
-        <text x="650"   y="141" font-size="10.4" font-weight="800" fill="#16307e">77.8%</text>
-
-        <!-- row 4 : Dry Goods (15) -->
-        <text x="124" y="180" font-size="9.4" font-weight="700" fill="#14192e" text-anchor="end">Dry Goods</text>
-        <text x="124" y="192" font-size="8.2" fill="#8b93a5" text-anchor="end">15 stalls · KK</text>
-        <rect x="136"   y="166" width="73.6" height="30" fill="#1d4ed8"/>
-        <rect x="209.6" y="166" width="11.3" height="30" fill="#d97706"/>
-        <text x="172"   y="185" font-size="9.6" font-weight="700" fill="#ffffff" text-anchor="middle">13</text>
-        <text x="650"   y="185" font-size="10.4" font-weight="800" fill="#16307e">86.7%</text>
-
-        <line x1="136" y1="204" x2="718" y2="204" stroke="#dfe3ec"/>
-        <text x="136" y="212" font-size="7.8" fill="#8b93a5">Bar length is the section&rsquo;s share of the largest section. Percentage at right is occupied ÷ section total.</text>
-      </g>
-    </svg>
-  </div>
-  <div class="figure-cap"><b>Figure 3.2 — Occupancy by section, 2026 register.</b> Meat &amp; Poultry is the office&rsquo;s standing problem: 16 outright vacancies and 18 stalls temporarily closed against only 33 occupied. Dry Goods, by contrast, is effectively full.</div>
+  <div class="figure-body shot"><img src="manual-images/dashboard-occupancy.jpg" alt="Stall occupancy chart" style="max-width:80%;margin:0 auto"/></div>
+  <div class="figure-cap"><b>Figure 3.2 — Occupancy by section.</b> Dried Fish/Eggs carries the most vacancies on the ground floor (six of them are the unnamed open area, stalls 207&ndash;212). The 2nd floor is the only section with stalls temporarily closed or abandoned. <code>Full Report</code> opens Analytics (Chapter 9).</div>
 </div>
 
 <h3>3.4 Recent activity &amp; global search</h3>
 <div class="grid-2">
   <div>
     <h4><span class="material-symbols-outlined">history</span>Recent activity feed</h4>
-    <p>The last <strong>50</strong> system operations, newest first. Each row carries a colour-coded action icon, a plain-language description (&ldquo;Rent collected from DUZON, DULCE CORAZON for Stall MS-01&rdquo;) and a relative timestamp (&ldquo;Just now&rdquo;, &ldquo;5 minutes ago&rdquo;). The full history lives in the Logbook (Chapter 10) — this feed is only the recent tail of it.</p>
+    <p>The last <strong>50</strong> system operations, newest first. Each row carries a colour-coded action icon, a plain-language description (&ldquo;Rent collected from DUZON, DULCE CORAZON for Stall MS-16&rdquo;) and a relative timestamp (&ldquo;Just now&rdquo;, &ldquo;5 minutes ago&rdquo;). The full history lives in the Logbook (Chapter 10) — this feed is only the recent tail of it.</p>
   </div>
   <div>
     <h4><span class="material-symbols-outlined">search</span>Global search</h4>
@@ -1415,41 +1448,28 @@ code, .key {
 <h3>4.1 How stalls are identified</h3>
 <div class="figure">
   <div class="figure-body plain">
-    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Anatomy of a stall ID and the prefix table for each market section">
-      <g font-family="Inter,sans-serif">
-        <text x="30" y="56" font-size="38" font-weight="800" fill="#243B8F" letter-spacing="2">FV-07</text>
-        <path d="M30,66 v7 h60 v-7" fill="none" stroke="#1d4ed8" stroke-width="1.3"/>
-        <path d="M60,73 v9" stroke="#1d4ed8" stroke-width="1.3"/>
-        <path d="M104,66 v7 h56 v-7" fill="none" stroke="#1d4ed8" stroke-width="1.3"/>
-        <path d="M132,73 v9" stroke="#1d4ed8" stroke-width="1.3"/>
-        <text x="60"  y="95" font-size="9.4" font-weight="700" fill="#16307e" text-anchor="middle">Section prefix</text>
-        <text x="60"  y="107" font-size="8.2" fill="#4b5468" text-anchor="middle">two letters</text>
-        <text x="136" y="95" font-size="9.4" font-weight="700" fill="#16307e" text-anchor="middle">Sequence</text>
-        <text x="136" y="107" font-size="8.2" fill="#4b5468" text-anchor="middle">never reused</text>
-        <text x="30"  y="132" font-size="8.6" fill="#4b5468">Leave <tspan font-weight="700" fill="#16307e">Stall ID</tspan> blank and the next free number is assigned.</text>
-
-        <line x1="336" y1="8" x2="336" y2="142" stroke="#dfe3ec"/>
-        <text x="356" y="16" font-size="8.4" font-weight="800" fill="#8b93a5" letter-spacing="1.2">PREFIXES IN THE 2026 REGISTER</text>
-        <g font-size="9.4">
-          <rect x="356" y="24" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="36" font-weight="800" fill="#ffffff" text-anchor="middle">MS</text>
-          <text x="402" y="36" fill="#14192e">Meat &amp; Poultry — main stalls</text><text x="714" y="36" font-weight="700" fill="#16307e" text-anchor="end">46</text>
-
-          <rect x="356" y="47" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="59" font-weight="800" fill="#ffffff" text-anchor="middle">CS</text>
-          <text x="402" y="59" fill="#14192e">Meat &amp; Poultry — chicken stalls</text><text x="714" y="59" font-weight="700" fill="#16307e" text-anchor="end">22</text>
-
-          <rect x="356" y="70" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="82" font-weight="800" fill="#ffffff" text-anchor="middle">FS</text>
-          <text x="402" y="82" fill="#14192e">Fish &amp; Seafood</text><text x="714" y="82" font-weight="700" fill="#16307e" text-anchor="end">63</text>
-
-          <rect x="356" y="93" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="105" font-weight="800" fill="#ffffff" text-anchor="middle">FV</text>
-          <text x="402" y="105" fill="#14192e">Vegetables &amp; Fruits</text><text x="714" y="105" font-weight="700" fill="#16307e" text-anchor="end">89</text>
-
-          <rect x="356" y="116" width="36" height="17" rx="4" fill="#243B8F"/><text x="374" y="128" font-weight="800" fill="#ffffff" text-anchor="middle">KK</text>
-          <text x="402" y="128" fill="#14192e">Dry Goods</text><text x="714" y="128" font-weight="700" fill="#16307e" text-anchor="end">15</text>
-        </g>
-      </g>
-    </svg>
+    <div class="grid-2" style="align-items:start">
+      <div>
+        <div style="font-size:30pt;font-weight:800;color:#243B8F;letter-spacing:1px;line-height:1">FS-105</div>
+        <p style="margin:6px 0 0;font-size:8.8pt">Two letters for the <strong>section</strong>, then the stall&rsquo;s <strong>number</strong> exactly as the office&rsquo;s layout sheet prints it, with no leading zeros. Typing <code>fs105</code>, <code>FS 105</code> or just <code>105</code> in a search finds it.</p>
+        <p style="margin:6px 0 0;font-size:8.8pt">Ground-floor numbers run through the whole floor (1 to 212), so each number appears once. The 2nd floor starts again at 1, which is why its stalls carry their own code, <code>PS</code>.</p>
+      </div>
+      <table class="compact" style="margin:0">
+        <thead><tr><th style="width:14%">Code</th><th>Section</th><th class="num" style="width:14%">Stalls</th><th class="num" style="width:20%">Rent / month</th></tr></thead>
+        <tbody>
+          <tr><td><code>KS</code></td><td>Kakanin</td><td class="num">12</td><td class="num">&#8369;1,000</td></tr>
+          <tr><td><code>DS</code></td><td>Dried Fish/Eggs</td><td class="num">24</td><td class="num">&#8369;1,000</td></tr>
+          <tr><td><code>FD</code></td><td>Fruits/Duma</td><td class="num">12</td><td class="num">&#8369;1,000</td></tr>
+          <tr><td><code>VS</code></td><td>Vegetable</td><td class="num">53</td><td class="num">&#8369;1,000</td></tr>
+          <tr><td><code>FS</code></td><td>Fish</td><td class="num">45</td><td class="num">&#8369;1,000</td></tr>
+          <tr><td><code>CS</code></td><td>Meat &ndash; Chicken</td><td class="num">22</td><td class="num">&#8369;1,500</td></tr>
+          <tr><td><code>MS</code></td><td>Meat &ndash; Carabeef/Beef &amp; Pork</td><td class="num">26</td><td class="num">&#8369;1,500</td></tr>
+          <tr><td><code>PS</code></td><td>2nd Floor</td><td class="num">53</td><td class="num">not yet set</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
-  <div class="figure-cap"><b>Figure 4.1 — Reading a stall ID.</b> Two prefixes (MS and CS) both belong to Meat &amp; Poultry, a legacy of the paper register. Sequence numbers are issued by a monotonic counter and are never reused, even after a stall is deleted — see Appendix&nbsp;A.</div>
+  <div class="figure-cap"><b>Figure 4.1 — Reading a stall ID.</b> Seven ground-floor sections (194 stalls) and the 2nd floor (53 stalls), 247 in all. A new stall takes its section&rsquo;s code and the next free number; a code from another section is refused. Moving a stall to another section renumbers it under that section&rsquo;s code and its tenant, applications and bills follow it.</div>
 </div>
 
 <h3>4.2 Stall statuses &amp; lifecycle</h3>
@@ -1523,18 +1543,18 @@ code, .key {
 <h3>4.3 Viewing &amp; filtering stalls</h3>
 <p>The module opens on five summary tiles, a filter bar and the register table.</p>
 <div class="stat-row">
-  <div class="stat"><b>235</b><span>Total Stalls</span></div>
-  <div class="stat"><b>156</b><span>Occupied</span></div>
-  <div class="stat"><b>24</b><span>Available</span></div>
+  <div class="stat"><b>247</b><span>Total Stalls</span></div>
+  <div class="stat"><b>194</b><span>Occupied</span></div>
+  <div class="stat"><b>45</b><span>Available</span></div>
   <div class="stat"><b>0</b><span>Maintenance</span></div>
-  <div class="stat"><b>47</b><span>Temp. Closed</span></div>
+  <div class="stat"><b>6</b><span>Temp. Closed</span></div>
 </div>
 
 <div class="grid-2">
   <table class="compact field-table" style="margin:0">
     <thead><tr><th style="width:30%">Filter</th><th>Options</th></tr></thead>
     <tbody>
-      <tr><td>Market Section</td><td>All · Meat &amp; Poultry · Fish &amp; Seafood · Vegetables &amp; Fruits · Dry Goods</td></tr>
+      <tr><td>Market Section</td><td>All · Kakanin · Dried Fish/Eggs · Fruits/Duma · Vegetable · Fish · Meat - Chicken · Meat - Carabeef/Beef &amp; Pork · 2nd Floor</td></tr>
       <tr><td>Status</td><td>All · Occupied · Available · Maintenance · Temporarily Closed · Closed · Abandoned</td></tr>
       <tr><td>Search</td><td>Stall ID, occupant name, or section</td></tr>
     </tbody>
@@ -1554,11 +1574,11 @@ code, .key {
 <table class="compact">
   <thead><tr><th style="width:17%">Column</th><th>Shows</th></tr></thead>
   <tbody>
-    <tr><td><strong>Stall ID</strong></td><td>Unique identifier — MS-01, CS-04, FS-22, FV-07, KK-11</td></tr>
-    <tr><td><strong>Section</strong></td><td>One of the four market sections</td></tr>
+    <tr><td><strong>Stall ID</strong></td><td>Unique identifier — KS-2, VS-63, FS-105, MS-30, PS-1 (§4.1)</td></tr>
+    <tr><td><strong>Section</strong></td><td>One of the eight sections, including <em>2nd Floor</em></td></tr>
     <tr><td><strong>Tenant Name</strong></td><td>The current occupant, or <em>Vacant</em></td></tr>
     <tr><td><strong>Status</strong></td><td><span class="badge badge-green">Available</span> <span class="badge badge-blue">Occupied</span> <span class="badge badge-amber">Maintenance</span> <span class="badge badge-amber">Temporarily Closed</span> <span class="badge badge-red">Closed</span> <span class="badge badge-gray">Abandoned</span></td></tr>
-    <tr><td><strong>Business Permit</strong></td><td><span class="badge badge-green">With BP</span> <span class="badge badge-red">No BP</span> <span class="badge badge-gray">Not Recorded</span> — 141 / 11 / 83 in the seeded register</td></tr>
+    <tr><td><strong>Business Permit</strong></td><td><span class="badge badge-green">With BP</span> <span class="badge badge-red">No BP</span> <span class="badge badge-gray">Not Recorded</span> — 43 / 0 / 204 in the seeded register (the directory records no permits; the 2nd-floor list does)</td></tr>
     <tr><td><strong>Last Inspection</strong></td><td>Date of the most recent recorded inspection, or <em>—</em> if never inspected</td></tr>
     <tr><td><strong>Actions</strong></td><td><span class="material-symbols-outlined icon-inline">visibility</span> View details &nbsp; <span class="material-symbols-outlined icon-inline">fact_check</span> Issue verification slip &nbsp; <span class="material-symbols-outlined icon-inline" style="color:#dc2626">delete</span> Delete</td></tr>
   </tbody>
@@ -1572,7 +1592,7 @@ code, .key {
   <div class="step"><div class="step-title">Enter the stall particulars</div>
     <ul>
       <li><strong>Stall ID</strong> — type a specific ID, or leave it blank for automatic assignment</li>
-      <li><strong>Section</strong> — Meat &amp; Poultry, Fish &amp; Seafood, Vegetables &amp; Fruits or Dry Goods</li>
+      <li><strong>Section</strong> — one of the eight sections in §4.1, including 2nd Floor</li>
       <li><strong>Tenant Name</strong> — required only if you set the status to <em>Occupied</em></li>
       <li><strong>Status</strong> — normally <em>Available</em> for a newly built stall</li>
       <li><strong>Business Permit</strong> — With BP, No BP or Not Recorded</li>
@@ -1609,6 +1629,32 @@ code, .key {
 <h3>4.6 Releasing &amp; deleting a stall</h3>
 <div class="callout callout-warning"><span class="material-symbols-outlined">warning</span><div><strong>Releasing.</strong> Setting an occupied stall to <em>Available</em> asks for confirmation, then <strong>removes the occupant tenant record</strong> and returns the stall to the vacancy list. Do this only when the lease has genuinely ended — a stall that is merely shut should be <em>Temporarily Closed</em> instead.</div></div>
 <div class="callout callout-danger"><span class="material-symbols-outlined">error</span><div><strong>Deleting is refused for occupied stalls.</strong> The system will not delete a stall with an active tenant attached, because the tenant&rsquo;s rent ledger and bills would be orphaned. Release or reassign the tenant first, then delete.</div></div>
+
+
+<h3>4.7 The 2nd floor</h3>
+<p>The 2nd floor is its own section, <strong>2nd Floor</strong>, with the code <code>PS</code>. Its stalls and tenants come from the office&rsquo;s <em>List of 2nd Floor Vendors as of September 30, 2026</em>, which the system added once, by itself, the first time this version started. A Logbook <em>Announcement</em> records when that happened and how many stalls and tenants it added.</p>
+<div class="stat-row four">
+  <div class="stat"><b>53</b><span>Stalls, PS-1 to PS-54</span></div>
+  <div class="stat"><b>37</b><span>Occupied</span></div>
+  <div class="stat"><b>8</b><span>Available</span></div>
+  <div class="stat"><b>8</b><span>Temp. closed or abandoned</span></div>
+</div>
+<p>To work with the 2nd floor alone, choose <strong>2nd Floor</strong> in the section filter of Stall Management or Tenant Records. Everything else works exactly as it does for the ground floor: the stall record, the tenant record, rent, bills, violations and verification slips.</p>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/2nd-floor-stalls.jpg" alt="Stall Management filtered to the 2nd Floor"/></div>
+  <div class="figure-cap"><b>Figure 4.3 — Stall Management filtered to the 2nd Floor.</b> Vendors are listed SURNAME, GIVEN MIDDLE, spelled as on the office&rsquo;s list.</div>
+</div>
+<table class="compact">
+  <thead><tr><th style="width:26%">What you will notice</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><strong>There is no PS-51</strong></td><td>The office&rsquo;s list goes from PS-50 to PS-52, so the register does too. That is why there are 53 stalls, not 54.</td></tr>
+    <tr><td><strong>PS-39 to PS-54 are Temporarily Closed</strong> where a vendor is named</td><td>The list marks that block &ldquo;Temporarily vacated&rdquo;. A named vendor still holds the stall, so it is not offered as Available.</td></tr>
+    <tr><td><strong>PS-35 is Available</strong> with a note</td><td>The list prints it VACANT, with a temporary arrangement for Heginio Redona written beside it. The arrangement is kept in the stall&rsquo;s note.</td></tr>
+    <tr><td><strong>Rent shows <span class="badge badge-gray">No Rent Set</span>, &#8369;0.00</strong></td><td>The list gives no rent, and the office has not yet set a 2nd-floor rate. Until it does, 2nd-floor tenants are not counted as unpaid or past due.</td></tr>
+    <tr><td><strong>Permit shows <span class="badge badge-green">With BP</span></strong> on occupied stalls</td><td>Taken from the list&rsquo;s <em>With BP</em> column. The LCA column is kept in each stall&rsquo;s note.</td></tr>
+  </tbody>
+</table>
+<div class="callout callout-warning"><span class="material-symbols-outlined">warning</span><div><strong>Setting the 2nd-floor rent.</strong> [GUESS — please confirm] The rate is not set from a screen yet. Once the office decides the monthly rent, ask the developers to enter it, and every 2nd-floor tenant will be billed at that rate from then on.</div></div>
 
 <!-- ============================ CHAPTER 5 ============================ -->
 <div class="chapter-header">
@@ -1734,7 +1780,7 @@ code, .key {
   <div class="example" style="margin:0">
     <div class="example-head"><span class="material-symbols-outlined" style="font-size:15px">receipt_long</span> Worked example — early settlement</div>
     <div class="example-body">
-      <div class="calc-line"><span>Tenant</span><b>LOTEYRO, LEEMAR — MS-01</b></div>
+      <div class="calc-line"><span>Tenant</span><b>LOTEYRO, LEEMAR — MS-16</b></div>
       <div class="calc-line"><span>Contracted monthly rent</span><b>&#8369;1,500.00</b></div>
       <div class="calc-line"><span>Rent due day</span><b>5 August 2026</b></div>
       <div class="calc-line"><span>Date ticked by the collector</span><b>3 August 2026</b></div>
@@ -2021,7 +2067,7 @@ code, .key {
   <div class="example" style="margin:0">
     <div class="example-head"><span class="material-symbols-outlined" style="font-size:15px">bolt</span> Electricity — paid on time</div>
     <div class="example-body">
-      <div class="calc-line"><span>Stall / meter</span><b>FV-07 · EM-4412</b></div>
+      <div class="calc-line"><span>Stall / meter</span><b>VS-63 · EM-4412</b></div>
       <div class="calc-line"><span>Period covered</span><b>1–31 August 2026</b></div>
       <div class="calc-line"><span>Previous reading</span><b>1,162 kWh</b></div>
       <div class="calc-line"><span>Current reading</span><b>1,248 kWh</b></div>
@@ -2034,7 +2080,7 @@ code, .key {
   <div class="example" style="margin:0">
     <div class="example-head"><span class="material-symbols-outlined" style="font-size:15px">water_drop</span> Water — printed after the due date</div>
     <div class="example-body">
-      <div class="calc-line"><span>Stall / meter</span><b>FS-22 · WM-0188</b></div>
+      <div class="calc-line"><span>Stall / meter</span><b>FS-105 · WM-0188</b></div>
       <div class="calc-line"><span>Period covered</span><b>1–31 July 2026</b></div>
       <div class="calc-line"><span>Previous / current</span><b>318 → 336 cu.m</b></div>
       <div class="calc-line"><span>Consumption</span><b>18 cu.m</b></div>
@@ -2099,7 +2145,7 @@ code, .key {
         <line x1="12" y1="58" x2="236" y2="58" stroke="#dfe3ec"/>
         <text x="12" y="72" font-size="8.6" font-weight="800" fill="#16307e">ELECTRICITY BILL — UTL-014</text>
         <g font-size="7.4" fill="#4b5468">
-          <text x="12" y="86">Stall FV-07 · Vegetables &amp; Fruits</text>
+          <text x="12" y="86">Stall VS-63 · Vegetable</text>
           <text x="12" y="97">Tenant: SANTOS, MARIA</text>
           <text x="12" y="108">Meter EM-4412 · Period 1–31 Aug 2026</text>
         </g>
@@ -2125,8 +2171,8 @@ code, .key {
           <rect x="436" y="110" width="126" height="66" rx="4" fill="#ffffff" stroke="#dfe3ec"/>
         </g>
         <g font-size="7.6" font-weight="700" fill="#16307e" text-anchor="middle">
-          <text x="359" y="58">FV-07</text><text x="499" y="58">FV-08</text>
-          <text x="359" y="140">FS-22</text><text x="499" y="140">KK-03</text>
+          <text x="359" y="58">VS-63</text><text x="499" y="58">VS-64</text>
+          <text x="359" y="140">FS-105</text><text x="499" y="140">KS-3</text>
         </g>
         <g font-size="6.8" fill="#8b93a5" text-anchor="middle">
           <text x="359" y="70">&#8369;989.00</text><text x="499" y="70">&#8369;746.50</text>
@@ -2171,74 +2217,108 @@ code, .key {
     <span class="chapter-num">Chapter 8</span>
     <span class="chapter-title">Violations Register</span>
   </div>
-  <div class="chapter-kicker">Citations, demerit points and the record of who keeps offending.</div>
+  <div class="chapter-kicker">Citations under Sections 22 and 23, demerit points, and the count of each offence.</div>
 </div>
 
-<p>The Violations Register records offences committed by tenants and by non-tenants trading in the market, assigns demerit points as a measure of severity, and tracks each case through to resolution.</p>
+<p>The Violations register records each citation issued to a tenant, or to anyone else trading in the market, under the market code. Each citation names the violation, counts whether it is the party&rsquo;s 1st, 2nd or 3rd offence of that kind, carries demerit points, and stays <span class="badge badge-red">Open</span> until the offender has been <span class="badge badge-green">Reprimanded</span>.</p>
 
-<h3>8.1 Overview &amp; demerit points</h3>
+<h3>8.1 The register at a glance</h3>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/violations-register.jpg" alt="The Violations page"/></div>
+  <div class="figure-cap"><b>Figure 8.1 — The Violations page.</b> Four cards across the top, the open points by tenant, then the register itself. The code before each violation is its section and item in the market code.</div>
+</div>
 <div class="stat-row four">
   <div class="stat"><b>Total</b><span>Citations recorded</span></div>
-  <div class="stat"><b>Open</b><span>Still unresolved</span></div>
-  <div class="stat"><b>Resolved</b><span>Cases closed</span></div>
-  <div class="stat"><b>Points</b><span>Open demerits</span></div>
+  <div class="stat"><b>Open</b><span>Not yet reprimanded</span></div>
+  <div class="stat"><b>Reprimanded</b><span>Dealt with</span></div>
+  <div class="stat"><b>Open points</b><span>Demerits still open</span></div>
 </div>
-<p>A dedicated <strong>Repeat Offenders</strong> panel ranks tenants by their total <em>unresolved</em> demerit points. Points from resolved citations drop out of the ranking, so the list is always a picture of live compliance risk rather than a permanent black mark.</p>
+<p><strong>Open Points by Tenant</strong> ranks who carries the most demerit points on citations not yet reprimanded. Once a citation is marked Reprimanded its points drop out of the ranking, so the list always shows who needs attention now. The register lists open citations first, then the newest. The <strong>All Statuses</strong> filter narrows it to Open or Reprimanded, and the search box at the top finds a citation by ID, tenant or violation.</p>
 
-<div class="workflow">
-  <span class="workflow-step">Offence observed</span>
-  <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
-  <span class="workflow-step">Citation recorded · points assigned</span>
-  <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
-  <span class="workflow-step"><span class="badge badge-red">Open</span> · counts toward the ranking</span>
-  <span class="material-symbols-outlined workflow-arrow">arrow_forward</span>
-  <span class="workflow-step"><span class="badge badge-green">Resolved</span> · date stamped automatically</span>
-</div>
-
-<h3>8.2 Standard citation issues</h3>
-<p>Eight standard issues are offered from a dropdown; any other wording can be typed in free text when the standard list does not fit.</p>
+<h3>8.2 The violation list</h3>
+<p>The violation is chosen from the office&rsquo;s <strong>Market Violations</strong> list, grouped as the market code groups them. The code shows beside the violation in the register, on the details sheet (as its ordinance reference), on the printed list and in the CSV export.</p>
 <div class="grid-2">
   <table class="compact" style="margin:0">
-    <thead><tr><th style="width:8%">#</th><th>Violation issue</th></tr></thead>
+    <thead><tr><th style="width:18%">Code</th><th>Sec. 22 &mdash; Prohibited acts</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>Late document submission</td></tr>
-      <tr><td>2</td><td>Improper stall cleanup</td></tr>
-      <tr><td>3</td><td>Health code violation</td></tr>
-      <tr><td>4</td><td>Unpaid rent or utilities</td></tr>
+      <tr><td><code>22-i</code></td><td>Selling outside assigned area</td></tr>
+      <tr><td><code>22-ii</code></td><td>Stall extension / blocking pathways</td></tr>
+      <tr><td><code>22-iii</code></td><td>Short weighing / false measures</td></tr>
+      <tr><td><code>22-iv</code></td><td>Vehicles or pushcarts inside market (not for loading)</td></tr>
+      <tr><td><code>22-v</code></td><td>Using stall as residence</td></tr>
+      <tr><td><code>22-vi</code></td><td>Littering / vandalism / uncleanliness</td></tr>
+      <tr><td><code>22-vii</code></td><td>Subleasing or transferring stall</td></tr>
+      <tr><td><code>22-viii</code></td><td>Selling illegal items</td></tr>
+      <tr><td><code>22-ix</code></td><td>Inappropriate attire (half-naked / topless)</td></tr>
+      <tr><td><code>22-x</code></td><td>Drinking alcohol in market</td></tr>
+      <tr><td><code>22-xi</code></td><td>Illegal gambling</td></tr>
     </tbody>
   </table>
   <table class="compact" style="margin:0">
-    <thead><tr><th style="width:8%">#</th><th>Violation issue</th></tr></thead>
+    <thead><tr><th style="width:18%">Code</th><th>Sec. 23 &mdash; Duties not followed</th></tr></thead>
     <tbody>
-      <tr><td>5</td><td>Operating beyond stall boundary</td></tr>
-      <tr><td>6</td><td>Unauthorized subleasing</td></tr>
-      <tr><td>7</td><td>Fire safety non-compliance</td></tr>
-      <tr><td>8</td><td>Obstruction of walkway</td></tr>
+      <tr><td><code>23-a</code></td><td>No / expired license or permit, or not displayed</td></tr>
+      <tr><td><code>23-b</code></td><td>Unsanitary stall / no garbage receptacle</td></tr>
+      <tr><td><code>23-c</code></td><td>Unpaid market dues and fees</td></tr>
+      <tr><td><code>23-d</code></td><td>Weighing scale not calibrated and sealed</td></tr>
+      <tr><td><code>23-e</code></td><td>Discourtesy / stall closed or not accessible</td></tr>
+      <tr><td><code>23-f</code></td><td>No SRP price tags displayed</td></tr>
+      <tr><td><code>23-g</code></td><td>Not following market policies</td></tr>
+      <tr><td><code>23-h</code></td><td>Missing business permit / BIR clearance / fees</td></tr>
+      <tr><td><code>23-i</code></td><td>No fire extinguisher or meters / unpaid monthly bill</td></tr>
+      <tr><td><code>Other</code></td><td>No health certificate / yearly medical exam (food handlers)</td></tr>
     </tbody>
   </table>
 </div>
+<p style="margin-top:8px">If the offence is not on the list, choose <strong>Not on this list &mdash; describe it</strong> at the bottom and type it in. Citations recorded before the list was introduced keep their original wording.</p>
 
-<h3>8.3 Recording &amp; resolving a citation</h3>
-<div class="steps">
-  <div class="step"><div class="step-title">Click <code>+ Record Violation</code></div>Opens the citation form.</div>
-  <div class="step"><div class="step-title">Fill in the citation</div>
-    <ul>
-      <li><strong>Party Cited</strong> — pick from the tenant list, or type any name for a non-tenant</li>
-      <li><strong>Demerit Points</strong> — the severity, as a number</li>
-      <li><strong>Violation Issue</strong> — one of the eight standard issues, or your own wording</li>
-      <li><strong>Status</strong> — Open, or Resolved if it was settled on the spot</li>
-      <li><strong>Date Recorded</strong> / <strong>Date Resolved</strong></li>
-      <li><strong>Officer Notes</strong> — free text; this is where the account of what happened belongs</li>
-    </ul>
+<h3>8.3 Recording a citation</h3>
+<div class="grid-2">
+  <div>
+    <div class="steps">
+      <div class="step"><div class="step-title">Click <code>+ Record Violation</code></div>Opens <em>Record a Violation</em>.</div>
+      <div class="step"><div class="step-title">Name the party cited</div><strong>Tenant / Party Cited</strong> suggests tenants on record as you type. Any other name can be typed for someone without a tenant record.</div>
+      <div class="step"><div class="step-title">Choose the violation</div>From the list in §8.2.</div>
+      <div class="step"><div class="step-title">Check the offence</div><strong>Offence</strong> fills itself in from the register: the party&rsquo;s earlier citations for the <em>same</em> violation, plus one. The line under it says how many were found. Choose another if the count is wrong, for example for a citation written on paper before the system was used.</div>
+      <div class="step"><div class="step-title">Set the demerit points and notes</div><strong>Demerit Points</strong> is a whole number (1 by default). <strong>Date Recorded</strong> defaults to today. <strong>Notes</strong> holds what was seen and what was done.</div>
+      <div class="step"><div class="step-title">Click <code>Record Violation</code></div>The citation is saved as <span class="badge badge-red">Open</span> and a Logbook <em>Incident</em> entry is written.</div>
+    </div>
   </div>
-  <div class="step"><div class="step-title">Save</div>The citation is recorded and a logbook entry written.</div>
+  <div><div class="figure">
+  <div class="figure-body shot"><img src="manual-images/violations-record-form.jpg" alt="Recording a second offence"/></div>
+  <div class="figure-cap"><b>Figure 8.2 — Recording a second offence.</b> The same tenant was cited for 22-vi before, so the form counts this one as the 2nd Offence.</div>
+</div></div>
 </div>
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Offences stop at the 3rd.</strong> A fourth or later citation for the same violation is still recorded as the 3rd Offence. The offence shows in the register (highlighted from the 2nd), on the details sheet, on the printed list, in the CSV export and in the Logbook entry.</div></div>
 
+<h3>8.4 Reprimanding, editing and the tenant&rsquo;s record</h3>
 <div class="grid-2">
-  <div class="card"><div class="card-title"><span class="material-symbols-outlined">task_alt</span> Resolving</div><p>Open <strong>Edit Violation</strong> and set the status to <span class="badge badge-green">Resolved</span>. The resolution date is stamped for you. Reopening a case clears that date again. Demerit points and notes can be amended at any time.</p></div>
-  <div class="card"><div class="card-title"><span class="material-symbols-outlined">sort</span> Sorting &amp; export</div><p>The register lists open cases first, then newest recorded date. <code>Export CSV</code> downloads every citation; <code>Print List</code> prints the filtered table for the inspector&rsquo;s rounds.</p></div>
+  <div>
+    <p>Every citation starts <span class="badge badge-red">Open</span>. Once the offender has been reprimanded:</p>
+    <div class="steps">
+      <div class="step"><div class="step-title">Click the pencil on the citation&rsquo;s row</div>Opens <em>Edit Violation</em>.</div>
+      <div class="step"><div class="step-title">Set <strong>Status</strong> to Reprimanded</div><strong>Date Reprimanded</strong> appears. Leave it blank and today&rsquo;s date is stamped when you save, or set the day the reprimand was actually given.</div>
+      <div class="step"><div class="step-title">Click <code>Save Changes</code></div>The row turns green and its points leave the Open Points ranking.</div>
+    </div>
+    <p>Like every edit form in the system, <em>Edit Violation</em> opens blank: each box shows what is on record, and a box left empty keeps it. Fill in only what is changing. Setting a citation back to <strong>Open</strong> reopens it and clears the reprimand date.</p>
+    <p>The eye button opens <strong>Violation Details</strong>, a read-only sheet with the ordinance reference spelled out (for example <em>Section 22, item (vi) &mdash; prohibited acts</em>) and the officer&rsquo;s notes. <code>Edit Citation</code> on that sheet opens the same edit form.</p>
+  </div>
+  <div><div class="figure">
+  <div class="figure-body shot"><img src="manual-images/violations-edit-form.jpg" alt="Marking a citation Reprimanded"/></div>
+  <div class="figure-cap"><b>Figure 8.3 — Marking a citation Reprimanded.</b> Every field starts blank and keeps the value on record unless you change it.</div>
+</div></div>
 </div>
-<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Write the notes as if for a hearing.</strong> Officer Notes are the only free-text account of the offence. Record what was seen, when, and who was present — the badge and the points will not carry a case on their own.</div></div>
+<h4>Violations on the tenant&rsquo;s record</h4>
+<p>A tenant&rsquo;s details in Tenant Records include a <strong>Violations</strong> table with every citation against that tenant, newest first, and a summary of how many are open and how many points they carry.</p>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/violations-on-tenant.jpg" alt="Violations on a tenant&rsquo;s record" style="max-width:80%;margin:0 auto"/></div>
+  <div class="figure-cap"><b>Figure 8.4 — Violations on a tenant&rsquo;s record.</b> Hover over a row to read the officer&rsquo;s notes.</div>
+</div>
+<div class="grid-2">
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">print</span> Printing &amp; export</div><p><code>Print List</code> prints the filtered register for inspection rounds. <code>Export CSV</code> downloads every citation with its code, offence, points, status and both dates.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">delete</span> Deleting</div><p>Delete only a citation recorded in error. A reprimanded citation is part of the tenant&rsquo;s history and should be kept. Adding, reprimanding, reopening and deleting are all written to the Logbook.</p></div>
+</div>
+<div class="callout callout-tip"><span class="material-symbols-outlined">lightbulb</span><div><strong>Write the notes as if for a hearing.</strong> The notes are the only written account of the offence. Record what was seen, when, and who was present.</div></div>
 <!-- ============================================================
      PART III
      ============================================================ -->
@@ -2380,7 +2460,7 @@ code, .key {
     <li>Approving or rejecting an applicant</li>
     <li>Assigning a stall to an approved applicant</li>
     <li>Issuing, editing, paying or deleting a utility bill</li>
-    <li>Recording, amending or resolving a violation</li>
+    <li>Recording, amending, reprimanding, reopening or deleting a violation</li>
     <li>Appointing, transferring or removing an officer</li>
     <li>Issuing a stall / space verification slip</li>
     <li>Importing, exporting or resetting the database</li>
@@ -2413,121 +2493,102 @@ code, .key {
 
 <!-- ============================ CHAPTER 11 ============================ -->
 <div class="chapter-header">
-  <div class="chapter-icon"><span class="material-symbols-outlined">forum</span></div>
+  <div class="chapter-icon"><span class="material-symbols-outlined">map</span></div>
   <div>
     <span class="chapter-num">Chapter 11</span>
-    <span class="chapter-title">Market Assistant</span>
+    <span class="chapter-title">Market Floor Plan</span>
   </div>
-  <div class="chapter-kicker">Ask a question in plain language. The figures still come from the records.</div>
+  <div class="chapter-kicker">Every stall on both floors, where it stands, who holds it, and whether it is open.</div>
 </div>
 
-<p>The Market Assistant lets an officer ask about rent, stalls, bills, tenants and violations without building a filter. It runs entirely on the workstation — there is no online service behind it.</p>
+<p>The <strong>Market floor plan</strong> sits at the top of the Dashboard. It draws the market building in 3D with every stall in place, labelled with its ID and its tenant&rsquo;s surname. It reads the stall and tenant records live: change a tenant or a status anywhere in the system and the plan shows it the next time the Dashboard opens. The plan only shows the records; nothing is changed from it.</p>
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Positions are schematic.</strong> The ground floor follows the office&rsquo;s own sketch and layout sheets: from the entrance, Kakanin, Vegetables (with Dried Fish/Eggs and Fruits/Duma), Fish, Meat and Chicken on both sides of the hallway. Neighbours and order are right; distances are not measured. The 2nd-floor list has no drawing, so its stalls are set out in number order (§11.5).</div></div>
 
-<h3>11.1 How the two-tier engine works</h3>
-<div class="figure">
-  <div class="figure-body">
-    <svg viewBox="0 0 720 226" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram of the assistant's two tiers: keyword matching first, optional local model second, with a verification gate before any answer is shown">
-      <defs>
-        <marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
-        </marker>
-      </defs>
-      <g font-family="Inter,sans-serif" text-anchor="middle">
-        <rect x="0" y="88" width="112" height="44" rx="8" fill="#eef1f6" stroke="#c9cfdd"/>
-        <text x="56" y="107" font-size="10" font-weight="800" fill="#3f4a5f">Your question</text>
-        <text x="56" y="120" font-size="7.8" fill="#3f4a5f">plain language</text>
-
-        <rect x="148" y="20" width="180" height="56" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.4"/>
-        <text x="238" y="38" font-size="8" font-weight="800" fill="#16307e" letter-spacing="1">TIER 1</text>
-        <text x="238" y="53" font-size="10" font-weight="800" fill="#16307e">Keyword matching</text>
-        <text x="238" y="66" font-size="7.8" fill="#16307e">12 known market intents</text>
-
-        <rect x="148" y="144" width="180" height="56" rx="8" fill="#f7f8fc" stroke="#8b93a5" stroke-width="1.4" stroke-dasharray="4 3"/>
-        <text x="238" y="162" font-size="8" font-weight="800" fill="#4b5468" letter-spacing="1">TIER 2 · OPTIONAL</text>
-        <text x="238" y="177" font-size="10" font-weight="800" fill="#4b5468">Local AI model</text>
-        <text x="238" y="190" font-size="7.8" fill="#4b5468">classifies intent, rephrases</text>
-
-        <rect x="366" y="88" width="150" height="44" rx="8" fill="#243B8F"/>
-        <text x="441" y="107" font-size="10" font-weight="800" fill="#ffffff">Computed answer</text>
-        <text x="441" y="120" font-size="7.8" fill="#c8d3f2">figures from the database</text>
-
-        <path d="M556,80 L636,110 L556,140 L476,110 Z" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-        <text x="556" y="107" font-size="8.6" font-weight="800" fill="#0b5030">Figures</text>
-        <text x="556" y="119" font-size="8.6" font-weight="800" fill="#0b5030">match?</text>
-
-        <rect x="620" y="28" width="100" height="42" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.4"/>
-        <text x="670" y="46" font-size="9" font-weight="800" fill="#0b5030">Show model</text>
-        <text x="670" y="58" font-size="9" font-weight="800" fill="#0b5030">wording</text>
-
-        <rect x="620" y="152" width="100" height="42" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.4"/>
-        <text x="670" y="170" font-size="9" font-weight="800" fill="#8a4a04">Discard it,</text>
-        <text x="670" y="182" font-size="9" font-weight="800" fill="#8a4a04">show the record</text>
-      </g>
-      <g stroke="#1d4ed8" stroke-width="1.4" fill="none" marker-end="url(#ar6)">
-        <path d="M112,102 H130 V48 H144"/>
-        <path d="M112,118 H130 V172 H144" stroke-dasharray="4 3"/>
-        <path d="M328,48 H348 V104 H362"/>
-        <path d="M328,172 H348 V120 H362" stroke-dasharray="4 3"/>
-        <line x1="516" y1="110" x2="474" y2="110"/>
-        <path d="M596,92 H612 V54 H616"/>
-        <path d="M596,128 H612 V172 H616"/>
-      </g>
-      <g font-family="Inter,sans-serif" font-size="7.8" fill="#4b5468">
-        <text x="126" y="44" text-anchor="end">strong match</text>
-        <text x="126" y="186" text-anchor="end">no clear match</text>
-        <text x="604" y="46">yes</text>
-        <text x="604" y="192">no</text>
-      </g>
-      <text x="0" y="218" font-family="Inter,sans-serif" font-size="8" fill="#8b93a5">Tier 2 is skipped entirely when no model is installed — the assistant then works in records-only mode and answers exactly as well.</text>
-    </svg>
-  </div>
-  <div class="figure-cap"><b>Figure 11.1 — The verification gate.</b> The model never supplies a number. It may only re-word an answer the database already computed, and its wording is thrown away if any figure or name in it fails to match the computed facts.</div>
-</div>
-
-<div class="callout callout-tip"><span class="material-symbols-outlined">verified</span><div><strong>Data accuracy guarantee.</strong> Amounts, counts and names are always produced by the system&rsquo;s own business logic — never generated by a language model. If the model&rsquo;s phrasing disagrees with the computed facts on any figure, the phrasing is discarded and the verified record text is shown instead.</div></div>
-
-<h3>11.2 What you can ask</h3>
+<h3>11.1 Reading the plan</h3>
 <table class="compact">
-  <thead><tr><th style="width:22%">Intent</th><th style="width:39%">Ask it like this</th><th>Answers with</th></tr></thead>
+  <thead><tr><th style="width:22%">Part of the panel</th><th>What it does</th></tr></thead>
   <tbody>
-    <tr><td><strong>Overdue rent</strong></td><td>&ldquo;Who has overdue rent?&rdquo; · &ldquo;List overdue tenants&rdquo;</td><td>Named tenants, stalls and days late</td></tr>
-    <tr><td><strong>Unpaid rent</strong></td><td>&ldquo;Who hasn&rsquo;t paid rent this month?&rdquo;</td><td>Uncollected tenants for the current period</td></tr>
-    <tr><td><strong>Collected rent</strong></td><td>&ldquo;How much rent has been collected?&rdquo;</td><td>Total collected, net of discounts</td></tr>
-    <tr><td><strong>Tenant payment</strong></td><td>&ldquo;Has DUZON, DULCE CORAZON paid her rent?&rdquo;</td><td>That tenant&rsquo;s standing for the period</td></tr>
-    <tr><td><strong>Total earnings</strong></td><td>&ldquo;What are total market earnings?&rdquo;</td><td>Rent plus utilities collected</td></tr>
-    <tr><td><strong>Vacant stalls</strong></td><td>&ldquo;Which stalls are available?&rdquo;</td><td>Genuinely vacant stalls by section</td></tr>
-    <tr><td><strong>Stall status</strong></td><td>&ldquo;What&rsquo;s the occupancy breakdown?&rdquo;</td><td>Counts per status across the register</td></tr>
-    <tr><td><strong>Unpaid utilities</strong></td><td>&ldquo;Are there unpaid electricity bills?&rdquo;</td><td>Outstanding bills and their total</td></tr>
-    <tr><td><strong>Meter lookup</strong></td><td>&ldquo;What&rsquo;s the meter number for Stall MS-01?&rdquo;</td><td>Electricity and water meter numbers</td></tr>
-    <tr><td><strong>Tenant lookup</strong></td><td>&ldquo;Show me details for LOTEYRO, LEEMAR&rdquo;</td><td>The tenant&rsquo;s particulars and standing</td></tr>
-    <tr><td><strong>Pending applicants</strong></td><td>&ldquo;How many pending applications?&rdquo;</td><td>Count and who is waiting</td></tr>
-    <tr><td><strong>Open violations</strong></td><td>&ldquo;Any open violations?&rdquo;</td><td>Unresolved citations and demerit points</td></tr>
+    <tr><td><strong>Floor</strong></td><td><code>Ground floor</code> (194 stalls) or <code>2nd floor</code> (53 stalls).</td></tr>
+    <tr><td><strong>Market section</strong></td><td><em>All sections</em> shows the whole ground floor as the office sketched it. The other choices (<em>Vegetable &amp; dry goods</em>, <em>Chicken, beef &amp; pork</em>, and the two Fish blocks) show one area&rsquo;s stalls exactly as its layout sheet places them, larger and easier to read.</td></tr>
+    <tr><td><strong>Color stalls by</strong></td><td><code>Section</code> colours each stall by its section; <code>Status</code> colours it by occupancy (§11.3). The legend under the plan changes to match.</td></tr>
+    <tr><td><strong>Highlight stalls</strong></td><td>Picks out <em>Available</em>, <em>Occupied</em> or <em>Not operating</em> stalls and dims the rest. Each button shows how many there are in view.</td></tr>
+    <tr><td><strong>Find a stall or tenant&hellip;</strong></td><td>The search box at the top right (§11.2).</td></tr>
+    <tr><td><strong>Selected stall</strong></td><td>The card on the right. Click a stall to see its tenant, section, status and floor.</td></tr>
   </tbody>
 </table>
 
-<h3>11.3 Reading an answer</h3>
+<h3>11.2 Finding a stall</h3>
+<div class="steps">
+  <div class="step"><div class="step-title">Type in <strong>Find a stall or tenant&hellip;</strong></div>A stall ID (<code>KS-2</code>, <code>ks 2</code> and <code>ps1</code> all work) or part of a tenant&rsquo;s name. Up to eight matches appear, each with its floor and section.</div>
+  <div class="step"><div class="step-title">Press <kbd>Enter</kbd> or click a match</div>The plan switches to the right floor, turns to the stall and lights it in yellow. Its details open in the <strong>Selected stall</strong> card.</div>
+  <div class="step"><div class="step-title">Click <code>View details</code></div>Opens the full stall record from Stall Management (§4.5).</div>
+</div>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/map-ground-selected.jpg" alt="A stall found by tenant name"/></div>
+  <div class="figure-cap"><b>Figure 11.1 — A stall found by tenant name.</b> Searching &ldquo;redona&rdquo; and pressing Enter found KS-2. The <code>Go to KS-2</code> button in the toolbar turns the view back to it after you have moved around.</div>
+</div>
+<p>You can also simply click any stall in the plan. The <strong>Selected stall</strong> card shows the tenant as the register writes it (SURNAME, GIVEN NAMES), the section, a coloured status, and the floor. Notes from the layout sheet, such as a smudged number or a crossed-out name, appear in a yellow box at the bottom. Click <span class="material-symbols-outlined icon-inline">close</span> to clear the selection.</p>
+
+<h3>11.3 Colours and highlighting</h3>
 <div class="grid-2">
   <div>
-    <h4><span class="material-symbols-outlined">label</span>Source badges</h4>
-    <p>Every answer states where its wording came from:</p>
-    <ul>
-      <li><span class="badge badge-green">From the records</span> — computed directly from the database</li>
-      <li><span class="badge badge-blue">Worded by model · figures verified</span> — the model phrased it, and every figure passed the check</li>
-      <li><span class="badge badge-amber">Model wording discarded</span> — the phrasing failed the check; you are seeing the raw record text</li>
-    </ul>
-    <p>All three are equally trustworthy on the numbers. The badge tells you about the <em>prose</em>, not the data.</p>
+    <p>With <strong>Color stalls by → Status</strong>, each stall takes its status colour:</p>
+    <table class="compact" style="margin-top:0">
+      <tbody>
+        <tr><td style="width:44%"><strong>Blue</strong> &mdash; Occupied</td><td>Held and trading</td></tr>
+        <tr><td><strong>Green</strong> &mdash; Available</td><td>Vacant, can be assigned</td></tr>
+        <tr><td><strong>Yellow</strong> &mdash; Temporarily Closed</td><td>Held, not trading</td></tr>
+        <tr><td><strong>Orange</strong> &mdash; Maintenance</td><td>Out of service</td></tr>
+        <tr><td><strong>Brown</strong> &mdash; Closed</td><td>Shut</td></tr>
+        <tr><td><strong>Red</strong> &mdash; Abandoned</td><td>Left by its tenant</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Not operating</strong> under <em>Highlight stalls</em> covers temporarily closed, closed, abandoned and under-maintenance stalls together. A line above the plan repeats how many stalls are highlighted.</p>
   </div>
-  <div>
-    <h4><span class="material-symbols-outlined">touch_app</span>Working with the assistant</h4>
-    <ul>
-      <li><strong>Suggestion chips</strong> — one tap for the questions asked most often</li>
-      <li><strong>Composer bar</strong> — type any question in natural language</li>
-      <li><strong>Navigation buttons</strong> — answers offer <code>Open Tenants</code>, <code>Open Billing</code> and similar, so you can act on what you just read</li>
-      <li><strong>Model status</strong> — the header badge shows <span class="material-symbols-outlined icon-inline">neurology</span> a model is active, or <span class="material-symbols-outlined icon-inline">database</span> records-only mode</li>
-    </ul>
-    <div class="callout callout-note" style="margin-bottom:0"><span class="material-symbols-outlined">info</span><div>Records-only mode is not a degraded mode. Every one of the twelve intents above is answered identically without a model.</div></div>
-  </div>
+  <div><div class="figure">
+  <div class="figure-body shot"><img src="manual-images/map-ground-status.jpg" alt="Coloured by status"/></div>
+  <div class="figure-cap"><b>Figure 11.2 — Coloured by status.</b> The same view as Figure 11.1, coloured by occupancy instead of section.</div>
+</div></div>
 </div>
+
+<h3>11.4 Moving around the plan</h3>
+<p>Drag with the left mouse button to turn the building; drag with the right button to slide it; use the magnifier buttons to zoom in and out. Choosing a single area in <strong>Market section</strong>, or the <code>2D plan</code>, makes small labels easier to read.</p>
+<div class="shot-pair">
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/map-ground-section.jpg" alt="One section"/></div>
+  <div class="figure-cap"><b>Figure 11.3 — One section.</b> Fish, stalls 105&ndash;116 and 138&ndash;149, as the layout sheet places them.</div>
+</div>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/map-ground-2d.jpg" alt="The 2D plan"/></div>
+  <div class="figure-cap"><b>Figure 11.4 — The 2D plan.</b> The same section as a flat drawing.</div>
+</div>
+</div>
+<p>The toolbar along the bottom of the plan holds the rest:</p>
+<table class="compact">
+  <thead><tr><th style="width:22%">Button</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>Rotate</code></td><td>Turns the building slowly on its own. Click again to stop.</td></tr>
+    <tr><td><code>Top view</code> / <code>3D view</code></td><td>Looks straight down on the plan, or back at an angle.</td></tr>
+    <tr><td><code>Walk inside</code></td><td>Puts you at eye level in the hallway. Walk with the arrow keys or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, or the on-screen arrows. <code>Exit walk</code> returns to the overview.</td></tr>
+    <tr><td><code>2D plan</code></td><td>A flat drawing of the same stalls. Use it on a computer where the 3D view is slow; the system also switches to it by itself if the computer cannot draw 3D.</td></tr>
+    <tr><td><code>Show roof</code> / <code>Hide roof</code></td><td>Puts the roof on the building, or takes it off.</td></tr>
+    <tr><td><code>Go to &lt;stall&gt;</code></td><td>Appears once a stall is selected; brings it back into view.</td></tr>
+    <tr><td><code>Full screen</code></td><td>Fills the screen with the plan. <kbd>Esc</kbd> or <code>Exit full screen</code> returns.</td></tr>
+  </tbody>
+</table>
+
+<h3>11.5 The 2nd floor on the plan</h3>
+<p>Click <code>2nd floor</code> under <strong>Floor</strong>. The section box changes to read <em>2nd Floor &middot; PS-1 to PS-54</em>, because the 2nd floor is one section. Searching for a 2nd-floor stall or vendor from either floor switches to it by itself.</p>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/map-2nd-floor-status.jpg" alt="The 2nd floor, coloured by status"/></div>
+  <div class="figure-cap"><b>Figure 11.5 — The 2nd floor, coloured by status.</b> PS-40, selected, is Abandoned; PS-41 and PS-42 are Available; the yellow stalls belong to the block the office marked &ldquo;Temporarily vacated&rdquo;.</div>
+</div>
+<div class="grid-2">
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">format_list_numbered</span> Number order, not a drawing</div><p>The office&rsquo;s 2nd-floor list gives stall numbers but no layout, so the plan sets the stalls out in number order. The Selected stall card says so, and shows the <em>Number on the vendor list</em> instead of a photograph number.</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">sticky_note_2</span> Record notes</div><p>What the list said about a stall, such as an expired LCA or &ldquo;Under close monitoring&rdquo;, shows as the <em>Record note</em>. See §4.7 for how the list was entered.</p></div>
+</div>
+<div class="callout callout-warning"><span class="material-symbols-outlined">warning</span><div><strong>&ldquo;Not on the map&rdquo;.</strong> If a tenant holds a stall the plan has no place for (for example a stall added later under a new number), a line under the plan names them. The tenant record is fine; only the drawing lacks that stall.</div></div>
+
 <!-- ============================================================
      PART IV
      ============================================================ -->
@@ -2698,7 +2759,7 @@ code, .key {
         <text x="10" y="81" font-size="7.4" fill="#4b5468">Purpose: <tspan font-weight="700" fill="#14192e">RENEWAL</tspan></text>
         <g font-size="7.2" fill="#4b5468">
           <text x="10" y="94">Issued to: LOTEYRO, LEEMAR</text>
-          <text x="10" y="105">Section: Meat &amp; Poultry · Stall No. MS-01</text>
+          <text x="10" y="105">Section: Meat - Carabeef/Beef &amp; Pork · Stall No. MS-16</text>
         </g>
         <line x1="10" y1="111" x2="254" y2="111" stroke="#eef0f6"/>
         <g font-size="6.8" fill="#14192e">
@@ -2873,10 +2934,27 @@ code, .key {
 <p>Purges all data and reloads the seeded market register. A danger-styled confirmation dialog appears first. The reset:</p>
 <ul>
   <li>Clears the stored state (<code>pmrms-state-v9</code>) and the ID counters (<code>pmrms-id-counters</code>)</li>
-  <li>Reloads the default 2026 data — 235 stalls, the ten board seats, and nothing else</li>
+  <li>Reloads the default stall register and Market Officers board, and nothing else. It is open to the Administrator only.</li>
   <li><strong>Cannot be undone</strong> unless you hold a prior backup</li>
 </ul>
 <div class="callout callout-warning"><span class="material-symbols-outlined">warning</span><div>Resetting also restarts the ID counters. Bill and slip numbers issued before a reset can therefore be issued again afterwards, which is exactly the situation the monotonic counters exist to prevent. Reset only a workstation being set up fresh, never one holding live records.</div></div>
+
+
+<h3>14.3 Your account and sign-in security</h3>
+<p>The top of the Settings page holds three panels about signing in. <strong>Account &amp; Password</strong> in the account menu (§1.9) opens the page here.</p>
+<table class="compact">
+  <thead><tr><th style="width:22%">Panel</th><th>What you can do there</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Your Account</strong></td><td><code>Change Password</code> asks for the current password, then the new one twice. <code>New Recovery Code</code> asks for the password, then shows a fresh code and retires the old one. Use it if the written code may have been seen by someone else.</td></tr>
+    <tr><td><strong>Sign-in Security</strong></td><td><strong>Lock the screen</strong> after 5, 10, 15 or 30 minutes without use, or <em>Never</em> (not recommended). The default is 15 minutes.</td></tr>
+    <tr><td><strong>User Accounts</strong></td><td>Lists the system&rsquo;s one account with its role, status and last sign-in.</td></tr>
+  </tbody>
+</table>
+<div class="figure">
+  <div class="figure-body shot"><img src="manual-images/settings-signin-security.jpg" alt="Sign-in Security" style="max-width:70%;margin:0 auto"/></div>
+  <div class="figure-cap"><b>Figure 14.1 — Sign-in Security.</b> The idle-lock setting. The note underneath repeats the lock-out rule from §1.10.</div>
+</div>
+<div class="callout callout-note"><span class="material-symbols-outlined">info</span><div><strong>Restoring a backup never changes the password.</strong> The sign-in account is kept apart from the market records, so importing a backup or resetting to defaults (§14.2) leaves the password and recovery code as they were.</div></div>
 
 <!-- ============================ CHAPTER 15 ============================ -->
 <div class="chapter-header">
@@ -2927,7 +3005,7 @@ code, .key {
     <tr><td>3</td><td>How electricity meter computation works</td><td>§7.1, §7.3</td></tr>
     <tr><td>4</td><td>How water meter computation works</td><td>§7.1, §7.3</td></tr>
     <tr><td>5</td><td>How late surcharges are applied</td><td>§7.6</td></tr>
-    <tr><td>6</td><td>How to record and resolve a violation citation</td><td>§8.3</td></tr>
+    <tr><td>6</td><td>How to record a violation and mark it reprimanded</td><td>§8.3 – §8.4</td></tr>
     <tr><td>7</td><td>How to export reports and analytics data</td><td>§9.3</td></tr>
     <tr><td>8</td><td>How to transfer data between workstations</td><td>§14.2, §15.1</td></tr>
     <tr><td>9</td><td>How to issue a verification slip</td><td>§13.2</td></tr>
@@ -3008,7 +3086,11 @@ code, .key {
     <tr><td><strong>Search returns no results</strong></td><td>Active filters limit the search. Clear filters first. From the Dashboard the same box searches every record type at once (§3.4).</td></tr>
     <tr><td><strong>The system refuses a meter reading</strong></td><td>Readings cannot be negative, and the current reading should not be below the previous one. If the meter was genuinely replaced, record the new meter number on the tenant record before billing.</td></tr>
     <tr><td><strong>A duplicate bill warning appears</strong></td><td>A bill already exists for that stall, utility and period. Cancel and check the register before proceeding — this usually means a section was read twice.</td></tr>
-    <tr><td><strong>Market Assistant shows &ldquo;Records only&rdquo;</strong></td><td>No local model is installed. The assistant still answers every supported question from the database. To enable phrasing, place a compatible GGUF model in <code>resources/models</code> (§11.1).</td></tr>
+    <tr><td><strong>The sign-in page says the account is locked</strong></td><td>Five wrong passwords in a row lock it for 5 minutes, doubling each further round up to an hour, even across a restart. Wait for the time shown, or use <strong>Forgot password?</strong> with the recovery code (§1.10).</td></tr>
+    <tr><td><strong>The password is forgotten</strong></td><td>Click <strong>Forgot password?</strong> and type the recovery code. Write down the new code it shows; the old one stops working (§1.10).</td></tr>
+    <tr><td><strong>The screen locked by itself</strong></td><td>Nobody used it for the time set in <strong>Settings → Sign-in Security</strong>. Type the password; the page underneath is as you left it (§1.9, §14.3).</td></tr>
+    <tr><td><strong>The floor plan is flat, or slow</strong></td><td>The computer cannot draw 3D, so the 2D plan is shown instead. Everything else works the same. On a slow computer, click <code>2D plan</code> yourself (§11.4).</td></tr>
+    <tr><td><strong>A 2nd-floor tenant shows &ldquo;No Rent Set&rdquo;</strong></td><td>Expected until the office sets the 2nd-floor rate (§4.7).</td></tr>
     <tr><td><strong>Notification count looks wrong</strong></td><td>Counts are computed live, never stored. If a count seems wrong, the underlying record is wrong — check for rent still unticked, or a citation still open (§2.4).</td></tr>
     <tr><td><strong>Transferring to another computer</strong></td><td><strong>Support → Download Full Backup</strong> on the old machine, carry the file on a USB drive, then <strong>Support → Upload Backup File</strong> on the new one (§15.1).</td></tr>
     <tr><td><strong>The application is running slowly</strong></td><td>Close other applications. If the database has grown very large after several years, export the old period for archival before considering a reset — and read the warning in §14.2 first.</td></tr>
@@ -3050,16 +3132,20 @@ code, .key {
 
 <h3>C.2 Stall ID prefixes and the 2026 register</h3>
 <table class="compact">
-  <thead><tr><th style="width:12%">Prefix</th><th style="width:26%">Section</th><th class="num" style="width:10%">Stalls</th><th class="num" style="width:10%">Occupied</th><th class="num" style="width:12%">Temp. closed</th><th class="num" style="width:10%">Available</th><th class="num">Other</th></tr></thead>
+  <thead><tr><th style="width:10%">Code</th><th style="width:30%">Section</th><th class="num" style="width:10%">Stalls</th><th class="num" style="width:10%">Occupied</th><th class="num" style="width:10%">Available</th><th class="num">Other</th></tr></thead>
   <tbody>
-    <tr><td><code>MS</code> / <code>CS</code></td><td>Meat &amp; Poultry</td><td class="num">68</td><td class="num">33</td><td class="num">18</td><td class="num">16</td><td class="num">1 abandoned</td></tr>
-    <tr><td><code>FS</code></td><td>Fish &amp; Seafood</td><td class="num">63</td><td class="num">49</td><td class="num">6</td><td class="num">8</td><td class="num">—</td></tr>
-    <tr><td><code>FV</code></td><td>Vegetables &amp; Fruits</td><td class="num">89</td><td class="num">61</td><td class="num">21</td><td class="num">0</td><td class="num">7 closed</td></tr>
-    <tr><td><code>KK</code></td><td>Dry Goods</td><td class="num">15</td><td class="num">13</td><td class="num">2</td><td class="num">0</td><td class="num">—</td></tr>
-    <tr><td colspan="2"><strong>Total</strong></td><td class="num"><strong>235</strong></td><td class="num"><strong>156</strong></td><td class="num"><strong>47</strong></td><td class="num"><strong>24</strong></td><td class="num"><strong>8</strong></td></tr>
+    <tr><td><code>KS</code></td><td>Kakanin</td><td class="num">12</td><td class="num">10</td><td class="num">2</td><td class="num">&mdash;</td></tr>
+    <tr><td><code>DS</code></td><td>Dried Fish/Eggs</td><td class="num">24</td><td class="num">8</td><td class="num">16</td><td class="num">6 are the unnamed open area, 207&ndash;212</td></tr>
+    <tr><td><code>FD</code></td><td>Fruits/Duma</td><td class="num">12</td><td class="num">12</td><td class="num">0</td><td class="num">&mdash;</td></tr>
+    <tr><td><code>VS</code></td><td>Vegetable</td><td class="num">53</td><td class="num">48</td><td class="num">5</td><td class="num">VS-95 is the PNP/guard station</td></tr>
+    <tr><td><code>FS</code></td><td>Fish</td><td class="num">45</td><td class="num">37</td><td class="num">8</td><td class="num">&mdash;</td></tr>
+    <tr><td><code>CS</code></td><td>Meat &ndash; Chicken</td><td class="num">22</td><td class="num">18</td><td class="num">4</td><td class="num">&mdash;</td></tr>
+    <tr><td><code>MS</code></td><td>Meat &ndash; Carabeef/Beef &amp; Pork</td><td class="num">26</td><td class="num">24</td><td class="num">2</td><td class="num">&mdash;</td></tr>
+    <tr><td><code>PS</code></td><td>2nd Floor</td><td class="num">53</td><td class="num">37</td><td class="num">8</td><td class="num">6 temp. closed, 2 abandoned</td></tr>
+    <tr><td colspan="2"><strong>Total</strong></td><td class="num"><strong>247</strong></td><td class="num"><strong>194</strong></td><td class="num"><strong>45</strong></td><td class="num"><strong>8</strong></td></tr>
   </tbody>
 </table>
-<p style="font-size:8.6pt;color:var(--text-2)">Business permit standing across the same register: <span class="badge badge-green">With BP</span> 141 &nbsp;·&nbsp; <span class="badge badge-red">No BP</span> 11 &nbsp;·&nbsp; <span class="badge badge-gray">Not Recorded</span> 83.</p>
+<p style="font-size:8.6pt;color:var(--text-2)">As loaded on a new installation; the live figures are on the Dashboard. Business permit standing: <span class="badge badge-green">With BP</span> 43 (all on the 2nd floor) &nbsp;&middot;&nbsp; <span class="badge badge-gray">Not Recorded</span> 204.</p>
 
 <h3>C.3 Terms used in this manual</h3>
 <table class="compact field-table">
@@ -3074,10 +3160,12 @@ code, .key {
     <tr><td>Early-payment discount</td><td>20% off, for settling on or before the due day.</td></tr>
     <tr><td>Consumption</td><td>Current meter reading minus previous, floored at zero.</td></tr>
     <tr><td>Late surcharge</td><td>A percentage added at print time to a bill past its due date.</td></tr>
-    <tr><td>Demerit points</td><td>Numeric severity attached to a citation; unresolved points rank repeat offenders.</td></tr>
+    <tr><td>Demerit points</td><td>Numeric severity attached to a citation; points on open citations rank tenants in <em>Open Points by Tenant</em>.</td></tr>
+    <tr><td>Offence (1st, 2nd, 3rd)</td><td>How many times the same party has been cited for the same violation, counted from the register.</td></tr>
+    <tr><td>Reprimanded</td><td>A citation dealt with: the offender has been reprimanded and the date recorded.</td></tr>
+    <tr><td>Recovery code</td><td>The one-time code, shown when the password is set, that lets the administrator choose a new password if it is forgotten.</td></tr>
     <tr><td>Held status</td><td>A stall status meaning the space is spoken for and not offered to applicants.</td></tr>
     <tr><td>Control number</td><td>The permanent sequential number printed on a verification slip.</td></tr>
-    <tr><td>Records-only mode</td><td>The assistant operating with no language model installed.</td></tr>
     <tr><td>PHT</td><td>Philippine Standard Time (Asia/Manila) — the clock the system reasons in.</td></tr>
   </tbody>
 </table>
@@ -3103,7 +3191,7 @@ code, .key {
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">analytics</span> analytics</div><p>Analytics</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">menu_book</span> menu_book</div><p>Logbook</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">account_tree</span> account_tree</div><p>Officers</p></div>
-  <div class="card"><div class="card-title"><span class="material-symbols-outlined">forum</span> forum</div><p>Market Assistant</p></div>
+  <div class="card"><div class="card-title"><span class="material-symbols-outlined">map</span> map</div><p>Market Floor Plan</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">settings</span> settings</div><p>Settings</p></div>
   <div class="card"><div class="card-title"><span class="material-symbols-outlined">help</span> help</div><p>Support</p></div>
 </div>
@@ -3137,8 +3225,8 @@ code, .key {
     <tr><td><span class="badge badge-green">With BP</span></td><td>Stall register</td><td>A business permit has been sighted</td></tr>
     <tr><td><span class="badge badge-red">No BP</span></td><td>Stall register</td><td>Checked, and none held</td></tr>
     <tr><td><span class="badge badge-gray">Not Recorded</span></td><td>Stall register</td><td>Never checked — work to do, not a violation</td></tr>
-    <tr><td><span class="badge badge-red">Open</span></td><td>Violations register</td><td>Citation unresolved; points count toward the ranking</td></tr>
-    <tr><td><span class="badge badge-green">Resolved</span></td><td>Violations register</td><td>Case closed; points drop out of the ranking</td></tr>
+    <tr><td><span class="badge badge-red">Open</span></td><td>Violations register</td><td>Not yet reprimanded; points count toward the ranking</td></tr>
+    <tr><td><span class="badge badge-green">Reprimanded</span></td><td>Violations register</td><td>Offender reprimanded; points drop out of the ranking</td></tr>
     <tr><td><span class="badge badge-green">Active</span> <span class="badge badge-amber">On Leave</span> <span class="badge badge-gray">Vacant</span></td><td>Officers board</td><td>Standing of a board seat</td></tr>
   </tbody>
 </table>

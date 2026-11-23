@@ -33,7 +33,7 @@ const FOOTER = `
   <div style="width:100%;font-size:7pt;font-family:Inter,system-ui,sans-serif;color:#8b93a5;
               padding:0 14mm;margin-bottom:5mm;display:flex;justify-content:space-between;
               align-items:center;border-top:0.5pt solid #dfe3ec;padding-top:2mm;">
-    <span>PMRMS-UM-001 &middot; v1.0 &middot; Controlled &mdash; for Market Office use</span>
+    <span>PMRMS-UM-001 &middot; v1.1 &middot; Controlled &mdash; for Market Office use</span>
     <span style="font-weight:700;color:#243B8F;">
       <span class="pageNumber"></span> / <span class="totalPages"></span>
     </span>
